@@ -123,13 +123,16 @@ def extract_audio():
         if chunk_duration or file_size_mb > max_chunk_size_mb:
             # Определяем длительность чанка
             if chunk_duration:
+                # Пользователь указал длительность явно (приоритет)
                 chunk_duration_seconds = chunk_duration * 60
             else:
-                # Автоматически вычисляем длительность чанка на основе размера
-                # Формула: chunk_duration = (max_chunk_size_mb / file_size_mb) * total_duration
-                chunk_duration_seconds = (max_chunk_size_mb / file_size_mb) * total_duration * 0.95  # 5% запас
+                # Автоматически вычисляем длительность на основе целевого размера файла
+                # При 64kbps: 1 секунда = 8 KB = 0.0078125 MB
+                # Формула: max_chunk_size_mb / (64 kbps / 8 / 1024) = max_chunk_size_mb * 128
+                # Добавляем запас 5% для безопасности
+                chunk_duration_seconds = (max_chunk_size_mb * 128) * 0.95
 
-            logger.info(f"Splitting audio into chunks of {chunk_duration_seconds/60:.1f} minutes")
+            logger.info(f"Splitting audio into chunks of {chunk_duration_seconds/60:.1f} minutes (target size: {max_chunk_size_mb}MB)")
 
             # Разбиваем на чанки
             chunk_start = 0
@@ -140,16 +143,22 @@ def extract_audio():
                 chunk_filename = f"audio_{timestamp}_chunk{chunk_index:03d}.mp3"
                 chunk_path = os.path.join(OUTPUT_DIR, chunk_filename)
 
-                # Извлекаем чанк с пониженным битрейтом для гарантии < 25MB
+                chunk_duration_actual = chunk_end - chunk_start
+
+                logger.info(f"Chunk {chunk_index}: duration={chunk_duration_actual:.1f}s, extracting from video...")
+
+                # Извлекаем чанк напрямую из видео с фиксированным битрейтом
+                # Все чанки будут иметь ОДИНАКОВОЕ качество (64kbps)
                 chunk_cmd = [
                     'ffmpeg',
-                    '-i', output_path,
-                    '-ss', str(chunk_start),
-                    '-t', str(chunk_end - chunk_start),
+                    '-ss', str(chunk_start),  # Начало ПЕРЕД -i для быстрого seek
+                    '-t', str(chunk_duration_actual),  # Длительность
+                    '-i', input_path,  # Входное видео (не output_path!)
+                    '-vn',  # Отключаем видео
                     '-acodec', 'libmp3lame',
+                    '-b:a', '64k',  # Фиксированный битрейт для всех чанков
                     '-ar', '16000',  # 16kHz sample rate (оптимально для речи/Whisper)
                     '-ac', '1',  # Моно
-                    '-b:a', '64k',  # Низкий битрейт для гарантии малого размера
                     '-y',
                     chunk_path
                 ]
