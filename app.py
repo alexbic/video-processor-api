@@ -478,13 +478,38 @@ def process_to_shorts():
             start_str = str(start_time)
             duration_str = None
 
+        # Получаем параметры для текстовых оверлеев
+        title_text = data.get('title_text', '')
+        subtitle_text = data.get('subtitle_text', '')
+
         # Определяем фильтр обрезки
-        if crop_mode == 'top':
-            crop_filter = "crop=ih*9/16:ih:0:0"
+        if crop_mode == 'letterbox':
+            # Letterbox: горизонтальное видео по центру + размытый фон
+            # 1. Создаём размытый фон из исходного видео
+            # 2. Масштабируем оригинал по высоте
+            # 3. Накладываем оригинал поверх размытого фона
+            video_filter = (
+                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20[bg];"
+                "[0:v]scale=-1:1080:force_original_aspect_ratio=decrease[fg];"
+                "[bg][fg]overlay=(W-w)/2:(H-h)/2"
+            )
+        elif crop_mode == 'top':
+            video_filter = "crop=ih*9/16:ih:0:0,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
         elif crop_mode == 'bottom':
-            crop_filter = "crop=ih*9/16:ih:0:ih-oh"
-        else:
-            crop_filter = "crop=ih*9/16:ih"
+            video_filter = "crop=ih*9/16:ih:0:ih-oh,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+        else:  # center (default)
+            video_filter = "crop=ih*9/16:ih,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+
+        # Добавляем текстовые оверлеи если указаны
+        if title_text:
+            # Заголовок сверху (белый текст с черной обводкой)
+            title_escaped = title_text.replace(':', '\\:').replace("'", "\\'")
+            video_filter += f",drawtext=text='{title_escaped}':fontsize=60:fontcolor=white:bordercolor=black:borderw=3:x=(w-text_w)/2:y=100"
+
+        if subtitle_text:
+            # Субтитры снизу (белый текст с черной обводкой)
+            subtitle_escaped = subtitle_text.replace(':', '\\:').replace("'", "\\'")
+            video_filter += f",drawtext=text='{subtitle_escaped}':fontsize=48:fontcolor=white:bordercolor=black:borderw=3:x=(w-text_w)/2:y=h-150"
 
         # Комбинированная FFmpeg команда: нарезка + конвертация
         cmd = [
@@ -499,7 +524,7 @@ def process_to_shorts():
             cmd.extend(['-to', str(end_time)])
 
         cmd.extend([
-            '-vf', f"{crop_filter},scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
+            '-filter_complex' if crop_mode == 'letterbox' else '-vf', video_filter,
             '-c:v', 'libx264',
             '-preset', 'medium',
             '-crf', '23',
@@ -566,7 +591,7 @@ def download_file(filename):
 # АСИНХРОННАЯ ОБРАБОТКА
 # ============================================
 
-def process_video_background(task_id: str, video_url: str, start_time, end_time, crop_mode: str):
+def process_video_background(task_id: str, video_url: str, start_time, end_time, crop_mode: str, title_text: str = '', subtitle_text: str = ''):
     """Фоновая обработка видео"""
     try:
         tasks[task_id]['status'] = 'processing'
@@ -599,12 +624,28 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
             duration_str = None
 
         # Определяем фильтр обрезки
-        if crop_mode == 'top':
-            crop_filter = "crop=ih*9/16:ih:0:0"
+        if crop_mode == 'letterbox':
+            # Letterbox: горизонтальное видео по центру + размытый фон
+            video_filter = (
+                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20[bg];"
+                "[0:v]scale=-1:1080:force_original_aspect_ratio=decrease[fg];"
+                "[bg][fg]overlay=(W-w)/2:(H-h)/2"
+            )
+        elif crop_mode == 'top':
+            video_filter = "crop=ih*9/16:ih:0:0,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
         elif crop_mode == 'bottom':
-            crop_filter = "crop=ih*9/16:ih:0:ih-oh"
-        else:
-            crop_filter = "crop=ih*9/16:ih"
+            video_filter = "crop=ih*9/16:ih:0:ih-oh,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+        else:  # center (default)
+            video_filter = "crop=ih*9/16:ih,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+
+        # Добавляем текстовые оверлеи если указаны
+        if title_text:
+            title_escaped = title_text.replace(':', '\\:').replace("'", "\\'")
+            video_filter += f",drawtext=text='{title_escaped}':fontsize=60:fontcolor=white:bordercolor=black:borderw=3:x=(w-text_w)/2:y=100"
+
+        if subtitle_text:
+            subtitle_escaped = subtitle_text.replace(':', '\\:').replace("'", "\\'")
+            video_filter += f",drawtext=text='{subtitle_escaped}':fontsize=48:fontcolor=white:bordercolor=black:borderw=3:x=(w-text_w)/2:y=h-150"
 
         tasks[task_id]['progress'] = 40
 
@@ -622,7 +663,7 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
             cmd.extend(['-to', str(end_time)])
 
         cmd.extend([
-            '-vf', f"{crop_filter},scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
+            '-filter_complex' if crop_mode == 'letterbox' else '-vf', video_filter,
             '-c:v', 'libx264',
             '-preset', 'medium',
             '-crf', '23',
@@ -680,6 +721,8 @@ def process_to_shorts_async():
         start_time = data.get('start_time')
         end_time = data.get('end_time')
         crop_mode = data.get('crop_mode', 'center')
+        title_text = data.get('title_text', '')
+        subtitle_text = data.get('subtitle_text', '')
 
         if not all([video_url, start_time is not None, end_time is not None]):
             return jsonify({
@@ -697,13 +740,15 @@ def process_to_shorts_async():
             'start_time': start_time,
             'end_time': end_time,
             'crop_mode': crop_mode,
+            'title_text': title_text,
+            'subtitle_text': subtitle_text,
             'created_at': datetime.now().isoformat()
         }
 
         # Запускаем фоновую обработку
         thread = threading.Thread(
             target=process_video_background,
-            args=(task_id, video_url, start_time, end_time, crop_mode)
+            args=(task_id, video_url, start_time, end_time, crop_mode, title_text, subtitle_text)
         )
         thread.daemon = True
         thread.start()
