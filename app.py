@@ -480,7 +480,9 @@ def process_to_shorts():
 
         # Получаем параметры для текстовых оверлеев
         title_text = data.get('title_text', '')
-        subtitle_text = data.get('subtitle_text', '')
+        # subtitles - массив объектов с полями: text, start, end
+        # Пример: [{"text": "Привет", "start": 0.5, "end": 2.0}, ...]
+        subtitles = data.get('subtitles', [])
 
         # Настройки заголовка (title) - появляется в начале с fade эффектом
         title_config = data.get('title_config', {})
@@ -541,18 +543,28 @@ def process_to_shorts():
                 f":alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
             )
 
-        if subtitle_text:
-            # Субтитры снизу (постоянные, без анимации)
-            subtitle_escaped = subtitle_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
-            video_filter += (
-                f",drawtext=text='{subtitle_escaped}'"
-                f":fontsize={subtitle_fontsize}"
-                f":fontcolor={subtitle_fontcolor}"
-                f":bordercolor={subtitle_bordercolor}"
-                f":borderw={subtitle_borderw}"
-                f":x=(w-text_w)/2"
-                f":y={subtitle_y}"
-            )
+        # Динамические субтитры - каждый сегмент со своими таймкодами
+        if subtitles:
+            for subtitle in subtitles:
+                sub_text = subtitle.get('text', '')
+                sub_start = subtitle.get('start', 0)
+                sub_end = subtitle.get('end', 0)
+
+                if sub_text and sub_start is not None and sub_end is not None:
+                    # Экранируем текст
+                    sub_escaped = sub_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+
+                    # Добавляем drawtext с таймингом для этого сегмента
+                    video_filter += (
+                        f",drawtext=text='{sub_escaped}'"
+                        f":fontsize={subtitle_fontsize}"
+                        f":fontcolor={subtitle_fontcolor}"
+                        f":bordercolor={subtitle_bordercolor}"
+                        f":borderw={subtitle_borderw}"
+                        f":x=(w-text_w)/2"
+                        f":y={subtitle_y}"
+                        f":enable='between(t\\,{sub_start}\\,{sub_end})'"
+                    )
 
         # Комбинированная FFmpeg команда: нарезка + конвертация
         cmd = [
@@ -635,13 +647,15 @@ def download_file(filename):
 # ============================================
 
 def process_video_background(task_id: str, video_url: str, start_time, end_time, crop_mode: str,
-                           title_text: str = '', subtitle_text: str = '',
+                           title_text: str = '', subtitles: list = None,
                            title_config: dict = None, subtitle_config: dict = None):
     """Фоновая обработка видео"""
     if title_config is None:
         title_config = {}
     if subtitle_config is None:
         subtitle_config = {}
+    if subtitles is None:
+        subtitles = []
     try:
         tasks[task_id]['status'] = 'processing'
         tasks[task_id]['progress'] = 0
@@ -718,24 +732,35 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
                 f":alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
             )
 
-        if subtitle_text:
-            # Настройки субтитров (subtitle) - всегда внизу
+        # Динамические субтитры - каждый сегмент со своими таймкодами
+        if subtitles:
+            # Настройки субтитров (subtitle)
             subtitle_fontsize = subtitle_config.get('fontsize', 48)
             subtitle_fontcolor = subtitle_config.get('fontcolor', '#90EE90')  # Нежно-зелёный по умолчанию
             subtitle_bordercolor = subtitle_config.get('bordercolor', 'white')
             subtitle_borderw = subtitle_config.get('borderw', 3)
             subtitle_y = subtitle_config.get('y', 'h-150')
 
-            subtitle_escaped = subtitle_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
-            video_filter += (
-                f",drawtext=text='{subtitle_escaped}'"
-                f":fontsize={subtitle_fontsize}"
-                f":fontcolor={subtitle_fontcolor}"
-                f":bordercolor={subtitle_bordercolor}"
-                f":borderw={subtitle_borderw}"
-                f":x=(w-text_w)/2"
-                f":y={subtitle_y}"
-            )
+            for subtitle in subtitles:
+                sub_text = subtitle.get('text', '')
+                sub_start = subtitle.get('start', 0)
+                sub_end = subtitle.get('end', 0)
+
+                if sub_text and sub_start is not None and sub_end is not None:
+                    # Экранируем текст
+                    sub_escaped = sub_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+
+                    # Добавляем drawtext с таймингом для этого сегмента
+                    video_filter += (
+                        f",drawtext=text='{sub_escaped}'"
+                        f":fontsize={subtitle_fontsize}"
+                        f":fontcolor={subtitle_fontcolor}"
+                        f":bordercolor={subtitle_bordercolor}"
+                        f":borderw={subtitle_borderw}"
+                        f":x=(w-text_w)/2"
+                        f":y={subtitle_y}"
+                        f":enable='between(t\\,{sub_start}\\,{sub_end})'"
+                    )
 
         tasks[task_id]['progress'] = 40
 
@@ -812,7 +837,7 @@ def process_to_shorts_async():
         end_time = data.get('end_time')
         crop_mode = data.get('crop_mode', 'center')
         title_text = data.get('title_text', '')
-        subtitle_text = data.get('subtitle_text', '')
+        subtitles = data.get('subtitles', [])  # Массив сегментов с text, start, end
         title_config = data.get('title_config', {})
         subtitle_config = data.get('subtitle_config', {})
 
@@ -833,7 +858,7 @@ def process_to_shorts_async():
             'end_time': end_time,
             'crop_mode': crop_mode,
             'title_text': title_text,
-            'subtitle_text': subtitle_text,
+            'subtitles': subtitles,
             'title_config': title_config,
             'subtitle_config': subtitle_config,
             'created_at': datetime.now().isoformat()
@@ -842,7 +867,7 @@ def process_to_shorts_async():
         # Запускаем фоновую обработку
         thread = threading.Thread(
             target=process_video_background,
-            args=(task_id, video_url, start_time, end_time, crop_mode, title_text, subtitle_text, title_config, subtitle_config)
+            args=(task_id, video_url, start_time, end_time, crop_mode, title_text, subtitles, title_config, subtitle_config)
         )
         thread.daemon = True
         thread.start()
