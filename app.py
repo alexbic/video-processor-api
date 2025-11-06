@@ -4,8 +4,13 @@ import subprocess
 from datetime import datetime
 import uuid
 import logging
+import threading
+from typing import Dict, Any
 
 app = Flask(__name__)
+
+# In-memory хранилище задач (для production использовать Redis)
+tasks: Dict[str, Dict[str, Any]] = {}
 
 # Конфигурация
 UPLOAD_DIR = "/app/uploads"
@@ -76,7 +81,10 @@ def extract_audio():
 
         # Параметры чанков для Whisper API
         chunk_duration = data.get('chunk_duration_minutes')  # В минутах
-        max_chunk_size_mb = data.get('max_chunk_size_mb', 24)  # По умолчанию 24 МБ
+        max_chunk_size_mb = float(data.get('max_chunk_size_mb', 24))  # По умолчанию 24 МБ
+
+        logger.info(f"Received parameters: chunk_duration={chunk_duration}, max_chunk_size_mb={max_chunk_size_mb}")
+        logger.info(f"Raw data: {data}")
 
         # Формируем имя выходного аудио файла
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -553,6 +561,221 @@ def download_file(filename):
     except Exception as e:
         logger.error(f"Download error: {e}")
         return jsonify({"error": str(e)}), 500
+
+# ============================================
+# АСИНХРОННАЯ ОБРАБОТКА
+# ============================================
+
+def process_video_background(task_id: str, video_url: str, start_time, end_time, crop_mode: str):
+    """Фоновая обработка видео"""
+    try:
+        tasks[task_id]['status'] = 'processing'
+        tasks[task_id]['progress'] = 0
+
+        # Скачиваем видео
+        input_filename = f"{uuid.uuid4()}.mp4"
+        input_path = os.path.join(UPLOAD_DIR, input_filename)
+
+        logger.info(f"Task {task_id}: Downloading video from {video_url}")
+        import requests
+        response = requests.get(video_url, stream=True, timeout=300)
+        with open(input_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        tasks[task_id]['progress'] = 30
+
+        # Создаём выходной файл
+        output_filename = f"shorts_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id[:8]}.mp4"
+        output_path = os.path.join(OUTPUT_DIR, output_filename)
+
+        # Вычисляем длительность
+        if isinstance(start_time, (int, float)) and isinstance(end_time, (int, float)):
+            duration = end_time - start_time
+            start_str = str(start_time)
+            duration_str = str(duration)
+        else:
+            start_str = str(start_time)
+            duration_str = None
+
+        # Определяем фильтр обрезки
+        if crop_mode == 'top':
+            crop_filter = "crop=ih*9/16:ih:0:0"
+        elif crop_mode == 'bottom':
+            crop_filter = "crop=ih*9/16:ih:0:ih-oh"
+        else:
+            crop_filter = "crop=ih*9/16:ih"
+
+        tasks[task_id]['progress'] = 40
+
+        # FFmpeg обработка
+        logger.info(f"Task {task_id}: Processing video with FFmpeg")
+        cmd = [
+            'ffmpeg',
+            '-ss', start_str,
+            '-i', input_path,
+        ]
+
+        if duration_str:
+            cmd.extend(['-t', duration_str])
+        else:
+            cmd.extend(['-to', str(end_time)])
+
+        cmd.extend([
+            '-vf', f"{crop_filter},scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
+            '-c:v', 'libx264',
+            '-preset', 'medium',
+            '-crf', '23',
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-y',
+            output_path
+        ])
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            raise Exception(f"FFmpeg error: {result.stderr}")
+
+        os.chmod(output_path, 0o644)
+        tasks[task_id]['progress'] = 90
+
+        # Удаляем входной файл
+        if os.path.exists(input_path):
+            os.remove(input_path)
+
+        file_size = os.path.getsize(output_path)
+        download_path = f"/download/{output_filename}"
+
+        # Обновляем задачу
+        tasks[task_id].update({
+            'status': 'completed',
+            'progress': 100,
+            'filename': output_filename,
+            'file_size': file_size,
+            'download_path': download_path,
+            'download_url': f"http://video-processor:5001{download_path}",
+            'completed_at': datetime.now().isoformat()
+        })
+
+        logger.info(f"Task {task_id}: Completed successfully")
+
+    except Exception as e:
+        logger.error(f"Task {task_id}: Error - {e}")
+        tasks[task_id].update({
+            'status': 'failed',
+            'error': str(e),
+            'failed_at': datetime.now().isoformat()
+        })
+
+@app.route('/process_to_shorts_async', methods=['POST'])
+def process_to_shorts_async():
+    """Асинхронная обработка: запускает задачу и сразу возвращает task_id"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"success": False, "error": "JSON data required"}), 400
+
+        video_url = data.get('video_url')
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+        crop_mode = data.get('crop_mode', 'center')
+
+        if not all([video_url, start_time is not None, end_time is not None]):
+            return jsonify({
+                "success": False,
+                "error": "video_url, start_time, and end_time are required"
+            }), 400
+
+        # Создаём задачу
+        task_id = str(uuid.uuid4())
+        tasks[task_id] = {
+            'task_id': task_id,
+            'status': 'queued',
+            'progress': 0,
+            'video_url': video_url,
+            'start_time': start_time,
+            'end_time': end_time,
+            'crop_mode': crop_mode,
+            'created_at': datetime.now().isoformat()
+        }
+
+        # Запускаем фоновую обработку
+        thread = threading.Thread(
+            target=process_video_background,
+            args=(task_id, video_url, start_time, end_time, crop_mode)
+        )
+        thread.daemon = True
+        thread.start()
+
+        logger.info(f"Task {task_id}: Created and started")
+
+        return jsonify({
+            "success": True,
+            "task_id": task_id,
+            "status": "queued",
+            "message": "Task created and processing started",
+            "check_status_url": f"/task_status/{task_id}"
+        }), 202
+
+    except Exception as e:
+        logger.error(f"Async processing error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/task_status/<task_id>', methods=['GET'])
+def get_task_status(task_id):
+    """Получить статус задачи"""
+    try:
+        if task_id not in tasks:
+            return jsonify({
+                "success": False,
+                "error": "Task not found"
+            }), 404
+
+        task = tasks[task_id]
+
+        response = {
+            "success": True,
+            "task_id": task_id,
+            "status": task['status'],
+            "progress": task.get('progress', 0),
+            "created_at": task.get('created_at')
+        }
+
+        if task['status'] == 'completed':
+            response.update({
+                'filename': task.get('filename'),
+                'file_size': task.get('file_size'),
+                'download_url': task.get('download_url'),
+                'download_path': task.get('download_path'),
+                'completed_at': task.get('completed_at')
+            })
+        elif task['status'] == 'failed':
+            response.update({
+                'error': task.get('error'),
+                'failed_at': task.get('failed_at')
+            })
+
+        return jsonify(response)
+
+    except Exception as e:
+        logger.error(f"Status check error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/tasks', methods=['GET'])
+def list_tasks():
+    """Получить список всех задач"""
+    try:
+        # Показываем только последние 100 задач
+        recent_tasks = list(tasks.values())[-100:]
+        return jsonify({
+            "success": True,
+            "total": len(tasks),
+            "tasks": recent_tasks
+        })
+    except Exception as e:
+        logger.error(f"List tasks error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=False)
