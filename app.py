@@ -206,6 +206,7 @@ def extract_audio():
                 "total_chunks": len(chunks),
                 "chunk_duration_minutes": round(chunk_duration_seconds / 60, 1) if chunk_duration_seconds else None,
                 "chunks": chunks,
+                "source_video_url": data.get('video_url'),  # Ссылка на исходное видео
                 "note": f"Audio split into {len(chunks)} chunks. Each chunk optimized for Whisper API (<25MB). Files will auto-delete after 2 hours.",
                 "processed_at": datetime.now().isoformat()
             })
@@ -230,6 +231,7 @@ def extract_audio():
                 "download_url": full_download_url,
                 "download_path": download_path,
                 "whisper_ready": file_size_mb <= 25,
+                "source_video_url": data.get('video_url'),  # Ссылка на исходное видео
                 "note": "Audio file will auto-delete after 2 hours." + ("" if file_size_mb <= 25 else f" Warning: File size ({file_size_mb:.1f}MB) exceeds Whisper API limit (25MB). Consider using chunk_duration parameter."),
                 "processed_at": datetime.now().isoformat()
             })
@@ -326,6 +328,7 @@ def cut_video():
             "download_path": download_path,
             "start_time": start_time,
             "end_time": end_time,
+            "source_video_url": video_url,  # Ссылка на исходное видео
             "note": "Video file will auto-delete after 2 hours.",
             "processed_at": datetime.now().isoformat()
         })
@@ -415,6 +418,7 @@ def convert_to_shorts():
             "resolution": "1080x1920",
             "format": "shorts",
             "crop_mode": crop_mode,
+            "source_video_url": video_url,  # Ссылка на исходное видео
             "note": "Shorts video will auto-delete after 2 hours.",
             "processed_at": datetime.now().isoformat()
         })
@@ -528,6 +532,7 @@ def process_to_shorts():
             "crop_mode": crop_mode,
             "start_time": start_time,
             "end_time": end_time,
+            "source_video_url": video_url,  # Ссылка на исходное видео
             "note": "Shorts video will auto-delete after 2 hours.",
             "processed_at": datetime.now().isoformat()
         })
