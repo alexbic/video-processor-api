@@ -9,6 +9,7 @@
 ## Возможности
 
 - **Извлечение аудио** из видео в MP3 формат
+- **Автоматическое разбиение аудио на чанки** для Whisper API (< 25 МБ каждый)
 - **Нарезка видео** по таймкодам (start_time, end_time)
 - **Конвертация в Shorts** - вертикальная ориентация 1080x1920 для YouTube Shorts и TikTok
 - **Комбинированная обработка** - нарезка + конвертация в один запрос
@@ -74,6 +75,8 @@ GET /health
 
 ### 2. Извлечь аудио из видео
 
+#### Вариант А: Обычное извлечение (файл < 25 МБ)
+
 ```bash
 POST /extract_audio
 Content-Type: application/json
@@ -83,23 +86,113 @@ Content-Type: application/json
 }
 ```
 
-Ответ:
+Ответ (mode: "single"):
 ```json
 {
   "success": true,
+  "mode": "single",
   "filename": "audio_20250115_103000.mp3",
   "file_path": "/app/outputs/audio_20250115_103000.mp3",
   "file_size": 5242880,
+  "file_size_mb": 5.0,
+  "duration": 180.5,
   "download_url": "http://video_processor:5001/download/audio_20250115_103000.mp3",
   "download_path": "/download/audio_20250115_103000.mp3",
+  "whisper_ready": true,
   "note": "Audio file will auto-delete after 2 hours.",
   "processed_at": "2025-01-15T10:30:00.123456"
 }
 ```
 
+#### Вариант Б: Автоматическое разбиение на чанки (файл > 25 МБ) ⭐
+
+**Для длинных видео:** API автоматически разобьет аудио на чанки, если размер превышает 25 МБ.
+
+```bash
+POST /extract_audio
+Content-Type: application/json
+
+{
+  "video_url": "http://youtube_downloader:5000/download_file/video_20240115_103000.mp4"
+}
+```
+
+Ответ (mode: "chunked", если файл > 25 МБ):
+```json
+{
+  "success": true,
+  "mode": "chunked",
+  "total_duration": 1800.0,
+  "total_chunks": 3,
+  "chunk_duration_minutes": 10.5,
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "filename": "audio_20250115_103000_chunk000.mp3",
+      "file_size": 15728640,
+      "file_size_mb": 15.0,
+      "start_time": 0.0,
+      "end_time": 630.0,
+      "duration": 630.0,
+      "download_url": "http://video_processor:5001/download/audio_20250115_103000_chunk000.mp3",
+      "download_path": "/download/audio_20250115_103000_chunk000.mp3",
+      "whisper_ready": true
+    },
+    {
+      "chunk_index": 1,
+      "filename": "audio_20250115_103000_chunk001.mp3",
+      "file_size": 15728640,
+      "file_size_mb": 15.0,
+      "start_time": 630.0,
+      "end_time": 1260.0,
+      "duration": 630.0,
+      "download_url": "http://video_processor:5001/download/audio_20250115_103000_chunk001.mp3",
+      "download_path": "/download/audio_20250115_103000_chunk001.mp3",
+      "whisper_ready": true
+    },
+    {
+      "chunk_index": 2,
+      "filename": "audio_20250115_103000_chunk002.mp3",
+      "file_size": 14155776,
+      "file_size_mb": 13.5,
+      "start_time": 1260.0,
+      "end_time": 1800.0,
+      "duration": 540.0,
+      "download_url": "http://video_processor:5001/download/audio_20250115_103000_chunk002.mp3",
+      "download_path": "/download/audio_20250115_103000_chunk002.mp3",
+      "whisper_ready": true
+    }
+  ],
+  "note": "Audio split into 3 chunks. Each chunk optimized for Whisper API (<25MB). Files will auto-delete after 2 hours.",
+  "processed_at": "2025-01-15T10:30:00.123456"
+}
+```
+
+#### Вариант В: Ручная настройка длительности чанков
+
+```bash
+POST /extract_audio
+Content-Type: application/json
+
+{
+  "video_url": "http://youtube_downloader:5000/download_file/video_20240115_103000.mp4",
+  "chunk_duration_minutes": 10,
+  "max_chunk_size_mb": 24
+}
+```
+
+Параметры:
+- `chunk_duration_minutes` (опциональный) - длительность каждого чанка в минутах
+- `max_chunk_size_mb` (опциональный) - максимальный размер чанка в МБ (по умолчанию: 24)
+
+**Когда использовать чанки:**
+- Видео длиннее 20 минут → автоматически разобьется на чанки
+- Файл больше 25 МБ → автоматически разобьется
+- Хотите контролировать размер чанков → используйте `chunk_duration_minutes`
+
 **Использование в n8n:**
 
-**Шаг 1: HTTP Request Node**
+**Шаг 1: HTTP Request - Extract Audio**
 ```
 Method: POST
 URL: http://video_processor:5001/extract_audio
@@ -107,12 +200,59 @@ Body: {"video_url": "{{ $json.download_url }}"}
 Response Format: JSON
 ```
 
-**Шаг 2: HTTP Request Node (Скачать аудио)**
+**Шаг 2: IF Node - Проверить режим**
 ```
+Condition: {{ $json.mode }} равно "single" или "chunked"
+```
+
+**Шаг 3а: Одиночный файл (mode = "single")**
+```
+HTTP Request:
 Method: GET
 URL: {{ $json.download_url }}
 Response Format: File
 Binary Property: data
+
+→ Whisper API
+```
+
+**Шаг 3б: Чанки (mode = "chunked") → Loop через chunks массив**
+```
+1. Split Out Node: разбить chunks массив
+2. HTTP Request для каждого чанка:
+   Method: GET
+   URL: {{ $json.download_url }}
+   Response Format: File
+   Binary Property: data
+3. Whisper API для каждого чанка
+4. Aggregate Node: собрать все транскрипции
+5. Code Node: объединить с учетом start_time каждого чанка
+```
+
+**Пример Code Node для объединения транскрипций:**
+```javascript
+// Объединяем транскрипции из всех чанков
+const allSegments = [];
+
+for (const item of $input.all()) {
+  const chunkIndex = item.json.chunk_index;
+  const startTime = item.json.start_time; // Смещение времени чанка
+  const whisperResponse = item.json.whisper_result;
+
+  // Добавляем смещение времени к каждому сегменту
+  for (const segment of whisperResponse.segments) {
+    allSegments.push({
+      start: segment.start + startTime,
+      end: segment.end + startTime,
+      text: segment.text
+    });
+  }
+}
+
+// Сортируем по времени
+allSegments.sort((a, b) => a.start - b.start);
+
+return [{ json: { segments: allSegments } }];
 ```
 
 ### 3. Нарезать видео по таймкодам
@@ -236,23 +376,32 @@ GET /download/<filename>
    → Скачать видео
    ↓
 3. HTTP Request → Video Processor API /extract_audio
-   → Извлечь аудио из видео
+   → Извлечь аудио (автоматически разобьется на чанки если > 25MB)
    ↓
-4. HTTP Request → Скачать аудиофайл (Binary)
+4. IF Node → Проверить mode: "single" или "chunked"
    ↓
-5. HTTP Request → OpenAI Whisper API
-   → Транскрибация + временные метки
+   ├─► mode = "single":
+   │   └─► HTTP Request → Скачать аудио (Binary)
+   │       └─► Whisper API
+   │
+   └─► mode = "chunked":
+       └─► Split Out Node (chunks array)
+           └─► Loop через каждый chunk:
+               ├─► HTTP Request → Скачать chunk (Binary)
+               ├─► Whisper API → Транскрибация чанка
+               └─► Aggregate Node → Собрать все результаты
+                   └─► Code Node → Объединить с учетом start_time
    ↓
-6. Code Node → Обработать результаты Whisper
+5. Code Node → Обработать результаты Whisper
    → Найти интересные моменты с таймкодами
    ↓
-7. Loop через найденные сегменты:
+6. Loop через найденные сегменты:
    HTTP Request → Video Processor API /process_to_shorts
    → Создать Short для каждого сегмента
    ↓
-8. HTTP Request → Скачать каждый Short (Binary)
+7. HTTP Request → Скачать каждый Short (Binary)
    ↓
-9. HTTP Request → upload-post API
+8. HTTP Request → upload-post API
    → Загрузить в TikTok/YouTube Shorts
 ```
 
@@ -374,6 +523,35 @@ python app.py
 - Docker
 
 ## Troubleshooting
+
+### Ошибка: "413: Maximum content size limit exceeded" при Whisper API
+
+**Причина**: Аудиофайл превышает лимит Whisper API в 25 МБ.
+
+**Решение**: API автоматически разбивает файлы > 25 МБ на чанки! Просто используйте `/extract_audio` без дополнительных параметров:
+
+```bash
+POST /extract_audio
+{"video_url": "..."}
+```
+
+API вернет `mode: "chunked"` с массивом чанков, каждый < 25 МБ.
+
+**n8n workflow:**
+1. Extract Audio → получить ответ
+2. IF Node: проверить `mode` ("single" или "chunked")
+3. Если "chunked": использовать Split Out Node на `chunks` массив
+4. Loop через каждый chunk → Whisper API
+5. Aggregate → Code Node для объединения с учетом `start_time`
+
+**Ручная настройка чанков:**
+```json
+{
+  "video_url": "...",
+  "chunk_duration_minutes": 10,
+  "max_chunk_size_mb": 24
+}
+```
 
 ### Ошибка: "File too large" при обработке
 
