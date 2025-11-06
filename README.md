@@ -295,7 +295,7 @@ Extract Audio
   ↓ audio file
 Whisper API (timestamp_granularities: "word")
   ↓ words: [{word, start, end}]
-LLM (Gemini/GPT) - см. llm-prompts/video-moments-extractor.md
+LLM (Gemini/GPT) - см. llm-prompts/shorts-extractor.md
   ↓ shorts: [{start, end, title, subtitles}]
 Process to Shorts Async (параллельно для всех клипов)
   ↓ task_ids
@@ -355,7 +355,7 @@ return shorts.map(short => ({json: {
 
 ## Additional Resources
 
-- [LLM Prompt для выделения моментов](llm-prompts/video-moments-extractor.md)
+- [LLM Prompt для выделения моментов](llm-prompts/shorts-extractor.md)
 - [YouTube Downloader API](https://github.com/alexbic/youtube-downloader-api)
 
 ---
