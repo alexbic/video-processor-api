@@ -482,12 +482,29 @@ def process_to_shorts():
         title_text = data.get('title_text', '')
         subtitle_text = data.get('subtitle_text', '')
 
+        # Настройки заголовка (title) - появляется в начале с fade эффектом
+        title_config = data.get('title_config', {})
+        title_fontsize = title_config.get('fontsize', 60)
+        title_fontcolor = title_config.get('fontcolor', 'white')
+        title_bordercolor = title_config.get('bordercolor', 'black')
+        title_borderw = title_config.get('borderw', 3)
+        title_y = title_config.get('y', 100)
+        title_start = title_config.get('start_time', 0.5)   # Когда появляется (секунды от начала клипа)
+        title_duration = title_config.get('duration', 4)    # Как долго показывается
+        title_fade_in = title_config.get('fade_in', 0.5)    # Длительность fade in
+        title_fade_out = title_config.get('fade_out', 0.5)  # Длительность fade out
+
+        # Настройки субтитров (subtitle) - всегда внизу
+        subtitle_config = data.get('subtitle_config', {})
+        subtitle_fontsize = subtitle_config.get('fontsize', 48)
+        subtitle_fontcolor = subtitle_config.get('fontcolor', '#90EE90')  # Нежно-зелёный по умолчанию
+        subtitle_bordercolor = subtitle_config.get('bordercolor', 'white')
+        subtitle_borderw = subtitle_config.get('borderw', 3)
+        subtitle_y = subtitle_config.get('y', 'h-150')
+
         # Определяем фильтр обрезки
         if crop_mode == 'letterbox':
             # Letterbox: горизонтальное видео по центру + размытый фон
-            # 1. Создаём размытый фон из исходного видео
-            # 2. Масштабируем оригинал по высоте
-            # 3. Накладываем оригинал поверх размытого фона
             video_filter = (
                 "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20[bg];"
                 "[0:v]scale=-1:1080:force_original_aspect_ratio=decrease[fg];"
@@ -502,14 +519,40 @@ def process_to_shorts():
 
         # Добавляем текстовые оверлеи если указаны
         if title_text:
-            # Заголовок сверху (белый текст с черной обводкой)
-            title_escaped = title_text.replace(':', '\\:').replace("'", "\\'")
-            video_filter += f",drawtext=text='{title_escaped}':fontsize=60:fontcolor=white:bordercolor=black:borderw=3:x=(w-text_w)/2:y=100"
+            # Заголовок с анимацией fade in/out
+            title_escaped = title_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+
+            # Вычисляем тайминги для fade эффектов
+            title_end = title_start + title_duration
+            fade_in_end = title_start + title_fade_in
+            fade_out_start = title_end - title_fade_out
+
+            # enable='between(t,start,end)' - показывать только в указанное время
+            # alpha='...' - прозрачность для fade эффектов
+            video_filter += (
+                f",drawtext=text='{title_escaped}'"
+                f":fontsize={title_fontsize}"
+                f":fontcolor={title_fontcolor}"
+                f":bordercolor={title_bordercolor}"
+                f":borderw={title_borderw}"
+                f":x=(w-text_w)/2"
+                f":y={title_y}"
+                f":enable='between(t\\,{title_start}\\,{title_end})'"
+                f":alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
+            )
 
         if subtitle_text:
-            # Субтитры снизу (белый текст с черной обводкой)
-            subtitle_escaped = subtitle_text.replace(':', '\\:').replace("'", "\\'")
-            video_filter += f",drawtext=text='{subtitle_escaped}':fontsize=48:fontcolor=white:bordercolor=black:borderw=3:x=(w-text_w)/2:y=h-150"
+            # Субтитры снизу (постоянные, без анимации)
+            subtitle_escaped = subtitle_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+            video_filter += (
+                f",drawtext=text='{subtitle_escaped}'"
+                f":fontsize={subtitle_fontsize}"
+                f":fontcolor={subtitle_fontcolor}"
+                f":bordercolor={subtitle_bordercolor}"
+                f":borderw={subtitle_borderw}"
+                f":x=(w-text_w)/2"
+                f":y={subtitle_y}"
+            )
 
         # Комбинированная FFmpeg команда: нарезка + конвертация
         cmd = [
@@ -591,8 +634,14 @@ def download_file(filename):
 # АСИНХРОННАЯ ОБРАБОТКА
 # ============================================
 
-def process_video_background(task_id: str, video_url: str, start_time, end_time, crop_mode: str, title_text: str = '', subtitle_text: str = ''):
+def process_video_background(task_id: str, video_url: str, start_time, end_time, crop_mode: str,
+                           title_text: str = '', subtitle_text: str = '',
+                           title_config: dict = None, subtitle_config: dict = None):
     """Фоновая обработка видео"""
+    if title_config is None:
+        title_config = {}
+    if subtitle_config is None:
+        subtitle_config = {}
     try:
         tasks[task_id]['status'] = 'processing'
         tasks[task_id]['progress'] = 0
@@ -638,14 +687,55 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
         else:  # center (default)
             video_filter = "crop=ih*9/16:ih,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
 
-        # Добавляем текстовые оверлеи если указаны
+        # Добавляем текстовые оверлеи с настройками если указаны
         if title_text:
-            title_escaped = title_text.replace(':', '\\:').replace("'", "\\'")
-            video_filter += f",drawtext=text='{title_escaped}':fontsize=60:fontcolor=white:bordercolor=black:borderw=3:x=(w-text_w)/2:y=100"
+            # Настройки заголовка (title) - появляется в начале с fade эффектом
+            title_fontsize = title_config.get('fontsize', 60)
+            title_fontcolor = title_config.get('fontcolor', 'white')
+            title_bordercolor = title_config.get('bordercolor', 'black')
+            title_borderw = title_config.get('borderw', 3)
+            title_y = title_config.get('y', 100)
+            title_start = title_config.get('start_time', 0.5)
+            title_duration = title_config.get('duration', 4)
+            title_fade_in = title_config.get('fade_in', 0.5)
+            title_fade_out = title_config.get('fade_out', 0.5)
+
+            title_escaped = title_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+
+            title_end = title_start + title_duration
+            fade_in_end = title_start + title_fade_in
+            fade_out_start = title_end - title_fade_out
+
+            video_filter += (
+                f",drawtext=text='{title_escaped}'"
+                f":fontsize={title_fontsize}"
+                f":fontcolor={title_fontcolor}"
+                f":bordercolor={title_bordercolor}"
+                f":borderw={title_borderw}"
+                f":x=(w-text_w)/2"
+                f":y={title_y}"
+                f":enable='between(t\\,{title_start}\\,{title_end})'"
+                f":alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
+            )
 
         if subtitle_text:
-            subtitle_escaped = subtitle_text.replace(':', '\\:').replace("'", "\\'")
-            video_filter += f",drawtext=text='{subtitle_escaped}':fontsize=48:fontcolor=white:bordercolor=black:borderw=3:x=(w-text_w)/2:y=h-150"
+            # Настройки субтитров (subtitle) - всегда внизу
+            subtitle_fontsize = subtitle_config.get('fontsize', 48)
+            subtitle_fontcolor = subtitle_config.get('fontcolor', '#90EE90')  # Нежно-зелёный по умолчанию
+            subtitle_bordercolor = subtitle_config.get('bordercolor', 'white')
+            subtitle_borderw = subtitle_config.get('borderw', 3)
+            subtitle_y = subtitle_config.get('y', 'h-150')
+
+            subtitle_escaped = subtitle_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+            video_filter += (
+                f",drawtext=text='{subtitle_escaped}'"
+                f":fontsize={subtitle_fontsize}"
+                f":fontcolor={subtitle_fontcolor}"
+                f":bordercolor={subtitle_bordercolor}"
+                f":borderw={subtitle_borderw}"
+                f":x=(w-text_w)/2"
+                f":y={subtitle_y}"
+            )
 
         tasks[task_id]['progress'] = 40
 
@@ -723,6 +813,8 @@ def process_to_shorts_async():
         crop_mode = data.get('crop_mode', 'center')
         title_text = data.get('title_text', '')
         subtitle_text = data.get('subtitle_text', '')
+        title_config = data.get('title_config', {})
+        subtitle_config = data.get('subtitle_config', {})
 
         if not all([video_url, start_time is not None, end_time is not None]):
             return jsonify({
@@ -742,13 +834,15 @@ def process_to_shorts_async():
             'crop_mode': crop_mode,
             'title_text': title_text,
             'subtitle_text': subtitle_text,
+            'title_config': title_config,
+            'subtitle_config': subtitle_config,
             'created_at': datetime.now().isoformat()
         }
 
         # Запускаем фоновую обработку
         thread = threading.Thread(
             target=process_video_background,
-            args=(task_id, video_url, start_time, end_time, crop_mode, title_text, subtitle_text)
+            args=(task_id, video_url, start_time, end_time, crop_mode, title_text, subtitle_text, title_config, subtitle_config)
         )
         thread.daemon = True
         thread.start()
