@@ -319,20 +319,48 @@ return [{json: {
 
 **Process LLM response:**
 ```javascript
-const shorts = $json.shorts || [];
-const title_config = {fontsize: 60, fontcolor: "white", bordercolor: "black", borderw: 3, y: 100, start_time: 0.5, duration: 4, fade_in: 0.5, fade_out: 0.5};
-const subtitle_config = {fontsize: 48, fontcolor: "#90EE90", bordercolor: "white", borderw: 3, y: "h-150"};
+const response = $json;
+const shorts = response.shorts || [];
 
-return shorts.map(short => ({json: {
-  video_url: $json.source_video_url,
+const title_config = {
+  fontsize: 60,
+  fontcolor: "white",
+  bordercolor: "black",
+  borderw: 3,
+  y: 100,
+  start_time: 0.5,
+  duration: 4,
+  fade_in: 0.5,
+  fade_out: 0.5
+};
+
+const subtitle_config = {
+  fontsize: 48,
+  fontcolor: "#90EE90",
+  bordercolor: "white",
+  borderw: 3,
+  y: "h-150"
+};
+
+const requests = shorts.map((short, index) => ({
+  video_url: response.source_video_url,
   start_time: short.start,
   end_time: short.end,
   crop_mode: "letterbox",
   title_text: short.title,
   subtitles: short.subtitles,
   title_config: title_config,
-  subtitle_config: subtitle_config
-}}));
+  subtitle_config: subtitle_config,
+  metadata: {
+    tiktok_description: short.video_description_for_tiktok,
+    instagram_description: short.video_description_for_instagram,
+    youtube_title: short.video_title_for_youtube_short,
+    clip_index: index + 1,
+    total_clips: shorts.length
+  }
+}));
+
+return requests.map(req => ({ json: req }));
 ```
 
 ---
