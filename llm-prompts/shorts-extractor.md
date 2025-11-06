@@ -70,14 +70,28 @@ Then in subtitles array: {"text": "привет", "start": 0.5, "end": 1.2}
 ### Code Node 1: Prepare Whisper data for LLM
 
 ```javascript
-// После Whisper API
-const words_llm = $json.words.map(w => ({w: w.word, s: w.start, e: w.end}));
-return [{json: {
-  video_duration: $json.duration,
-  text_llm: $json.text,
-  words_llm: words_llm,
-  source_video_url: $json.source_video_url
-}}];
+// Input: items из Whisper API с {text, words, duration, source_video_url}
+return items.map(item => {
+  const dur = Number(item.json.duration || 0);
+
+  // Округление до 3 знаков (важно для LLM!)
+  const round3 = (n) => Math.round(Number(n) * 1000) / 1000;
+
+  // Whisper возвращает words при timestamp_granularities: "word"
+  const wordsLLM = (item.json.words || []).map(w => ({
+    w: w.word,
+    s: round3(w.start),
+    e: round3(w.end),
+  }));
+
+  // Формируем данные для LLM
+  item.json.video_duration = round3(dur);
+  item.json.words_llm = wordsLLM;
+  item.json.text_llm = item.json.text;
+  item.json.source_video_url = item.json.source_video_url;
+
+  return item;
+});
 ```
 
 ### Code Node 2: Process LLM response
