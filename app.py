@@ -826,6 +826,30 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
                 sub_end = subtitle.get('end', 0)
 
                 if sub_text and sub_start is not None and sub_end is not None:
+                    # Автоматический перенос текста если он длинный
+                    # Для fontsize 64: ~15 символов на строку, для 48: ~20 символов
+                    max_chars_per_line = int(1080 / (subtitle_fontsize * 0.6))  # Примерный расчёт
+                    if len(sub_text) > max_chars_per_line:
+                        words = sub_text.split(' ')
+                        lines = []
+                        current_line = []
+                        current_length = 0
+
+                        for word in words:
+                            word_len = len(word) + 1  # +1 для пробела
+                            if current_length + word_len > max_chars_per_line and current_line:
+                                lines.append(' '.join(current_line))
+                                current_line = [word]
+                                current_length = word_len
+                            else:
+                                current_line.append(word)
+                                current_length += word_len
+
+                        if current_line:
+                            lines.append(' '.join(current_line))
+
+                        sub_text = '\\n'.join(lines[:2])  # Максимум 2 строки
+
                     # Экранируем текст
                     sub_escaped = sub_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
 
