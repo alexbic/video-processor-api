@@ -6,11 +6,77 @@ import uuid
 import logging
 import threading
 from typing import Dict, Any
+import json
 
 app = Flask(__name__)
 
-# In-memory хранилище задач (для production использовать Redis)
-tasks: Dict[str, Dict[str, Any]] = {}
+# ============================================
+# TASK STORAGE - Redis (multi-worker) or In-Memory (single-worker)
+# ============================================
+
+# Try to connect to Redis if available
+redis_client = None
+REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
+REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
+REDIS_DB = int(os.getenv('REDIS_DB', 0))
+
+try:
+    import redis
+    redis_client = redis.Redis(
+        host=REDIS_HOST,
+        port=REDIS_PORT,
+        db=REDIS_DB,
+        decode_responses=True,
+        socket_connect_timeout=2,
+        socket_timeout=2
+    )
+    redis_client.ping()
+    STORAGE_MODE = "redis"
+except Exception as e:
+    redis_client = None
+    STORAGE_MODE = "memory"
+
+# Fallback: In-memory storage (only for single worker!)
+tasks_memory: Dict[str, Dict[str, Any]] = {}
+
+def save_task(task_id: str, task_data: dict):
+    """Save task to Redis or memory"""
+    if STORAGE_MODE == "redis":
+        redis_client.setex(
+            f"task:{task_id}",
+            86400,  # 24 hours TTL
+            json.dumps(task_data)
+        )
+    else:
+        tasks_memory[task_id] = task_data
+
+def get_task(task_id: str) -> dict:
+    """Get task from Redis or memory"""
+    if STORAGE_MODE == "redis":
+        data = redis_client.get(f"task:{task_id}")
+        return json.loads(data) if data else None
+    else:
+        return tasks_memory.get(task_id)
+
+def update_task(task_id: str, updates: dict):
+    """Update task in Redis or memory"""
+    task = get_task(task_id)
+    if task:
+        task.update(updates)
+        save_task(task_id, task)
+
+def list_tasks() -> list:
+    """List all tasks from Redis or memory"""
+    if STORAGE_MODE == "redis":
+        keys = redis_client.keys("task:*")
+        tasks = []
+        for key in keys[-100:]:  # Last 100 tasks
+            data = redis_client.get(key)
+            if data:
+                tasks.append(json.loads(data))
+        return tasks
+    else:
+        return list(tasks_memory.values())[-100:]
 
 # Конфигурация
 UPLOAD_DIR = "/app/uploads"
@@ -21,6 +87,18 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Log storage mode on startup
+logger.info(f"=" * 60)
+logger.info(f"Video Processor API starting...")
+logger.info(f"Storage mode: {STORAGE_MODE}")
+if STORAGE_MODE == "redis":
+    logger.info(f"Redis: {REDIS_HOST}:{REDIS_PORT} (db={REDIS_DB})")
+    logger.info(f"Multi-worker support: ENABLED")
+else:
+    logger.info(f"Redis: Not available")
+    logger.info(f"Multi-worker support: DISABLED (use --workers 1)")
+logger.info(f"=" * 60)
 
 # Очистка старых файлов (старше 2 часов)
 def cleanup_old_files():
@@ -45,6 +123,8 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "video-processor-api",
+        "storage_mode": STORAGE_MODE,
+        "redis_available": STORAGE_MODE == "redis",
         "timestamp": datetime.now().isoformat()
     })
 
@@ -657,8 +737,7 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
     if subtitles is None:
         subtitles = []
     try:
-        tasks[task_id]['status'] = 'processing'
-        tasks[task_id]['progress'] = 0
+        update_task(task_id, {'status': 'processing', 'progress': 0})
 
         # Скачиваем видео
         input_filename = f"{uuid.uuid4()}.mp4"
@@ -671,7 +750,7 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
 
-        tasks[task_id]['progress'] = 30
+        update_task(task_id, {'progress': 30})
 
         # Создаём выходной файл
         output_filename = f"shorts_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id[:8]}.mp4"
@@ -762,7 +841,7 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
                         f":enable='between(t\\,{sub_start}\\,{sub_end})'"
                     )
 
-        tasks[task_id]['progress'] = 40
+        update_task(task_id, {'progress': 40})
 
         # FFmpeg обработка
         logger.info(f"Task {task_id}: Processing video with FFmpeg")
@@ -794,7 +873,7 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
             raise Exception(f"FFmpeg error: {result.stderr}")
 
         os.chmod(output_path, 0o644)
-        tasks[task_id]['progress'] = 90
+        update_task(task_id, {'progress': 90})
 
         # Удаляем входной файл
         if os.path.exists(input_path):
@@ -804,7 +883,7 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
         download_path = f"/download/{output_filename}"
 
         # Обновляем задачу
-        tasks[task_id].update({
+        update_task(task_id, {
             'status': 'completed',
             'progress': 100,
             'filename': output_filename,
@@ -818,7 +897,7 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
 
     except Exception as e:
         logger.error(f"Task {task_id}: Error - {e}")
-        tasks[task_id].update({
+        update_task(task_id, {
             'status': 'failed',
             'error': str(e),
             'failed_at': datetime.now().isoformat()
@@ -849,7 +928,7 @@ def process_to_shorts_async():
 
         # Создаём задачу
         task_id = str(uuid.uuid4())
-        tasks[task_id] = {
+        task_data = {
             'task_id': task_id,
             'status': 'queued',
             'progress': 0,
@@ -863,6 +942,7 @@ def process_to_shorts_async():
             'subtitle_config': subtitle_config,
             'created_at': datetime.now().isoformat()
         }
+        save_task(task_id, task_data)
 
         # Запускаем фоновую обработку
         thread = threading.Thread(
@@ -890,13 +970,13 @@ def process_to_shorts_async():
 def get_task_status(task_id):
     """Получить статус задачи"""
     try:
-        if task_id not in tasks:
+        task = get_task(task_id)
+
+        if not task:
             return jsonify({
                 "success": False,
                 "error": "Task not found"
             }), 404
-
-        task = tasks[task_id]
 
         response = {
             "success": True,
@@ -927,15 +1007,15 @@ def get_task_status(task_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/tasks', methods=['GET'])
-def list_tasks():
+def list_all_tasks():
     """Получить список всех задач"""
     try:
-        # Показываем только последние 100 задач
-        recent_tasks = list(tasks.values())[-100:]
+        recent_tasks = list_tasks()
         return jsonify({
             "success": True,
-            "total": len(tasks),
-            "tasks": recent_tasks
+            "total": len(recent_tasks),
+            "tasks": recent_tasks,
+            "storage_mode": STORAGE_MODE
         })
     except Exception as e:
         logger.error(f"List tasks error: {e}")

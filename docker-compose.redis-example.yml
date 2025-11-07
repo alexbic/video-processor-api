@@ -1,0 +1,48 @@
+# Example: Add these sections to your main docker-compose.yml
+
+services:
+  # Add Redis service
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    expose:
+      - "6379"
+    volumes:
+      - /opt/n8n-docker/volumes/redis_storage:/data
+    networks:
+      - n8n_net
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Update video-processor service
+  video-processor:
+    image: alexbic/video-processor-api:latest
+    container_name: video-processor
+    expose:
+      - "5001"
+    networks:
+      - n8n_net
+    volumes:
+      - /opt/n8n-docker/volumes/video_processor/uploads:/app/uploads
+      - /opt/n8n-docker/volumes/video_processor/outputs:/app/outputs
+    restart: unless-stopped
+    environment:
+      # Redis configuration (enable multi-worker mode)
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      WORKERS: 2  # Can use 2+ workers with Redis
+    depends_on:
+      redis:
+        condition: service_healthy
+
+# Notes:
+# 1. Redis uses append-only file (AOF) for persistence
+# 2. maxmemory=256mb with LRU eviction (old tasks auto-deleted)
+# 3. Tasks have 24h TTL in Redis
+# 4. If Redis is unavailable, video-processor falls back to single-worker mode

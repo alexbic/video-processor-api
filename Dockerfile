@@ -24,5 +24,13 @@ RUN mkdir -p /app/uploads /app/outputs && \
 # Открытие порта
 EXPOSE 5001
 
+# Environment variables (can be overridden in docker-compose)
+ENV WORKERS=1 \
+    REDIS_HOST=redis \
+    REDIS_PORT=6379 \
+    REDIS_DB=0
+
 # Запуск приложения через gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--timeout", "600", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
+# WORKERS=1 by default (safe without Redis)
+# Set WORKERS=2+ and configure REDIS_HOST for multi-worker mode
+CMD gunicorn --bind 0.0.0.0:5001 --workers ${WORKERS} --timeout 600 --access-logfile - --error-logfile - app:app

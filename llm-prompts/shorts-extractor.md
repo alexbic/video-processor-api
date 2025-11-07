@@ -38,7 +38,12 @@ HARD EXCLUSIONS:
 - Use natural phrase boundaries (commas, pauses, sentence breaks).
 - IMPORTANT: timestamps must be RELATIVE to clip start (0-based).
 
-OUTPUT — RETURN ONLY VALID JSON (no markdown, no comments). Order clips by predicted performance (best first):
+⚠️ OUTPUT FORMAT - CRITICAL:
+- Return PURE JSON ONLY (start with { and end with })
+- NO ```json markdown blocks
+- NO explanatory text before or after
+- NO comments inside JSON
+Order clips by predicted performance (best first):
 {
   "source_video_url": "{{ $json.source_video_url }}",
   "shorts": [
@@ -94,7 +99,23 @@ return items.map(item => {
 });
 ```
 
-### Code Node 2: Process LLM response
+### Code Node 2: Extract JSON from LLM (если вернул markdown)
+
+```javascript
+// LLM иногда возвращает JSON в markdown блоке ```json...```
+// Этот node извлекает чистый JSON
+let output = $json.output || JSON.stringify($json);
+
+// Убираем markdown блоки
+output = output.replace(/```json\n?/g, '').replace(/```\n?$/g, '').trim();
+
+// Парсим JSON
+const parsed = JSON.parse(output);
+
+return [{json: parsed}];
+```
+
+### Code Node 3: Process LLM response
 
 ```javascript
 const response = $json;

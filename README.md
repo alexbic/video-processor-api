@@ -17,10 +17,25 @@ REST API для обработки видео с FFmpeg. Создание вер
 
 ## Installation
 
+### Single Worker (No Redis)
+
 ```bash
 docker pull alexbic/video-processor-api:latest
 docker run -d -p 5001:5001 --name video-processor alexbic/video-processor-api:latest
 ```
+
+### Multi-Worker with Redis (Recommended for Production)
+
+See [docker-compose.redis-example.yml](docker-compose.redis-example.yml) for full configuration.
+
+```bash
+# Add redis service and update video-processor in your docker-compose.yml
+docker-compose up -d redis video-processor
+```
+
+The API automatically detects Redis availability:
+- **With Redis**: Multi-worker mode enabled (2+ workers)
+- **Without Redis**: Single-worker mode (fallback)
 
 ## API Reference
 
@@ -34,7 +49,10 @@ curl http://localhost:5001/health
 ```json
 {
   "status": "healthy",
-  "service": "video-processor-api"
+  "service": "video-processor-api",
+  "storage_mode": "redis",
+  "redis_available": true,
+  "timestamp": "2025-01-06T18:40:00.000Z"
 }
 ```
 
