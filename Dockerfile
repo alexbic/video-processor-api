@@ -1,8 +1,17 @@
 FROM python:3.11-slim
 
-# Установка FFmpeg и необходимых зависимостей
+# Установка FFmpeg, шрифтов и необходимых зависимостей
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    fontconfig \
+    fonts-dejavu-core \
+    fonts-liberation \
+    fonts-liberation2 \
+    fonts-noto-core \
+    fonts-noto-ui-core \
+    fonts-roboto \
+    fonts-open-sans \
+    && fc-cache -fv \
     && rm -rf /var/lib/apt/lists/*
 
 # Создание рабочей директории
@@ -17,9 +26,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование приложения
 COPY app.py .
 
-# Создание директорий для загрузок и выходных файлов
-RUN mkdir -p /app/uploads /app/outputs && \
-    chmod 755 /app/uploads /app/outputs
+# Создание директорий для загрузок, выходных файлов и кастомных шрифтов
+RUN mkdir -p /app/uploads /app/outputs /app/fonts/custom && \
+    chmod 755 /app/uploads /app/outputs /app/fonts /app/fonts/custom
 
 # Открытие порта
 EXPOSE 5001

@@ -30,6 +30,7 @@ services:
     volumes:
       - /opt/n8n-docker/volumes/video_processor/uploads:/app/uploads
       - /opt/n8n-docker/volumes/video_processor/outputs:/app/outputs
+      - /opt/n8n-docker/volumes/video_processor/fonts:/app/fonts/custom  # Custom fonts directory
     restart: unless-stopped
     environment:
       # Redis configuration (enable multi-worker mode)
@@ -46,3 +47,5 @@ services:
 # 2. maxmemory=256mb with LRU eviction (old tasks auto-deleted)
 # 3. Tasks have 24h TTL in Redis
 # 4. If Redis is unavailable, video-processor falls back to single-worker mode
+# 5. Custom fonts: Place .ttf/.otf files in /opt/n8n-docker/volumes/video_processor/fonts/
+#    They will be available inside container at /app/fonts/custom/

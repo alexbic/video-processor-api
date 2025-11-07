@@ -128,6 +128,62 @@ def health_check():
         "timestamp": datetime.now().isoformat()
     })
 
+@app.route('/fonts', methods=['GET'])
+def list_fonts():
+    """
+    Получить список доступных шрифтов
+    Возвращает системные шрифты + кастомные шрифты из /app/fonts/custom
+    """
+    try:
+        fonts = {
+            "system_fonts": [],
+            "custom_fonts": []
+        }
+
+        # Системные шрифты (встроенные в контейнер)
+        system_fonts_list = [
+            {"name": "DejaVu Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"},
+            {"name": "DejaVu Sans Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"},
+            {"name": "DejaVu Serif", "family": "serif", "file": "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"},
+            {"name": "Liberation Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"},
+            {"name": "Liberation Sans Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"},
+            {"name": "Liberation Serif", "family": "serif", "file": "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"},
+            {"name": "Liberation Mono", "family": "monospace", "file": "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf"},
+            {"name": "Noto Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"},
+            {"name": "Roboto", "family": "sans-serif", "file": "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf"},
+            {"name": "Roboto Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf"},
+            {"name": "Open Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf"},
+            {"name": "Open Sans Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/open-sans/OpenSans-Bold.ttf"}
+        ]
+
+        # Проверяем какие системные шрифты реально существуют
+        for font in system_fonts_list:
+            if os.path.exists(font["file"]):
+                fonts["system_fonts"].append(font)
+
+        # Кастомные шрифты из /app/fonts/custom
+        custom_fonts_dir = "/app/fonts/custom"
+        if os.path.exists(custom_fonts_dir):
+            for filename in os.listdir(custom_fonts_dir):
+                if filename.lower().endswith(('.ttf', '.otf')):
+                    font_path = os.path.join(custom_fonts_dir, filename)
+                    font_name = os.path.splitext(filename)[0].replace('-', ' ').replace('_', ' ')
+                    fonts["custom_fonts"].append({
+                        "name": font_name,
+                        "family": "custom",
+                        "file": font_path
+                    })
+
+        return jsonify({
+            "status": "success",
+            "total_fonts": len(fonts["system_fonts"]) + len(fonts["custom_fonts"]),
+            "fonts": fonts
+        })
+
+    except Exception as e:
+        logger.error(f"Error listing fonts: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/extract_audio', methods=['POST'])
 def extract_audio():
     """Извлечь аудио из видео с опциональным разбиением на чанки для Whisper API"""
