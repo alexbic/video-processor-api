@@ -793,6 +793,31 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
             title_fade_in = title_config.get('fade_in', 0.5)
             title_fade_out = title_config.get('fade_out', 0.5)
 
+            # Автоматический перенос текста заголовка если он длинный
+            # Для fontsize 60: ~14 символов на строку
+            max_chars_per_line_title = int(950 / (title_fontsize * 0.55))
+            if len(title_text) > max_chars_per_line_title:
+                words = title_text.split(' ')
+                lines = []
+                current_line = []
+                current_length = 0
+
+                for word in words:
+                    word_len = len(word) + 1  # +1 для пробела
+                    if current_length + word_len > max_chars_per_line_title and current_line:
+                        lines.append(' '.join(current_line))
+                        current_line = [word]
+                        current_length = word_len
+                    else:
+                        current_line.append(word)
+                        current_length += word_len
+
+                if current_line:
+                    lines.append(' '.join(current_line))
+
+                # Используем \N для переноса строки в FFmpeg drawtext
+                title_text = '\\N'.join(lines[:2])  # Максимум 2 строки
+
             title_escaped = title_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
 
             title_end = title_start + title_duration
@@ -827,8 +852,8 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
 
                 if sub_text and sub_start is not None and sub_end is not None:
                     # Автоматический перенос текста если он длинный
-                    # Для fontsize 64: ~15 символов на строку, для 48: ~20 символов
-                    max_chars_per_line = int(1080 / (subtitle_fontsize * 0.6))  # Примерный расчёт
+                    # Для fontsize 64: ~12 символов на строку, для 48: ~16 символов (уменьшен для надёжности)
+                    max_chars_per_line = int(950 / (subtitle_fontsize * 0.55))  # Более консервативный расчёт
                     if len(sub_text) > max_chars_per_line:
                         words = sub_text.split(' ')
                         lines = []
@@ -848,9 +873,10 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
                         if current_line:
                             lines.append(' '.join(current_line))
 
-                        sub_text = '\\n'.join(lines[:2])  # Максимум 2 строки
+                        # Используем \N для переноса строки в FFmpeg drawtext
+                        sub_text = '\\N'.join(lines[:2])  # Максимум 2 строки, \N это перенос в FFmpeg
 
-                    # Экранируем текст
+                    # Экранируем текст (сначала эск экранируем, ПОТОМ добавляем \N для переноса)
                     sub_escaped = sub_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
 
                     # Добавляем drawtext с таймингом для этого сегмента
