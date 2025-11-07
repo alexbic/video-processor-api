@@ -815,10 +815,11 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
                 if current_line:
                     lines.append(' '.join(current_line))
 
-                # Используем \N для переноса строки в FFmpeg drawtext
-                title_text = '\\N'.join(lines[:2])  # Максимум 2 строки
+                # FFmpeg поддерживает \n в тексте напрямую
+                title_text = '\n'.join(lines[:2])  # Максимум 2 строки
 
-            title_escaped = title_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+            # Экранируем спецсимволы, \n экранируем как \\n для expansion
+            title_escaped = title_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
 
             title_end = title_start + title_duration
             fade_in_end = title_start + title_fade_in
@@ -826,6 +827,7 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
 
             video_filter += (
                 f",drawtext=text='{title_escaped}'"
+                f":expansion=normal"
                 f":fontsize={title_fontsize}"
                 f":fontcolor={title_fontcolor}"
                 f":bordercolor={title_bordercolor}"
@@ -873,15 +875,16 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
                         if current_line:
                             lines.append(' '.join(current_line))
 
-                        # Используем \N для переноса строки в FFmpeg drawtext
-                        sub_text = '\\N'.join(lines[:2])  # Максимум 2 строки, \N это перенос в FFmpeg
+                        # FFmpeg поддерживает \n в тексте напрямую
+                        sub_text = '\n'.join(lines[:2])  # Максимум 2 строки
 
-                    # Экранируем текст (сначала эск экранируем, ПОТОМ добавляем \N для переноса)
-                    sub_escaped = sub_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+                    # Экранируем текст, \n экранируем как \\n для expansion
+                    sub_escaped = sub_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
 
                     # Добавляем drawtext с таймингом для этого сегмента
                     video_filter += (
                         f",drawtext=text='{sub_escaped}'"
+                        f":expansion=normal"
                         f":fontsize={subtitle_fontsize}"
                         f":fontcolor={subtitle_fontcolor}"
                         f":bordercolor={subtitle_bordercolor}"
