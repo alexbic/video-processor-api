@@ -828,6 +828,7 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
             video_filter += (
                 f",drawtext=text='{title_escaped}'"
                 f":expansion=normal"
+                f":text_align=center"
                 f":fontsize={title_fontsize}"
                 f":fontcolor={title_fontcolor}"
                 f":bordercolor={title_bordercolor}"
@@ -885,6 +886,7 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
                     video_filter += (
                         f",drawtext=text='{sub_escaped}'"
                         f":expansion=normal"
+                        f":text_align=center"
                         f":fontsize={subtitle_fontsize}"
                         f":fontcolor={subtitle_fontcolor}"
                         f":bordercolor={subtitle_bordercolor}"
