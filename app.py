@@ -839,6 +839,8 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
         # Добавляем текстовые оверлеи с настройками если указаны
         if title_text:
             # Настройки заголовка (title) - появляется в начале с fade эффектом
+            title_fontfile = title_config.get('fontfile')
+            title_font = title_config.get('font')
             title_fontsize = title_config.get('fontsize', 60)
             title_fontcolor = title_config.get('fontcolor', 'white')
             title_bordercolor = title_config.get('bordercolor', 'black')
@@ -881,23 +883,39 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
             fade_in_end = title_start + title_fade_in
             fade_out_start = title_end - title_fade_out
 
-            video_filter += (
-                f",drawtext=text='{title_escaped}'"
-                f":expansion=normal"
-                f":text_align=center"
-                f":fontsize={title_fontsize}"
-                f":fontcolor={title_fontcolor}"
-                f":bordercolor={title_bordercolor}"
-                f":borderw={title_borderw}"
-                f":x=(w-text_w)/2"
-                f":y={title_y}"
-                f":enable='between(t\\,{title_start}\\,{title_end})'"
-                f":alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
-            )
+            # Формируем drawtext фильтр
+            drawtext_params = [
+                f"text='{title_escaped}'",
+                "expansion=normal",
+                "text_align=center"
+            ]
+
+            # Добавляем font или fontfile (fontfile имеет приоритет)
+            if title_fontfile:
+                fontfile_escaped = title_fontfile.replace(':', '\\:').replace("'", "\\'")
+                drawtext_params.append(f"fontfile='{fontfile_escaped}'")
+            elif title_font:
+                font_escaped = title_font.replace(':', '\\:').replace("'", "\\'")
+                drawtext_params.append(f"font='{font_escaped}'")
+
+            drawtext_params.extend([
+                f"fontsize={title_fontsize}",
+                f"fontcolor={title_fontcolor}",
+                f"bordercolor={title_bordercolor}",
+                f"borderw={title_borderw}",
+                f"x=(w-text_w)/2",
+                f"y={title_y}",
+                f"enable='between(t\\,{title_start}\\,{title_end})'",
+                f"alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
+            ])
+
+            video_filter += f",drawtext={':'.join(drawtext_params)}"
 
         # Динамические субтитры - каждый сегмент со своими таймкодами
         if subtitles:
             # Настройки субтитров (subtitle)
+            subtitle_fontfile = subtitle_config.get('fontfile')
+            subtitle_font = subtitle_config.get('font')
             subtitle_fontsize = subtitle_config.get('fontsize', 48)
             subtitle_fontcolor = subtitle_config.get('fontcolor', '#90EE90')  # Нежно-зелёный по умолчанию
             subtitle_bordercolor = subtitle_config.get('bordercolor', 'white')
@@ -938,19 +956,32 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
                     # Экранируем текст, \n экранируем как \\n для expansion
                     sub_escaped = sub_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
 
-                    # Добавляем drawtext с таймингом для этого сегмента
-                    video_filter += (
-                        f",drawtext=text='{sub_escaped}'"
-                        f":expansion=normal"
-                        f":text_align=center"
-                        f":fontsize={subtitle_fontsize}"
-                        f":fontcolor={subtitle_fontcolor}"
-                        f":bordercolor={subtitle_bordercolor}"
-                        f":borderw={subtitle_borderw}"
-                        f":x=(w-text_w)/2"
-                        f":y={subtitle_y}"
-                        f":enable='between(t\\,{sub_start}\\,{sub_end})'"
-                    )
+                    # Формируем drawtext фильтр для субтитров
+                    sub_drawtext_params = [
+                        f"text='{sub_escaped}'",
+                        "expansion=normal",
+                        "text_align=center"
+                    ]
+
+                    # Добавляем font или fontfile (fontfile имеет приоритет)
+                    if subtitle_fontfile:
+                        subfontfile_escaped = subtitle_fontfile.replace(':', '\\:').replace("'", "\\'")
+                        sub_drawtext_params.append(f"fontfile='{subfontfile_escaped}'")
+                    elif subtitle_font:
+                        subfont_escaped = subtitle_font.replace(':', '\\:').replace("'", "\\'")
+                        sub_drawtext_params.append(f"font='{subfont_escaped}'")
+
+                    sub_drawtext_params.extend([
+                        f"fontsize={subtitle_fontsize}",
+                        f"fontcolor={subtitle_fontcolor}",
+                        f"bordercolor={subtitle_bordercolor}",
+                        f"borderw={subtitle_borderw}",
+                        f"x=(w-text_w)/2",
+                        f"y={subtitle_y}",
+                        f"enable='between(t\\,{sub_start}\\,{sub_end})'"
+                    ])
+
+                    video_filter += f",drawtext={':'.join(sub_drawtext_params)}"
 
         update_task(task_id, {'progress': 40})
 
