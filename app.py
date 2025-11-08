@@ -188,9 +188,196 @@ class ToShortsOperation(VideoOperation):
 
     def execute(self, input_path: str, output_path: str, params: dict) -> tuple[bool, str]:
         """Конвертация в Shorts формат (1080x1920)"""
-        # Используем существующую логику из generate_shorts_sync
-        # Здесь будет вызов внутренней функции обработки
-        return True, "To shorts operation completed"
+        # Применяем значения по умолчанию
+        crop_mode = params.get('crop_mode', 'center')
+        title_text = params.get('title_text', '')
+
+        # Конфигурации с оптимальными fallback для Shorts
+        title_config_raw = params.get('title_config', {})
+        title_config = {
+            'fontfile': title_config_raw.get('fontfile'),
+            'font': title_config_raw.get('font'),
+            'fontsize': title_config_raw.get('fontsize', 70),
+            'fontcolor': title_config_raw.get('fontcolor', 'white'),
+            'bordercolor': title_config_raw.get('bordercolor', 'black'),
+            'borderw': title_config_raw.get('borderw', 3),
+            'text_align': title_config_raw.get('text_align', 'center'),
+            'y': title_config_raw.get('y', 150),
+            'start_time': title_config_raw.get('start_time', 0.5),
+            'duration': title_config_raw.get('duration', 4),
+            'fade_in': title_config_raw.get('fade_in', 0.5),
+            'fade_out': title_config_raw.get('fade_out', 0.5)
+        }
+
+        subtitles = params.get('subtitles', [])
+        subtitle_config_raw = params.get('subtitle_config', {})
+        subtitle_config = {
+            'fontfile': subtitle_config_raw.get('fontfile'),
+            'font': subtitle_config_raw.get('font'),
+            'fontsize': subtitle_config_raw.get('fontsize', 60),
+            'fontcolor': subtitle_config_raw.get('fontcolor', 'white'),
+            'bordercolor': subtitle_config_raw.get('bordercolor', 'black'),
+            'borderw': subtitle_config_raw.get('borderw', 3),
+            'text_align': subtitle_config_raw.get('text_align', 'center'),
+            'y': subtitle_config_raw.get('y', 'h-200')
+        }
+
+        # Определяем фильтр обрезки
+        if crop_mode == 'letterbox':
+            video_filter = (
+                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20[bg];"
+                "[0:v]scale=-1:1080:force_original_aspect_ratio=decrease[fg];"
+                "[bg][fg]overlay=(W-w)/2:(H-h)/2"
+            )
+        elif crop_mode == 'top':
+            video_filter = "crop=ih*9/16:ih:0:0,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+        elif crop_mode == 'bottom':
+            video_filter = "crop=ih*9/16:ih:0:ih-oh,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+        else:  # center
+            video_filter = "crop=ih*9/16:ih,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+
+        # Добавляем текстовые оверлеи если указаны
+        if title_text:
+            # Автоматический перенос текста заголовка
+            max_chars_per_line_title = int(950 / (title_config['fontsize'] * 0.55))
+            if len(title_text) > max_chars_per_line_title:
+                words = title_text.split(' ')
+                lines = []
+                current_line = []
+                current_length = 0
+
+                for word in words:
+                    word_len = len(word) + 1
+                    if current_length + word_len > max_chars_per_line_title and current_line:
+                        lines.append(' '.join(current_line))
+                        current_line = [word]
+                        current_length = word_len
+                    else:
+                        current_line.append(word)
+                        current_length += word_len
+
+                if current_line:
+                    lines.append(' '.join(current_line))
+
+                title_text = '\n'.join(lines[:2])
+
+            # Экранируем спецсимволы
+            title_escaped = title_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+
+            # Вычисляем тайминги для fade эффектов
+            title_start = title_config['start_time']
+            title_duration = title_config['duration']
+            title_fade_in = title_config['fade_in']
+            title_fade_out = title_config['fade_out']
+            title_end = title_start + title_duration
+            fade_in_end = title_start + title_fade_in
+            fade_out_start = title_end - title_fade_out
+
+            # Формируем drawtext фильтр
+            drawtext_params = [
+                f"text='{title_escaped}'",
+                "expansion=normal",
+                f"text_align={title_config['text_align']}"
+            ]
+
+            if title_config['fontfile']:
+                fontfile_escaped = title_config['fontfile'].replace(':', '\\:').replace("'", "\\'")
+                drawtext_params.append(f"fontfile='{fontfile_escaped}'")
+            elif title_config['font']:
+                font_escaped = title_config['font'].replace(':', '\\:').replace("'", "\\'")
+                drawtext_params.append(f"font='{font_escaped}'")
+
+            drawtext_params.extend([
+                f"fontsize={title_config['fontsize']}",
+                f"fontcolor={title_config['fontcolor']}",
+                f"bordercolor={title_config['bordercolor']}",
+                f"borderw={title_config['borderw']}",
+                f"x=(w-text_w)/2",
+                f"y={title_config['y']}",
+                f"enable='between(t\\,{title_start}\\,{title_end})'",
+                f"alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
+            ])
+
+            video_filter += f",drawtext={':'.join(drawtext_params)}"
+
+        # Динамические субтитры
+        if subtitles:
+            for subtitle in subtitles:
+                sub_text = subtitle.get('text', '')
+                sub_start = subtitle.get('start', 0)
+                sub_end = subtitle.get('end', 0)
+
+                if sub_text and sub_start is not None and sub_end is not None:
+                    # Автоматический перенос текста
+                    max_chars_per_line = int(950 / (subtitle_config['fontsize'] * 0.55))
+                    if len(sub_text) > max_chars_per_line:
+                        words = sub_text.split(' ')
+                        lines = []
+                        current_line = []
+                        current_length = 0
+
+                        for word in words:
+                            word_len = len(word) + 1
+                            if current_length + word_len > max_chars_per_line and current_line:
+                                lines.append(' '.join(current_line))
+                                current_line = [word]
+                                current_length = word_len
+                            else:
+                                current_line.append(word)
+                                current_length += word_len
+
+                        if current_line:
+                            lines.append(' '.join(current_line))
+
+                        sub_text = '\n'.join(lines[:2])
+
+                    sub_escaped = sub_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+
+                    sub_drawtext_params = [
+                        f"text='{sub_escaped}'",
+                        "expansion=normal",
+                        f"text_align={subtitle_config['text_align']}"
+                    ]
+
+                    if subtitle_config['fontfile']:
+                        subfontfile_escaped = subtitle_config['fontfile'].replace(':', '\\:').replace("'", "\\'")
+                        sub_drawtext_params.append(f"fontfile='{subfontfile_escaped}'")
+                    elif subtitle_config['font']:
+                        subfont_escaped = subtitle_config['font'].replace(':', '\\:').replace("'", "\\'")
+                        sub_drawtext_params.append(f"font='{subfont_escaped}'")
+
+                    sub_drawtext_params.extend([
+                        f"fontsize={subtitle_config['fontsize']}",
+                        f"fontcolor={subtitle_config['fontcolor']}",
+                        f"bordercolor={subtitle_config['bordercolor']}",
+                        f"borderw={subtitle_config['borderw']}",
+                        f"x=(w-text_w)/2",
+                        f"y={subtitle_config['y']}",
+                        f"enable='between(t\\,{sub_start}\\,{sub_end})'"
+                    ])
+
+                    video_filter += f",drawtext={':'.join(sub_drawtext_params)}"
+
+        # Выполняем FFmpeg команду
+        cmd = [
+            'ffmpeg',
+            '-i', input_path,
+            '-filter_complex' if crop_mode == 'letterbox' else '-vf', video_filter,
+            '-c:v', 'libx264',
+            '-preset', 'medium',
+            '-crf', '23',
+            '-c:a', 'aac',
+            '-b:a', '128k',
+            '-movflags', '+faststart',
+            '-y',
+            output_path
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return False, f"FFmpeg error: {result.stderr}"
+
+        return True, "Converted to Shorts format (1080x1920)"
 
 
 class ExtractAudioOperation(VideoOperation):
