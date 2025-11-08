@@ -657,50 +657,135 @@ def process_to_shorts():
 
         # Добавляем текстовые оверлеи если указаны
         if title_text:
-            # Заголовок с анимацией fade in/out
-            title_escaped = title_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+            # Извлекаем font/fontfile параметры
+            title_fontfile = title_config.get('fontfile')
+            title_font = title_config.get('font')
+
+            # Автоматический перенос текста заголовка если он длинный
+            max_chars_per_line_title = int(950 / (title_fontsize * 0.55))
+            if len(title_text) > max_chars_per_line_title:
+                words = title_text.split(' ')
+                lines = []
+                current_line = []
+                current_length = 0
+
+                for word in words:
+                    word_len = len(word) + 1  # +1 для пробела
+                    if current_length + word_len > max_chars_per_line_title and current_line:
+                        lines.append(' '.join(current_line))
+                        current_line = [word]
+                        current_length = word_len
+                    else:
+                        current_line.append(word)
+                        current_length += word_len
+
+                if current_line:
+                    lines.append(' '.join(current_line))
+
+                # FFmpeg поддерживает \n в тексте напрямую
+                title_text = '\n'.join(lines[:2])  # Максимум 2 строки
+
+            # Экранируем спецсимволы
+            title_escaped = title_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
 
             # Вычисляем тайминги для fade эффектов
             title_end = title_start + title_duration
             fade_in_end = title_start + title_fade_in
             fade_out_start = title_end - title_fade_out
 
-            # enable='between(t,start,end)' - показывать только в указанное время
-            # alpha='...' - прозрачность для fade эффектов
-            video_filter += (
-                f",drawtext=text='{title_escaped}'"
-                f":fontsize={title_fontsize}"
-                f":fontcolor={title_fontcolor}"
-                f":bordercolor={title_bordercolor}"
-                f":borderw={title_borderw}"
-                f":x=(w-text_w)/2"
-                f":y={title_y}"
-                f":enable='between(t\\,{title_start}\\,{title_end})'"
-                f":alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
-            )
+            # Формируем drawtext фильтр
+            drawtext_params = [
+                f"text='{title_escaped}'",
+                "expansion=normal",
+                "text_align=center"
+            ]
+
+            # Добавляем font или fontfile (fontfile имеет приоритет)
+            if title_fontfile:
+                fontfile_escaped = title_fontfile.replace(':', '\\:').replace("'", "\\'")
+                drawtext_params.append(f"fontfile='{fontfile_escaped}'")
+            elif title_font:
+                font_escaped = title_font.replace(':', '\\:').replace("'", "\\'")
+                drawtext_params.append(f"font='{font_escaped}'")
+
+            drawtext_params.extend([
+                f"fontsize={title_fontsize}",
+                f"fontcolor={title_fontcolor}",
+                f"bordercolor={title_bordercolor}",
+                f"borderw={title_borderw}",
+                f"x=(w-text_w)/2",
+                f"y={title_y}",
+                f"enable='between(t\\,{title_start}\\,{title_end})'",
+                f"alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
+            ])
+
+            video_filter += f",drawtext={':'.join(drawtext_params)}"
 
         # Динамические субтитры - каждый сегмент со своими таймкодами
         if subtitles:
+            # Извлекаем font/fontfile параметры для субтитров
+            subtitle_fontfile = subtitle_config.get('fontfile')
+            subtitle_font = subtitle_config.get('font')
+
             for subtitle in subtitles:
                 sub_text = subtitle.get('text', '')
                 sub_start = subtitle.get('start', 0)
                 sub_end = subtitle.get('end', 0)
 
                 if sub_text and sub_start is not None and sub_end is not None:
-                    # Экранируем текст
-                    sub_escaped = sub_text.replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+                    # Автоматический перенос текста если он длинный
+                    max_chars_per_line = int(950 / (subtitle_fontsize * 0.55))
+                    if len(sub_text) > max_chars_per_line:
+                        words = sub_text.split(' ')
+                        lines = []
+                        current_line = []
+                        current_length = 0
 
-                    # Добавляем drawtext с таймингом для этого сегмента
-                    video_filter += (
-                        f",drawtext=text='{sub_escaped}'"
-                        f":fontsize={subtitle_fontsize}"
-                        f":fontcolor={subtitle_fontcolor}"
-                        f":bordercolor={subtitle_bordercolor}"
-                        f":borderw={subtitle_borderw}"
-                        f":x=(w-text_w)/2"
-                        f":y={subtitle_y}"
-                        f":enable='between(t\\,{sub_start}\\,{sub_end})'"
-                    )
+                        for word in words:
+                            word_len = len(word) + 1  # +1 для пробела
+                            if current_length + word_len > max_chars_per_line and current_line:
+                                lines.append(' '.join(current_line))
+                                current_line = [word]
+                                current_length = word_len
+                            else:
+                                current_line.append(word)
+                                current_length += word_len
+
+                        if current_line:
+                            lines.append(' '.join(current_line))
+
+                        # FFmpeg поддерживает \n в тексте напрямую
+                        sub_text = '\n'.join(lines[:2])  # Максимум 2 строки
+
+                    # Экранируем текст
+                    sub_escaped = sub_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+
+                    # Формируем drawtext фильтр для субтитров
+                    sub_drawtext_params = [
+                        f"text='{sub_escaped}'",
+                        "expansion=normal",
+                        "text_align=center"
+                    ]
+
+                    # Добавляем font или fontfile (fontfile имеет приоритет)
+                    if subtitle_fontfile:
+                        subfontfile_escaped = subtitle_fontfile.replace(':', '\\:').replace("'", "\\'")
+                        sub_drawtext_params.append(f"fontfile='{subfontfile_escaped}'")
+                    elif subtitle_font:
+                        subfont_escaped = subtitle_font.replace(':', '\\:').replace("'", "\\'")
+                        sub_drawtext_params.append(f"font='{subfont_escaped}'")
+
+                    sub_drawtext_params.extend([
+                        f"fontsize={subtitle_fontsize}",
+                        f"fontcolor={subtitle_fontcolor}",
+                        f"bordercolor={subtitle_bordercolor}",
+                        f"borderw={subtitle_borderw}",
+                        f"x=(w-text_w)/2",
+                        f"y={subtitle_y}",
+                        f"enable='between(t\\,{sub_start}\\,{sub_end})'"
+                    ])
+
+                    video_filter += f",drawtext={':'.join(sub_drawtext_params)}"
 
         # Комбинированная FFmpeg команда: нарезка + конвертация
         cmd = [
