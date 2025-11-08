@@ -571,9 +571,70 @@ def convert_to_shorts():
         logger.error(f"Convert to shorts error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
+def prepare_video_params(data):
+    """
+    Общая функция для извлечения и подготовки параметров видео обработки.
+    Используется как синхронной, так и асинхронной функциями.
+
+    Возвращает словарь с подготовленными параметрами:
+    - video_url, start_time, end_time, crop_mode
+    - title_text, title_config (с fallback значениями)
+    - subtitles, subtitle_config (с fallback значениями)
+    """
+    # Основные параметры
+    video_url = data.get('video_url')
+    start_time = data.get('start_time')
+    end_time = data.get('end_time')
+    crop_mode = data.get('crop_mode', 'center')
+
+    # Текстовые параметры
+    title_text = data.get('title_text', '')
+    subtitles = data.get('subtitles', [])
+
+    # Настройки заголовка (title) - оптимальные значения по умолчанию для Shorts (1080x1920)
+    title_config_raw = data.get('title_config', {})
+    title_config = {
+        'fontfile': title_config_raw.get('fontfile'),                    # Опционально: путь к файлу шрифта
+        'font': title_config_raw.get('font'),                            # Опционально: имя системного шрифта
+        'fontsize': title_config_raw.get('fontsize', 70),                # Крупный размер для заголовка
+        'fontcolor': title_config_raw.get('fontcolor', 'white'),         # Универсальный белый цвет
+        'bordercolor': title_config_raw.get('bordercolor', 'black'),     # Чёрная обводка для контраста
+        'borderw': title_config_raw.get('borderw', 3),                   # Достаточная обводка
+        'text_align': title_config_raw.get('text_align', 'center'),      # Выравнивание по центру
+        'y': title_config_raw.get('y', 150),                             # Отступ от верха
+        'start_time': title_config_raw.get('start_time', 0.5),           # Когда появляется
+        'duration': title_config_raw.get('duration', 4),                 # Как долго показывается
+        'fade_in': title_config_raw.get('fade_in', 0.5),                 # Длительность fade in
+        'fade_out': title_config_raw.get('fade_out', 0.5)                # Длительность fade out
+    }
+
+    # Настройки субтитров (subtitle) - оптимальные значения по умолчанию для Shorts (1080x1920)
+    subtitle_config_raw = data.get('subtitle_config', {})
+    subtitle_config = {
+        'fontfile': subtitle_config_raw.get('fontfile'),                 # Опционально: путь к файлу шрифта
+        'font': subtitle_config_raw.get('font'),                         # Опционально: имя системного шрифта
+        'fontsize': subtitle_config_raw.get('fontsize', 60),             # Крупный размер для читаемости
+        'fontcolor': subtitle_config_raw.get('fontcolor', 'white'),      # Белый цвет для читаемости
+        'bordercolor': subtitle_config_raw.get('bordercolor', 'black'),  # Чёрная обводка для контраста
+        'borderw': subtitle_config_raw.get('borderw', 3),                # Достаточная обводка
+        'text_align': subtitle_config_raw.get('text_align', 'center'),   # Выравнивание по центру
+        'y': subtitle_config_raw.get('y', 'h-200')                       # Отступ от низа
+    }
+
+    return {
+        'video_url': video_url,
+        'start_time': start_time,
+        'end_time': end_time,
+        'crop_mode': crop_mode,
+        'title_text': title_text,
+        'title_config': title_config,
+        'subtitles': subtitles,
+        'subtitle_config': subtitle_config
+    }
+
 @app.route('/process_to_shorts', methods=['POST'])
-def process_to_shorts():
-    """Комбинированный endpoint: нарезка + конвертация в Shorts за один запрос"""
+def generate_shorts_sync():
+    """Синхронная генерация Shorts: нарезка + конвертация за один запрос"""
     try:
         cleanup_old_files()
 
@@ -581,16 +642,25 @@ def process_to_shorts():
         if not data:
             return jsonify({"success": False, "error": "JSON data required"}), 400
 
-        video_url = data.get('video_url')
-        start_time = data.get('start_time')
-        end_time = data.get('end_time')
-        crop_mode = data.get('crop_mode', 'center')
+        # Подготавливаем параметры через общую функцию
+        params = prepare_video_params(data)
 
-        if not all([video_url, start_time is not None, end_time is not None]):
+        # Валидация обязательных параметров
+        if not all([params['video_url'], params['start_time'] is not None, params['end_time'] is not None]):
             return jsonify({
                 "success": False,
                 "error": "video_url, start_time, and end_time are required"
             }), 400
+
+        # Распаковываем параметры
+        video_url = params['video_url']
+        start_time = params['start_time']
+        end_time = params['end_time']
+        crop_mode = params['crop_mode']
+        title_text = params['title_text']
+        title_config = params['title_config']
+        subtitles = params['subtitles']
+        subtitle_config = params['subtitle_config']
 
         # Скачиваем видео
         input_filename = f"{uuid.uuid4()}.mp4"
@@ -614,33 +684,28 @@ def process_to_shorts():
             start_str = str(start_time)
             duration_str = None
 
-        # Получаем параметры для текстовых оверлеев
-        title_text = data.get('title_text', '')
-        # subtitles - массив объектов с полями: text, start, end
-        # Пример: [{"text": "Привет", "start": 0.5, "end": 2.0}, ...]
-        subtitles = data.get('subtitles', [])
+        # Извлекаем параметры из подготовленных конфигов
+        title_fontfile = title_config['fontfile']
+        title_font = title_config['font']
+        title_fontsize = title_config['fontsize']
+        title_fontcolor = title_config['fontcolor']
+        title_bordercolor = title_config['bordercolor']
+        title_borderw = title_config['borderw']
+        title_text_align = title_config['text_align']
+        title_y = title_config['y']
+        title_start = title_config['start_time']
+        title_duration = title_config['duration']
+        title_fade_in = title_config['fade_in']
+        title_fade_out = title_config['fade_out']
 
-        # Настройки заголовка (title) - появляется в начале с fade эффектом
-        # Оптимальные значения по умолчанию для Shorts (1080x1920)
-        title_config = data.get('title_config', {})
-        title_fontsize = title_config.get('fontsize', 70)           # Крупный размер для заголовка
-        title_fontcolor = title_config.get('fontcolor', 'white')    # Универсальный белый цвет
-        title_bordercolor = title_config.get('bordercolor', 'black')  # Чёрная обводка для контраста
-        title_borderw = title_config.get('borderw', 3)              # Достаточная обводка
-        title_y = title_config.get('y', 150)                        # Отступ от верха
-        title_start = title_config.get('start_time', 0.5)           # Когда появляется (секунды от начала клипа)
-        title_duration = title_config.get('duration', 4)            # Как долго показывается
-        title_fade_in = title_config.get('fade_in', 0.5)            # Длительность fade in
-        title_fade_out = title_config.get('fade_out', 0.5)          # Длительность fade out
-
-        # Настройки субтитров (subtitle) - появляются внизу экрана
-        # Оптимальные значения по умолчанию для Shorts (1080x1920)
-        subtitle_config = data.get('subtitle_config', {})
-        subtitle_fontsize = subtitle_config.get('fontsize', 60)     # Крупный размер для читаемости
-        subtitle_fontcolor = subtitle_config.get('fontcolor', 'white')  # Белый цвет для читаемости
-        subtitle_bordercolor = subtitle_config.get('bordercolor', 'black')  # Чёрная обводка для контраста
-        subtitle_borderw = subtitle_config.get('borderw', 3)        # Достаточная обводка
-        subtitle_y = subtitle_config.get('y', 'h-200')              # Отступ от низа
+        subtitle_fontfile = subtitle_config['fontfile']
+        subtitle_font = subtitle_config['font']
+        subtitle_fontsize = subtitle_config['fontsize']
+        subtitle_fontcolor = subtitle_config['fontcolor']
+        subtitle_bordercolor = subtitle_config['bordercolor']
+        subtitle_borderw = subtitle_config['borderw']
+        subtitle_text_align = subtitle_config['text_align']
+        subtitle_y = subtitle_config['y']
 
         # Определяем фильтр обрезки
         if crop_mode == 'letterbox':
@@ -659,10 +724,6 @@ def process_to_shorts():
 
         # Добавляем текстовые оверлеи если указаны
         if title_text:
-            # Извлекаем font/fontfile параметры
-            title_fontfile = title_config.get('fontfile')
-            title_font = title_config.get('font')
-
             # Автоматический перенос текста заголовка если он длинный
             max_chars_per_line_title = int(950 / (title_fontsize * 0.55))
             if len(title_text) > max_chars_per_line_title:
@@ -728,11 +789,6 @@ def process_to_shorts():
 
         # Динамические субтитры - каждый сегмент со своими таймкодами
         if subtitles:
-            # Извлекаем font/fontfile параметры для субтитров
-            subtitle_fontfile = subtitle_config.get('fontfile')
-            subtitle_font = subtitle_config.get('font')
-            subtitle_text_align = subtitle_config.get('text_align', 'center')
-
             for subtitle in subtitles:
                 sub_text = subtitle.get('text', '')
                 sub_start = subtitle.get('start', 0)
@@ -1143,23 +1199,18 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
         })
 
 @app.route('/process_to_shorts_async', methods=['POST'])
-def process_to_shorts_async():
-    """Асинхронная обработка: запускает задачу и сразу возвращает task_id"""
+def generate_shorts_async():
+    """Асинхронная генерация Shorts: запускает задачу и сразу возвращает task_id"""
     try:
         data = request.json
         if not data:
             return jsonify({"success": False, "error": "JSON data required"}), 400
 
-        video_url = data.get('video_url')
-        start_time = data.get('start_time')
-        end_time = data.get('end_time')
-        crop_mode = data.get('crop_mode', 'center')
-        title_text = data.get('title_text', '')
-        subtitles = data.get('subtitles', [])  # Массив сегментов с text, start, end
-        title_config = data.get('title_config', {})
-        subtitle_config = data.get('subtitle_config', {})
+        # Подготавливаем параметры через общую функцию
+        params = prepare_video_params(data)
 
-        if not all([video_url, start_time is not None, end_time is not None]):
+        # Валидация обязательных параметров
+        if not all([params['video_url'], params['start_time'] is not None, params['end_time'] is not None]):
             return jsonify({
                 "success": False,
                 "error": "video_url, start_time, and end_time are required"
@@ -1171,14 +1222,14 @@ def process_to_shorts_async():
             'task_id': task_id,
             'status': 'queued',
             'progress': 0,
-            'video_url': video_url,
-            'start_time': start_time,
-            'end_time': end_time,
-            'crop_mode': crop_mode,
-            'title_text': title_text,
-            'subtitles': subtitles,
-            'title_config': title_config,
-            'subtitle_config': subtitle_config,
+            'video_url': params['video_url'],
+            'start_time': params['start_time'],
+            'end_time': params['end_time'],
+            'crop_mode': params['crop_mode'],
+            'title_text': params['title_text'],
+            'subtitles': params['subtitles'],
+            'title_config': params['title_config'],
+            'subtitle_config': params['subtitle_config'],
             'created_at': datetime.now().isoformat()
         }
         save_task(task_id, task_data)
@@ -1186,7 +1237,8 @@ def process_to_shorts_async():
         # Запускаем фоновую обработку
         thread = threading.Thread(
             target=process_video_background,
-            args=(task_id, video_url, start_time, end_time, crop_mode, title_text, subtitles, title_config, subtitle_config)
+            args=(task_id, params['video_url'], params['start_time'], params['end_time'], params['crop_mode'],
+                  params['title_text'], params['subtitles'], params['title_config'], params['subtitle_config'])
         )
         thread.daemon = True
         thread.start()
@@ -1287,39 +1339,31 @@ def generate_shorts():
         # Извлекаем параметр async (по умолчанию false - синхронный режим)
         is_async = data.get('async', False)
 
-        # Проверяем обязательные параметры
-        video_url = data.get('video_url')
-        start_time = data.get('start_time')
-        end_time = data.get('end_time')
+        # Подготавливаем параметры через общую функцию
+        params = prepare_video_params(data)
 
-        if not all([video_url, start_time is not None, end_time is not None]):
+        # Валидация обязательных параметров
+        if not all([params['video_url'], params['start_time'] is not None, params['end_time'] is not None]):
             return jsonify({
                 "success": False,
                 "error": "video_url, start_time, and end_time are required"
             }), 400
 
         if is_async:
-            # Асинхронный режим - используем process_to_shorts_async логику
-            crop_mode = data.get('crop_mode', 'center')
-            title_text = data.get('title_text', '')
-            subtitles = data.get('subtitles', [])
-            title_config = data.get('title_config', {})
-            subtitle_config = data.get('subtitle_config', {})
-
-            # Создаём задачу
+            # Асинхронный режим - создаём задачу и запускаем фоновую обработку
             task_id = str(uuid.uuid4())
             task_data = {
                 'task_id': task_id,
                 'status': 'queued',
                 'progress': 0,
-                'video_url': video_url,
-                'start_time': start_time,
-                'end_time': end_time,
-                'crop_mode': crop_mode,
-                'title_text': title_text,
-                'subtitles': subtitles,
-                'title_config': title_config,
-                'subtitle_config': subtitle_config,
+                'video_url': params['video_url'],
+                'start_time': params['start_time'],
+                'end_time': params['end_time'],
+                'crop_mode': params['crop_mode'],
+                'title_text': params['title_text'],
+                'subtitles': params['subtitles'],
+                'title_config': params['title_config'],
+                'subtitle_config': params['subtitle_config'],
                 'created_at': datetime.now().isoformat()
             }
             save_task(task_id, task_data)
@@ -1327,7 +1371,8 @@ def generate_shorts():
             # Запускаем фоновую обработку
             thread = threading.Thread(
                 target=process_video_background,
-                args=(task_id, video_url, start_time, end_time, crop_mode, title_text, subtitles, title_config, subtitle_config)
+                args=(task_id, params['video_url'], params['start_time'], params['end_time'], params['crop_mode'],
+                      params['title_text'], params['subtitles'], params['title_config'], params['subtitle_config'])
             )
             thread.daemon = True
             thread.start()
@@ -1344,9 +1389,9 @@ def generate_shorts():
             }), 202
 
         else:
-            # Синхронный режим - вызываем process_to_shorts логику напрямую
-            # Копируем логику из process_to_shorts для совместимости
-            return process_to_shorts()
+            # Синхронный режим - вызываем generate_shorts_sync логику напрямую
+            # Копируем логику из generate_shorts_sync для совместимости
+            return generate_shorts_sync()
 
     except Exception as e:
         logger.error(f"Generate shorts error: {e}")
