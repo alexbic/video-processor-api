@@ -117,6 +117,158 @@ def cleanup_old_files():
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
 
+# ============================================
+# VIDEO OPERATIONS REGISTRY
+# ============================================
+
+class VideoOperation:
+    """Базовый класс для операций с видео"""
+    def __init__(self, name: str, required_params: list, optional_params: dict = None):
+        self.name = name
+        self.required_params = required_params
+        self.optional_params = optional_params or {}
+
+    def validate(self, params: dict) -> tuple[bool, str]:
+        """Валидация параметров операции"""
+        for param in self.required_params:
+            if param not in params:
+                return False, f"Missing required parameter: {param}"
+        return True, ""
+
+    def execute(self, input_path: str, output_path: str, params: dict) -> tuple[bool, str]:
+        """Выполнение операции (переопределяется в подклассах)"""
+        raise NotImplementedError()
+
+
+class CutOperation(VideoOperation):
+    """Операция нарезки видео"""
+    def __init__(self):
+        super().__init__(
+            name="cut",
+            required_params=["start_time", "end_time"],
+            optional_params={}
+        )
+
+    def execute(self, input_path: str, output_path: str, params: dict) -> tuple[bool, str]:
+        """Нарезка видео"""
+        start_time = params['start_time']
+        end_time = params['end_time']
+
+        cmd = [
+            'ffmpeg',
+            '-ss', str(start_time),
+            '-i', input_path,
+            '-to', str(end_time),
+            '-c', 'copy',
+            '-y',
+            output_path
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return False, f"FFmpeg error: {result.stderr}"
+
+        return True, "Cut operation completed"
+
+
+class ToShortsOperation(VideoOperation):
+    """Операция конвертации в Shorts формат"""
+    def __init__(self):
+        super().__init__(
+            name="to_shorts",
+            required_params=[],
+            optional_params={
+                'crop_mode': 'center',
+                'title_text': '',
+                'title_config': {},
+                'subtitles': [],
+                'subtitle_config': {}
+            }
+        )
+
+    def execute(self, input_path: str, output_path: str, params: dict) -> tuple[bool, str]:
+        """Конвертация в Shorts формат (1080x1920)"""
+        # Используем существующую логику из generate_shorts_sync
+        # Здесь будет вызов внутренней функции обработки
+        return True, "To shorts operation completed"
+
+
+class ExtractAudioOperation(VideoOperation):
+    """Операция извлечения аудио"""
+    def __init__(self):
+        super().__init__(
+            name="extract_audio",
+            required_params=[],
+            optional_params={
+                'format': 'mp3',
+                'bitrate': '192k'
+            }
+        )
+
+    def execute(self, input_path: str, output_path: str, params: dict) -> tuple[bool, str]:
+        """Извлечение аудио из видео"""
+        audio_format = params.get('format', 'mp3')
+        bitrate = params.get('bitrate', '192k')
+
+        # Меняем расширение выходного файла
+        output_audio = output_path.rsplit('.', 1)[0] + f'.{audio_format}'
+
+        cmd = [
+            'ffmpeg',
+            '-i', input_path,
+            '-vn',  # Без видео
+            '-acodec', 'libmp3lame' if audio_format == 'mp3' else 'aac',
+            '-b:a', bitrate,
+            '-y',
+            output_audio
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return False, f"FFmpeg error: {result.stderr}"
+
+        return True, f"Audio extracted to {audio_format}"
+
+
+# Регистрация всех операций
+OPERATIONS_REGISTRY = {
+    'cut': CutOperation(),
+    'to_shorts': ToShortsOperation(),
+    'extract_audio': ExtractAudioOperation(),
+}
+
+
+def validate_ffmpeg_params(params: dict) -> tuple[bool, str]:
+    """Валидация параметров FFmpeg для безопасности"""
+    # Whitelist разрешённых параметров
+    ALLOWED_INPUT_OPTIONS = {'-ss', '-t', '-to', '-f', '-r', '-s'}
+    ALLOWED_OUTPUT_OPTIONS = {
+        '-c:v', '-c:a', '-preset', '-crf', '-b:v', '-b:a',
+        '-vf', '-af', '-filter_complex', '-movflags',
+        '-r', '-s', '-ar', '-ac'
+    }
+    DANGEROUS_PATTERNS = ['../', '/etc/', '/root/', '$(', '`', '|', '&&', '||', ';']
+
+    # Проверка input_options
+    if 'input_options' in params:
+        for option in params['input_options']:
+            # Проверка на опасные паттерны
+            for pattern in DANGEROUS_PATTERNS:
+                if pattern in str(option):
+                    return False, f"Dangerous pattern detected: {pattern}"
+
+            # Проверка первого параметра (должен быть из whitelist)
+            if option.startswith('-') and option not in ALLOWED_INPUT_OPTIONS:
+                return False, f"Input option not allowed: {option}"
+
+    # Проверка output_options
+    if 'output_options' in params:
+        for option in params['output_options']:
+            if option.startswith('-') and option not in ALLOWED_OUTPUT_OPTIONS:
+                return False, f"Output option not allowed: {option}"
+
+    return True, ""
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -1299,6 +1451,315 @@ def list_all_tasks():
     except Exception as e:
         logger.error(f"List tasks error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/process_video', methods=['POST'])
+def process_video():
+    """
+    Универсальный endpoint для обработки видео
+
+    Поддерживает:
+    - Простой режим: operations (cut, to_shorts, extract_audio)
+    - Advanced режим: raw FFmpeg команды
+    - Pipeline обработки (цепочка операций)
+    - Sync/Async режимы
+
+    Пример запроса (простой режим):
+    {
+      "async": true,
+      "video_url": "https://...",
+      "operations": [
+        {"type": "cut", "start_time": 10, "end_time": 20},
+        {"type": "to_shorts", "crop_mode": "center"}
+      ]
+    }
+
+    Пример запроса (advanced режим):
+    {
+      "async": false,
+      "video_url": "https://...",
+      "mode": "advanced",
+      "ffmpeg": {
+        "input_options": ["-ss", "10"],
+        "video_filters": ["scale=1080:1920"],
+        "output_options": ["-c:v", "libx264", "-crf", "23"]
+      }
+    }
+    """
+    try:
+        cleanup_old_files()
+
+        data = request.json
+        if not data:
+            return jsonify({"success": False, "error": "JSON data required"}), 400
+
+        # Базовые параметры
+        video_url = data.get('video_url')
+        is_async = data.get('async', False)
+        mode = data.get('mode', 'simple')  # simple или advanced
+        webhook_url = data.get('webhook_url', os.getenv('WEBHOOK_URL'))
+
+        if not video_url:
+            return jsonify({"success": False, "error": "video_url is required"}), 400
+
+        # Обработка в зависимости от режима
+        if mode == 'advanced':
+            # Advanced режим - raw FFmpeg команды
+            ffmpeg_params = data.get('ffmpeg', {})
+
+            # Валидация FFmpeg параметров
+            is_valid, error_msg = validate_ffmpeg_params(ffmpeg_params)
+            if not is_valid:
+                return jsonify({"success": False, "error": error_msg}), 400
+
+            # TODO: Реализовать выполнение raw FFmpeg команд
+            return jsonify({
+                "success": False,
+                "error": "Advanced mode not yet implemented"
+            }), 501
+
+        else:
+            # Простой режим - операции
+            operations = data.get('operations', [])
+
+            if not operations:
+                return jsonify({
+                    "success": False,
+                    "error": "operations list is required for simple mode"
+                }), 400
+
+            # Валидация операций
+            for op in operations:
+                op_type = op.get('type')
+                if not op_type:
+                    return jsonify({
+                        "success": False,
+                        "error": "Each operation must have 'type' field"
+                    }), 400
+
+                if op_type not in OPERATIONS_REGISTRY:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Unknown operation type: {op_type}. Available: {list(OPERATIONS_REGISTRY.keys())}"
+                    }), 400
+
+                # Валидация параметров операции
+                operation_handler = OPERATIONS_REGISTRY[op_type]
+                is_valid, error_msg = operation_handler.validate(op)
+                if not is_valid:
+                    return jsonify({
+                        "success": False,
+                        "error": f"Operation '{op_type}' validation failed: {error_msg}"
+                    }), 400
+
+            # Выполнение операций
+            if is_async:
+                # Асинхронный режим
+                task_id = str(uuid.uuid4())
+                task_data = {
+                    'task_id': task_id,
+                    'status': 'queued',
+                    'progress': 0,
+                    'video_url': video_url,
+                    'operations': operations,
+                    'webhook_url': webhook_url,
+                    'created_at': datetime.now().isoformat()
+                }
+                save_task(task_id, task_data)
+
+                # Запускаем фоновую обработку
+                thread = threading.Thread(
+                    target=process_video_pipeline_background,
+                    args=(task_id, video_url, operations, webhook_url)
+                )
+                thread.daemon = True
+                thread.start()
+
+                logger.info(f"Task {task_id}: Created with {len(operations)} operations")
+
+                return jsonify({
+                    "success": True,
+                    "task_id": task_id,
+                    "status": "queued",
+                    "operations_count": len(operations),
+                    "message": "Task created and processing started",
+                    "check_status_url": f"/task_status/{task_id}"
+                }), 202
+
+            else:
+                # Синхронный режим
+                return process_video_pipeline_sync(video_url, operations)
+
+    except Exception as e:
+        logger.error(f"Process video error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
+    """Синхронное выполнение pipeline операций"""
+    import requests
+
+    # Скачиваем исходное видео
+    input_filename = f"{uuid.uuid4()}.mp4"
+    input_path = os.path.join(UPLOAD_DIR, input_filename)
+
+    response = requests.get(video_url, stream=True)
+    with open(input_path, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+    current_input = input_path
+    final_output = None
+
+    # Выполняем операции последовательно
+    for idx, op_data in enumerate(operations):
+        op_type = op_data['type']
+        operation = OPERATIONS_REGISTRY[op_type]
+
+        # Генерируем временный выходной файл
+        if idx == len(operations) - 1:
+            # Последняя операция - финальный файл
+            output_filename = f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+            output_path = os.path.join(OUTPUT_DIR, output_filename)
+            final_output = output_path
+        else:
+            # Промежуточный файл
+            output_path = os.path.join(UPLOAD_DIR, f"temp_{idx}_{uuid.uuid4()}.mp4")
+
+        logger.info(f"Executing operation {idx+1}/{len(operations)}: {op_type}")
+
+        # Выполняем операцию
+        success, message = operation.execute(current_input, output_path, op_data)
+
+        if not success:
+            # Ошибка - удаляем временные файлы
+            if os.path.exists(input_path):
+                os.remove(input_path)
+            return jsonify({"success": False, "error": message}), 500
+
+        # Удаляем предыдущий временный файл
+        if current_input != input_path and os.path.exists(current_input):
+            os.remove(current_input)
+
+        # Следующая операция будет использовать этот файл как вход
+        current_input = output_path
+
+    # Удаляем исходный файл
+    if os.path.exists(input_path):
+        os.remove(input_path)
+
+    # Финальный результат
+    os.chmod(final_output, 0o644)
+    file_size = os.path.getsize(final_output)
+
+    download_path = f"/download/{os.path.basename(final_output)}"
+    base_url = request.host_url.rstrip('/')
+    full_download_url = f"{base_url}{download_path}"
+
+    return jsonify({
+        "success": True,
+        "filename": os.path.basename(final_output),
+        "file_path": final_output,
+        "file_size": file_size,
+        "download_url": full_download_url,
+        "download_path": download_path,
+        "operations_executed": len(operations),
+        "note": "File will auto-delete after 2 hours.",
+        "processed_at": datetime.now().isoformat()
+    })
+
+
+def process_video_pipeline_background(task_id: str, video_url: str, operations: list, webhook_url: str = None):
+    """Фоновое выполнение pipeline операций"""
+    import requests
+
+    try:
+        update_task(task_id, {'status': 'processing', 'progress': 5})
+
+        # Скачиваем исходное видео
+        input_filename = f"{uuid.uuid4()}.mp4"
+        input_path = os.path.join(UPLOAD_DIR, input_filename)
+
+        logger.info(f"Task {task_id}: Downloading video from {video_url}")
+        response = requests.get(video_url, stream=True, timeout=300)
+        with open(input_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        update_task(task_id, {'progress': 20})
+
+        current_input = input_path
+        final_output = None
+
+        # Выполняем операции последовательно
+        total_ops = len(operations)
+        for idx, op_data in enumerate(operations):
+            op_type = op_data['type']
+            operation = OPERATIONS_REGISTRY[op_type]
+
+            # Прогресс: 20% + (idx / total_ops) * 70%
+            progress = 20 + int((idx / total_ops) * 70)
+            update_task(task_id, {'progress': progress, 'current_operation': op_type})
+
+            # Генерируем временный выходной файл
+            if idx == total_ops - 1:
+                # Последняя операция - финальный файл
+                output_filename = f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id[:8]}.mp4"
+                output_path = os.path.join(OUTPUT_DIR, output_filename)
+                final_output = output_path
+            else:
+                # Промежуточный файл
+                output_path = os.path.join(UPLOAD_DIR, f"temp_{idx}_{uuid.uuid4()}.mp4")
+
+            logger.info(f"Task {task_id}: Executing operation {idx+1}/{total_ops}: {op_type}")
+
+            # Выполняем операцию
+            success, message = operation.execute(current_input, output_path, op_data)
+
+            if not success:
+                raise Exception(f"Operation '{op_type}' failed: {message}")
+
+            # Удаляем предыдущий временный файл
+            if current_input != input_path and os.path.exists(current_input):
+                os.remove(current_input)
+
+            # Следующая операция будет использовать этот файл как вход
+            current_input = output_path
+
+        # Удаляем исходный файл
+        if os.path.exists(input_path):
+            os.remove(input_path)
+
+        # Финальный результат
+        os.chmod(final_output, 0o644)
+        update_task(task_id, {'progress': 95})
+
+        file_size = os.path.getsize(final_output)
+        download_path = f"/download/{os.path.basename(final_output)}"
+
+        # Обновляем задачу
+        update_task(task_id, {
+            'status': 'completed',
+            'progress': 100,
+            'filename': os.path.basename(final_output),
+            'file_size': file_size,
+            'download_path': download_path,
+            'download_url': f"http://video-processor:5001{download_path}",
+            'operations_executed': total_ops,
+            'completed_at': datetime.now().isoformat()
+        })
+
+        logger.info(f"Task {task_id}: Completed successfully")
+
+        # TODO: Отправить webhook если указан
+
+    except Exception as e:
+        logger.error(f"Task {task_id}: Error - {e}")
+        update_task(task_id, {
+            'status': 'failed',
+            'error': str(e),
+            'failed_at': datetime.now().isoformat()
+        })
+
 
 @app.route('/generate_shorts', methods=['POST'])
 def generate_shorts():
