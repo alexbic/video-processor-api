@@ -621,24 +621,26 @@ def process_to_shorts():
         subtitles = data.get('subtitles', [])
 
         # Настройки заголовка (title) - появляется в начале с fade эффектом
+        # Оптимальные значения по умолчанию для Shorts (1080x1920)
         title_config = data.get('title_config', {})
-        title_fontsize = title_config.get('fontsize', 60)
-        title_fontcolor = title_config.get('fontcolor', 'white')
-        title_bordercolor = title_config.get('bordercolor', 'black')
-        title_borderw = title_config.get('borderw', 3)
-        title_y = title_config.get('y', 100)
-        title_start = title_config.get('start_time', 0.5)   # Когда появляется (секунды от начала клипа)
-        title_duration = title_config.get('duration', 4)    # Как долго показывается
-        title_fade_in = title_config.get('fade_in', 0.5)    # Длительность fade in
-        title_fade_out = title_config.get('fade_out', 0.5)  # Длительность fade out
+        title_fontsize = title_config.get('fontsize', 70)           # Крупный размер для заголовка
+        title_fontcolor = title_config.get('fontcolor', 'white')    # Универсальный белый цвет
+        title_bordercolor = title_config.get('bordercolor', 'black')  # Чёрная обводка для контраста
+        title_borderw = title_config.get('borderw', 3)              # Достаточная обводка
+        title_y = title_config.get('y', 150)                        # Отступ от верха
+        title_start = title_config.get('start_time', 0.5)           # Когда появляется (секунды от начала клипа)
+        title_duration = title_config.get('duration', 4)            # Как долго показывается
+        title_fade_in = title_config.get('fade_in', 0.5)            # Длительность fade in
+        title_fade_out = title_config.get('fade_out', 0.5)          # Длительность fade out
 
-        # Настройки субтитров (subtitle) - всегда внизу
+        # Настройки субтитров (subtitle) - появляются внизу экрана
+        # Оптимальные значения по умолчанию для Shorts (1080x1920)
         subtitle_config = data.get('subtitle_config', {})
-        subtitle_fontsize = subtitle_config.get('fontsize', 48)
-        subtitle_fontcolor = subtitle_config.get('fontcolor', '#90EE90')  # Нежно-зелёный по умолчанию
-        subtitle_bordercolor = subtitle_config.get('bordercolor', 'white')
-        subtitle_borderw = subtitle_config.get('borderw', 3)
-        subtitle_y = subtitle_config.get('y', 'h-150')
+        subtitle_fontsize = subtitle_config.get('fontsize', 60)     # Крупный размер для читаемости
+        subtitle_fontcolor = subtitle_config.get('fontcolor', 'white')  # Белый цвет для читаемости
+        subtitle_bordercolor = subtitle_config.get('bordercolor', 'black')  # Чёрная обводка для контраста
+        subtitle_borderw = subtitle_config.get('borderw', 3)        # Достаточная обводка
+        subtitle_y = subtitle_config.get('y', 'h-200')              # Отступ от низа
 
         # Определяем фильтр обрезки
         if crop_mode == 'letterbox':
@@ -693,11 +695,14 @@ def process_to_shorts():
             fade_in_end = title_start + title_fade_in
             fade_out_start = title_end - title_fade_out
 
+            # Извлекаем text_align (по умолчанию center для многострочного текста)
+            title_text_align = title_config.get('text_align', 'center')
+
             # Формируем drawtext фильтр
             drawtext_params = [
                 f"text='{title_escaped}'",
                 "expansion=normal",
-                "text_align=center"
+                f"text_align={title_text_align}"
             ]
 
             # Добавляем font или fontfile (fontfile имеет приоритет)
@@ -726,6 +731,7 @@ def process_to_shorts():
             # Извлекаем font/fontfile параметры для субтитров
             subtitle_fontfile = subtitle_config.get('fontfile')
             subtitle_font = subtitle_config.get('font')
+            subtitle_text_align = subtitle_config.get('text_align', 'center')
 
             for subtitle in subtitles:
                 sub_text = subtitle.get('text', '')
@@ -764,7 +770,7 @@ def process_to_shorts():
                     sub_drawtext_params = [
                         f"text='{sub_escaped}'",
                         "expansion=normal",
-                        "text_align=center"
+                        f"text_align={subtitle_text_align}"
                     ]
 
                     # Добавляем font или fontfile (fontfile имеет приоритет)
@@ -924,17 +930,18 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
         # Добавляем текстовые оверлеи с настройками если указаны
         if title_text:
             # Настройки заголовка (title) - появляется в начале с fade эффектом
-            title_fontfile = title_config.get('fontfile')
-            title_font = title_config.get('font')
-            title_fontsize = title_config.get('fontsize', 60)
-            title_fontcolor = title_config.get('fontcolor', 'white')
-            title_bordercolor = title_config.get('bordercolor', 'black')
-            title_borderw = title_config.get('borderw', 3)
-            title_y = title_config.get('y', 100)
-            title_start = title_config.get('start_time', 0.5)
-            title_duration = title_config.get('duration', 4)
-            title_fade_in = title_config.get('fade_in', 0.5)
-            title_fade_out = title_config.get('fade_out', 0.5)
+            # Оптимальные значения по умолчанию для Shorts (1080x1920)
+            title_fontfile = title_config.get('fontfile')              # Опционально: путь к файлу шрифта
+            title_font = title_config.get('font')                      # Опционально: имя системного шрифта
+            title_fontsize = title_config.get('fontsize', 70)          # Крупный размер для заголовка
+            title_fontcolor = title_config.get('fontcolor', 'white')   # Универсальный белый цвет
+            title_bordercolor = title_config.get('bordercolor', 'black')  # Чёрная обводка для контраста
+            title_borderw = title_config.get('borderw', 3)             # Достаточная обводка
+            title_y = title_config.get('y', 150)                       # Отступ от верха
+            title_start = title_config.get('start_time', 0.5)          # Когда появляется
+            title_duration = title_config.get('duration', 4)           # Как долго показывается
+            title_fade_in = title_config.get('fade_in', 0.5)           # Длительность fade in
+            title_fade_out = title_config.get('fade_out', 0.5)         # Длительность fade out
 
             # Автоматический перенос текста заголовка если он длинный
             # Для fontsize 60: ~14 символов на строку
@@ -968,11 +975,14 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
             fade_in_end = title_start + title_fade_in
             fade_out_start = title_end - title_fade_out
 
+            # Извлекаем text_align (по умолчанию center для многострочного текста)
+            title_text_align = title_config.get('text_align', 'center')
+
             # Формируем drawtext фильтр
             drawtext_params = [
                 f"text='{title_escaped}'",
                 "expansion=normal",
-                "text_align=center"
+                f"text_align={title_text_align}"
             ]
 
             # Добавляем font или fontfile (fontfile имеет приоритет)
@@ -998,14 +1008,16 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
 
         # Динамические субтитры - каждый сегмент со своими таймкодами
         if subtitles:
-            # Настройки субтитров (subtitle)
-            subtitle_fontfile = subtitle_config.get('fontfile')
-            subtitle_font = subtitle_config.get('font')
-            subtitle_fontsize = subtitle_config.get('fontsize', 48)
-            subtitle_fontcolor = subtitle_config.get('fontcolor', '#90EE90')  # Нежно-зелёный по умолчанию
-            subtitle_bordercolor = subtitle_config.get('bordercolor', 'white')
-            subtitle_borderw = subtitle_config.get('borderw', 3)
-            subtitle_y = subtitle_config.get('y', 'h-150')
+            # Настройки субтитров (subtitle) - появляются внизу экрана
+            # Оптимальные значения по умолчанию для Shorts (1080x1920)
+            subtitle_fontfile = subtitle_config.get('fontfile')               # Опционально: путь к файлу шрифта
+            subtitle_font = subtitle_config.get('font')                       # Опционально: имя системного шрифта
+            subtitle_fontsize = subtitle_config.get('fontsize', 60)           # Крупный размер для читаемости
+            subtitle_fontcolor = subtitle_config.get('fontcolor', 'white')    # Белый цвет для читаемости
+            subtitle_bordercolor = subtitle_config.get('bordercolor', 'black')  # Чёрная обводка для контраста
+            subtitle_borderw = subtitle_config.get('borderw', 3)              # Достаточная обводка
+            subtitle_y = subtitle_config.get('y', 'h-200')                    # Отступ от низа
+            subtitle_text_align = subtitle_config.get('text_align', 'center') # Выравнивание по центру
 
             for subtitle in subtitles:
                 sub_text = subtitle.get('text', '')
@@ -1045,7 +1057,7 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
                     sub_drawtext_params = [
                         f"text='{sub_escaped}'",
                         "expansion=normal",
-                        "text_align=center"
+                        f"text_align={subtitle_text_align}"
                     ]
 
                     # Добавляем font или fontfile (fontfile имеет приоритет)
@@ -1246,6 +1258,98 @@ def list_all_tasks():
         })
     except Exception as e:
         logger.error(f"List tasks error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/generate_shorts', methods=['POST'])
+def generate_shorts():
+    """
+    Единый endpoint для генерации Shorts с выбором режима (синхронный/асинхронный)
+
+    Параметры JSON:
+    - video_url: URL исходного видео
+    - start_time: Начало фрагмента (секунды)
+    - end_time: Конец фрагмента (секунды)
+    - crop_mode: Режим обрезки ('center', 'top', 'bottom', 'letterbox')
+    - title_text: Текст заголовка (опционально)
+    - title_config: Настройки заголовка (font, fontfile, fontsize, text_align и т.д.)
+    - subtitles: Массив субтитров [{text, start, end}, ...]
+    - subtitle_config: Настройки субтитров (font, fontfile, fontsize, text_align и т.д.)
+    - async: true/false - режим обработки (по умолчанию false - синхронный)
+
+    Синхронный режим (async=false): возвращает готовое видео сразу
+    Асинхронный режим (async=true): возвращает task_id для отслеживания прогресса
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"success": False, "error": "JSON data required"}), 400
+
+        # Извлекаем параметр async (по умолчанию false - синхронный режим)
+        is_async = data.get('async', False)
+
+        # Проверяем обязательные параметры
+        video_url = data.get('video_url')
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+
+        if not all([video_url, start_time is not None, end_time is not None]):
+            return jsonify({
+                "success": False,
+                "error": "video_url, start_time, and end_time are required"
+            }), 400
+
+        if is_async:
+            # Асинхронный режим - используем process_to_shorts_async логику
+            crop_mode = data.get('crop_mode', 'center')
+            title_text = data.get('title_text', '')
+            subtitles = data.get('subtitles', [])
+            title_config = data.get('title_config', {})
+            subtitle_config = data.get('subtitle_config', {})
+
+            # Создаём задачу
+            task_id = str(uuid.uuid4())
+            task_data = {
+                'task_id': task_id,
+                'status': 'queued',
+                'progress': 0,
+                'video_url': video_url,
+                'start_time': start_time,
+                'end_time': end_time,
+                'crop_mode': crop_mode,
+                'title_text': title_text,
+                'subtitles': subtitles,
+                'title_config': title_config,
+                'subtitle_config': subtitle_config,
+                'created_at': datetime.now().isoformat()
+            }
+            save_task(task_id, task_data)
+
+            # Запускаем фоновую обработку
+            thread = threading.Thread(
+                target=process_video_background,
+                args=(task_id, video_url, start_time, end_time, crop_mode, title_text, subtitles, title_config, subtitle_config)
+            )
+            thread.daemon = True
+            thread.start()
+
+            logger.info(f"Task {task_id}: Created and started (async mode)")
+
+            return jsonify({
+                "success": True,
+                "mode": "async",
+                "task_id": task_id,
+                "status": "queued",
+                "message": "Task created and processing started",
+                "check_status_url": f"/task_status/{task_id}"
+            }), 202
+
+        else:
+            # Синхронный режим - вызываем process_to_shorts логику напрямую
+            # Копируем логику из process_to_shorts для совместимости
+            return process_to_shorts()
+
+    except Exception as e:
+        logger.error(f"Generate shorts error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
