@@ -632,285 +632,279 @@ def prepare_video_params(data):
         'subtitle_config': subtitle_config
     }
 
-@app.route('/process_to_shorts', methods=['POST'])
 def generate_shorts_sync():
-    """Синхронная генерация Shorts: нарезка + конвертация за один запрос"""
-    try:
-        cleanup_old_files()
+    """Внутренняя функция для синхронной генерации Shorts"""
+    cleanup_old_files()
 
-        data = request.json
-        if not data:
-            return jsonify({"success": False, "error": "JSON data required"}), 400
+    data = request.json
+    if not data:
+        return jsonify({"success": False, "error": "JSON data required"}), 400
 
-        # Подготавливаем параметры через общую функцию
-        params = prepare_video_params(data)
+    # Подготавливаем параметры через общую функцию
+    params = prepare_video_params(data)
 
-        # Валидация обязательных параметров
-        if not all([params['video_url'], params['start_time'] is not None, params['end_time'] is not None]):
-            return jsonify({
-                "success": False,
-                "error": "video_url, start_time, and end_time are required"
-            }), 400
+    # Валидация обязательных параметров
+    if not all([params['video_url'], params['start_time'] is not None, params['end_time'] is not None]):
+        return jsonify({
+            "success": False,
+            "error": "video_url, start_time, and end_time are required"
+        }), 400
 
-        # Распаковываем параметры
-        video_url = params['video_url']
-        start_time = params['start_time']
-        end_time = params['end_time']
-        crop_mode = params['crop_mode']
-        title_text = params['title_text']
-        title_config = params['title_config']
-        subtitles = params['subtitles']
-        subtitle_config = params['subtitle_config']
+    # Распаковываем параметры
+    video_url = params['video_url']
+    start_time = params['start_time']
+    end_time = params['end_time']
+    crop_mode = params['crop_mode']
+    title_text = params['title_text']
+    title_config = params['title_config']
+    subtitles = params['subtitles']
+    subtitle_config = params['subtitle_config']
 
-        # Скачиваем видео
-        input_filename = f"{uuid.uuid4()}.mp4"
-        input_path = os.path.join(UPLOAD_DIR, input_filename)
+    # Скачиваем видео
+    input_filename = f"{uuid.uuid4()}.mp4"
+    input_path = os.path.join(UPLOAD_DIR, input_filename)
 
-        import requests
-        response = requests.get(video_url, stream=True)
-        with open(input_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+    import requests
+    response = requests.get(video_url, stream=True)
+    with open(input_path, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
 
-        output_filename = f"shorts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-        output_path = os.path.join(OUTPUT_DIR, output_filename)
+    output_filename = f"shorts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+    output_path = os.path.join(OUTPUT_DIR, output_filename)
 
-        # Вычисляем длительность
-        if isinstance(start_time, (int, float)) and isinstance(end_time, (int, float)):
-            duration = end_time - start_time
-            start_str = str(start_time)
-            duration_str = str(duration)
-        else:
-            start_str = str(start_time)
-            duration_str = None
+    # Вычисляем длительность
+    if isinstance(start_time, (int, float)) and isinstance(end_time, (int, float)):
+        duration = end_time - start_time
+        start_str = str(start_time)
+        duration_str = str(duration)
+    else:
+        start_str = str(start_time)
+        duration_str = None
 
-        # Извлекаем параметры из подготовленных конфигов
-        title_fontfile = title_config['fontfile']
-        title_font = title_config['font']
-        title_fontsize = title_config['fontsize']
-        title_fontcolor = title_config['fontcolor']
-        title_bordercolor = title_config['bordercolor']
-        title_borderw = title_config['borderw']
-        title_text_align = title_config['text_align']
-        title_y = title_config['y']
-        title_start = title_config['start_time']
-        title_duration = title_config['duration']
-        title_fade_in = title_config['fade_in']
-        title_fade_out = title_config['fade_out']
+    # Извлекаем параметры из подготовленных конфигов
+    title_fontfile = title_config['fontfile']
+    title_font = title_config['font']
+    title_fontsize = title_config['fontsize']
+    title_fontcolor = title_config['fontcolor']
+    title_bordercolor = title_config['bordercolor']
+    title_borderw = title_config['borderw']
+    title_text_align = title_config['text_align']
+    title_y = title_config['y']
+    title_start = title_config['start_time']
+    title_duration = title_config['duration']
+    title_fade_in = title_config['fade_in']
+    title_fade_out = title_config['fade_out']
 
-        subtitle_fontfile = subtitle_config['fontfile']
-        subtitle_font = subtitle_config['font']
-        subtitle_fontsize = subtitle_config['fontsize']
-        subtitle_fontcolor = subtitle_config['fontcolor']
-        subtitle_bordercolor = subtitle_config['bordercolor']
-        subtitle_borderw = subtitle_config['borderw']
-        subtitle_text_align = subtitle_config['text_align']
-        subtitle_y = subtitle_config['y']
+    subtitle_fontfile = subtitle_config['fontfile']
+    subtitle_font = subtitle_config['font']
+    subtitle_fontsize = subtitle_config['fontsize']
+    subtitle_fontcolor = subtitle_config['fontcolor']
+    subtitle_bordercolor = subtitle_config['bordercolor']
+    subtitle_borderw = subtitle_config['borderw']
+    subtitle_text_align = subtitle_config['text_align']
+    subtitle_y = subtitle_config['y']
 
-        # Определяем фильтр обрезки
-        if crop_mode == 'letterbox':
-            # Letterbox: горизонтальное видео по центру + размытый фон
-            video_filter = (
-                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20[bg];"
-                "[0:v]scale=-1:1080:force_original_aspect_ratio=decrease[fg];"
-                "[bg][fg]overlay=(W-w)/2:(H-h)/2"
-            )
-        elif crop_mode == 'top':
-            video_filter = "crop=ih*9/16:ih:0:0,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
-        elif crop_mode == 'bottom':
-            video_filter = "crop=ih*9/16:ih:0:ih-oh,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
-        else:  # center (default)
-            video_filter = "crop=ih*9/16:ih,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+    # Определяем фильтр обрезки
+    if crop_mode == 'letterbox':
+        # Letterbox: горизонтальное видео по центру + размытый фон
+        video_filter = (
+            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20[bg];"
+            "[0:v]scale=-1:1080:force_original_aspect_ratio=decrease[fg];"
+            "[bg][fg]overlay=(W-w)/2:(H-h)/2"
+        )
+    elif crop_mode == 'top':
+        video_filter = "crop=ih*9/16:ih:0:0,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+    elif crop_mode == 'bottom':
+        video_filter = "crop=ih*9/16:ih:0:ih-oh,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+    else:  # center (default)
+        video_filter = "crop=ih*9/16:ih,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
 
-        # Добавляем текстовые оверлеи если указаны
-        if title_text:
-            # Автоматический перенос текста заголовка если он длинный
-            max_chars_per_line_title = int(950 / (title_fontsize * 0.55))
-            if len(title_text) > max_chars_per_line_title:
-                words = title_text.split(' ')
-                lines = []
-                current_line = []
-                current_length = 0
+    # Добавляем текстовые оверлеи если указаны
+    if title_text:
+        # Автоматический перенос текста заголовка если он длинный
+        max_chars_per_line_title = int(950 / (title_fontsize * 0.55))
+        if len(title_text) > max_chars_per_line_title:
+            words = title_text.split(' ')
+            lines = []
+            current_line = []
+            current_length = 0
 
-                for word in words:
-                    word_len = len(word) + 1  # +1 для пробела
-                    if current_length + word_len > max_chars_per_line_title and current_line:
-                        lines.append(' '.join(current_line))
-                        current_line = [word]
-                        current_length = word_len
-                    else:
-                        current_line.append(word)
-                        current_length += word_len
-
-                if current_line:
+            for word in words:
+                word_len = len(word) + 1  # +1 для пробела
+                if current_length + word_len > max_chars_per_line_title and current_line:
                     lines.append(' '.join(current_line))
+                    current_line = [word]
+                    current_length = word_len
+                else:
+                    current_line.append(word)
+                    current_length += word_len
 
-                # FFmpeg поддерживает \n в тексте напрямую
-                title_text = '\n'.join(lines[:2])  # Максимум 2 строки
+            if current_line:
+                lines.append(' '.join(current_line))
 
-            # Экранируем спецсимволы
-            title_escaped = title_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+            # FFmpeg поддерживает \n в тексте напрямую
+            title_text = '\n'.join(lines[:2])  # Максимум 2 строки
 
-            # Вычисляем тайминги для fade эффектов
-            title_end = title_start + title_duration
-            fade_in_end = title_start + title_fade_in
-            fade_out_start = title_end - title_fade_out
+        # Экранируем спецсимволы
+        title_escaped = title_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
 
-            # Извлекаем text_align (по умолчанию center для многострочного текста)
-            title_text_align = title_config.get('text_align', 'center')
+        # Вычисляем тайминги для fade эффектов
+        title_end = title_start + title_duration
+        fade_in_end = title_start + title_fade_in
+        fade_out_start = title_end - title_fade_out
 
-            # Формируем drawtext фильтр
-            drawtext_params = [
-                f"text='{title_escaped}'",
-                "expansion=normal",
-                f"text_align={title_text_align}"
-            ]
+        # Извлекаем text_align (по умолчанию center для многострочного текста)
+        title_text_align = title_config.get('text_align', 'center')
 
-            # Добавляем font или fontfile (fontfile имеет приоритет)
-            if title_fontfile:
-                fontfile_escaped = title_fontfile.replace(':', '\\:').replace("'", "\\'")
-                drawtext_params.append(f"fontfile='{fontfile_escaped}'")
-            elif title_font:
-                font_escaped = title_font.replace(':', '\\:').replace("'", "\\'")
-                drawtext_params.append(f"font='{font_escaped}'")
-
-            drawtext_params.extend([
-                f"fontsize={title_fontsize}",
-                f"fontcolor={title_fontcolor}",
-                f"bordercolor={title_bordercolor}",
-                f"borderw={title_borderw}",
-                f"x=(w-text_w)/2",
-                f"y={title_y}",
-                f"enable='between(t\\,{title_start}\\,{title_end})'",
-                f"alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
-            ])
-
-            video_filter += f",drawtext={':'.join(drawtext_params)}"
-
-        # Динамические субтитры - каждый сегмент со своими таймкодами
-        if subtitles:
-            for subtitle in subtitles:
-                sub_text = subtitle.get('text', '')
-                sub_start = subtitle.get('start', 0)
-                sub_end = subtitle.get('end', 0)
-
-                if sub_text and sub_start is not None and sub_end is not None:
-                    # Автоматический перенос текста если он длинный
-                    max_chars_per_line = int(950 / (subtitle_fontsize * 0.55))
-                    if len(sub_text) > max_chars_per_line:
-                        words = sub_text.split(' ')
-                        lines = []
-                        current_line = []
-                        current_length = 0
-
-                        for word in words:
-                            word_len = len(word) + 1  # +1 для пробела
-                            if current_length + word_len > max_chars_per_line and current_line:
-                                lines.append(' '.join(current_line))
-                                current_line = [word]
-                                current_length = word_len
-                            else:
-                                current_line.append(word)
-                                current_length += word_len
-
-                        if current_line:
-                            lines.append(' '.join(current_line))
-
-                        # FFmpeg поддерживает \n в тексте напрямую
-                        sub_text = '\n'.join(lines[:2])  # Максимум 2 строки
-
-                    # Экранируем текст
-                    sub_escaped = sub_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
-
-                    # Формируем drawtext фильтр для субтитров
-                    sub_drawtext_params = [
-                        f"text='{sub_escaped}'",
-                        "expansion=normal",
-                        f"text_align={subtitle_text_align}"
-                    ]
-
-                    # Добавляем font или fontfile (fontfile имеет приоритет)
-                    if subtitle_fontfile:
-                        subfontfile_escaped = subtitle_fontfile.replace(':', '\\:').replace("'", "\\'")
-                        sub_drawtext_params.append(f"fontfile='{subfontfile_escaped}'")
-                    elif subtitle_font:
-                        subfont_escaped = subtitle_font.replace(':', '\\:').replace("'", "\\'")
-                        sub_drawtext_params.append(f"font='{subfont_escaped}'")
-
-                    sub_drawtext_params.extend([
-                        f"fontsize={subtitle_fontsize}",
-                        f"fontcolor={subtitle_fontcolor}",
-                        f"bordercolor={subtitle_bordercolor}",
-                        f"borderw={subtitle_borderw}",
-                        f"x=(w-text_w)/2",
-                        f"y={subtitle_y}",
-                        f"enable='between(t\\,{sub_start}\\,{sub_end})'"
-                    ])
-
-                    video_filter += f",drawtext={':'.join(sub_drawtext_params)}"
-
-        # Комбинированная FFmpeg команда: нарезка + конвертация
-        cmd = [
-            'ffmpeg',
-            '-ss', start_str,
-            '-i', input_path,
+        # Формируем drawtext фильтр
+        drawtext_params = [
+            f"text='{title_escaped}'",
+            "expansion=normal",
+            f"text_align={title_text_align}"
         ]
 
-        if duration_str:
-            cmd.extend(['-t', duration_str])
-        else:
-            cmd.extend(['-to', str(end_time)])
+        # Добавляем font или fontfile (fontfile имеет приоритет)
+        if title_fontfile:
+            fontfile_escaped = title_fontfile.replace(':', '\\:').replace("'", "\\'")
+            drawtext_params.append(f"fontfile='{fontfile_escaped}'")
+        elif title_font:
+            font_escaped = title_font.replace(':', '\\:').replace("'", "\\'")
+            drawtext_params.append(f"font='{font_escaped}'")
 
-        cmd.extend([
-            '-filter_complex' if crop_mode == 'letterbox' else '-vf', video_filter,
-            '-c:v', 'libx264',
-            '-preset', 'medium',
-            '-crf', '23',
-            '-c:a', 'aac',
-            '-b:a', '128k',
-            '-movflags', '+faststart',
-            '-y',
-            output_path
+        drawtext_params.extend([
+            f"fontsize={title_fontsize}",
+            f"fontcolor={title_fontcolor}",
+            f"bordercolor={title_bordercolor}",
+            f"borderw={title_borderw}",
+            f"x=(w-text_w)/2",
+            f"y={title_y}",
+            f"enable='between(t\\,{title_start}\\,{title_end})'",
+            f"alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
         ])
 
-        logger.info(f"Processing to Shorts: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        video_filter += f",drawtext={':'.join(drawtext_params)}"
 
-        if result.returncode != 0:
-            logger.error(f"FFmpeg error: {result.stderr}")
-            return jsonify({"success": False, "error": result.stderr}), 500
+    # Динамические субтитры - каждый сегмент со своими таймкодами
+    if subtitles:
+        for subtitle in subtitles:
+            sub_text = subtitle.get('text', '')
+            sub_start = subtitle.get('start', 0)
+            sub_end = subtitle.get('end', 0)
 
-        os.chmod(output_path, 0o644)
-        file_size = os.path.getsize(output_path)
+            if sub_text and sub_start is not None and sub_end is not None:
+                # Автоматический перенос текста если он длинный
+                max_chars_per_line = int(950 / (subtitle_fontsize * 0.55))
+                if len(sub_text) > max_chars_per_line:
+                    words = sub_text.split(' ')
+                    lines = []
+                    current_line = []
+                    current_length = 0
 
-        download_path = f"/download/{output_filename}"
-        base_url = request.host_url.rstrip('/')
-        full_download_url = f"{base_url}{download_path}"
+                    for word in words:
+                        word_len = len(word) + 1  # +1 для пробела
+                        if current_length + word_len > max_chars_per_line and current_line:
+                            lines.append(' '.join(current_line))
+                            current_line = [word]
+                            current_length = word_len
+                        else:
+                            current_line.append(word)
+                            current_length += word_len
 
-        # Удаляем входной файл
-        if os.path.exists(input_path):
-            os.remove(input_path)
+                    if current_line:
+                        lines.append(' '.join(current_line))
 
-        return jsonify({
-            "success": True,
-            "filename": output_filename,
-            "file_path": output_path,
-            "file_size": file_size,
-            "download_url": full_download_url,
-            "download_path": download_path,
-            "resolution": "1080x1920",
-            "format": "shorts",
-            "crop_mode": crop_mode,
-            "start_time": start_time,
-            "end_time": end_time,
-            "source_video_url": video_url,  # Ссылка на исходное видео
-            "note": "Shorts video will auto-delete after 2 hours.",
-            "processed_at": datetime.now().isoformat()
-        })
+                    # FFmpeg поддерживает \n в тексте напрямую
+                    sub_text = '\n'.join(lines[:2])  # Максимум 2 строки
 
-    except Exception as e:
-        logger.error(f"Process to shorts error: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+                # Экранируем текст
+                sub_escaped = sub_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+
+                # Формируем drawtext фильтр для субтитров
+                sub_drawtext_params = [
+                    f"text='{sub_escaped}'",
+                    "expansion=normal",
+                    f"text_align={subtitle_text_align}"
+                ]
+
+                # Добавляем font или fontfile (fontfile имеет приоритет)
+                if subtitle_fontfile:
+                    subfontfile_escaped = subtitle_fontfile.replace(':', '\\:').replace("'", "\\'")
+                    sub_drawtext_params.append(f"fontfile='{subfontfile_escaped}'")
+                elif subtitle_font:
+                    subfont_escaped = subtitle_font.replace(':', '\\:').replace("'", "\\'")
+                    sub_drawtext_params.append(f"font='{subfont_escaped}'")
+
+                sub_drawtext_params.extend([
+                    f"fontsize={subtitle_fontsize}",
+                    f"fontcolor={subtitle_fontcolor}",
+                    f"bordercolor={subtitle_bordercolor}",
+                    f"borderw={subtitle_borderw}",
+                    f"x=(w-text_w)/2",
+                    f"y={subtitle_y}",
+                    f"enable='between(t\\,{sub_start}\\,{sub_end})'"
+                ])
+
+                video_filter += f",drawtext={':'.join(sub_drawtext_params)}"
+
+    # Комбинированная FFmpeg команда: нарезка + конвертация
+    cmd = [
+        'ffmpeg',
+        '-ss', start_str,
+        '-i', input_path,
+    ]
+
+    if duration_str:
+        cmd.extend(['-t', duration_str])
+    else:
+        cmd.extend(['-to', str(end_time)])
+
+    cmd.extend([
+        '-filter_complex' if crop_mode == 'letterbox' else '-vf', video_filter,
+        '-c:v', 'libx264',
+        '-preset', 'medium',
+        '-crf', '23',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-movflags', '+faststart',
+        '-y',
+        output_path
+    ])
+
+    logger.info(f"Processing to Shorts: {' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        logger.error(f"FFmpeg error: {result.stderr}")
+        return jsonify({"success": False, "error": result.stderr}), 500
+
+    os.chmod(output_path, 0o644)
+    file_size = os.path.getsize(output_path)
+
+    download_path = f"/download/{output_filename}"
+    base_url = request.host_url.rstrip('/')
+    full_download_url = f"{base_url}{download_path}"
+
+    # Удаляем входной файл
+    if os.path.exists(input_path):
+        os.remove(input_path)
+
+    return jsonify({
+        "success": True,
+        "filename": output_filename,
+        "file_path": output_path,
+        "file_size": file_size,
+        "download_url": full_download_url,
+        "download_path": download_path,
+        "resolution": "1080x1920",
+        "format": "shorts",
+        "crop_mode": crop_mode,
+        "start_time": start_time,
+        "end_time": end_time,
+        "source_video_url": video_url,
+        "note": "Shorts video will auto-delete after 2 hours.",
+        "processed_at": datetime.now().isoformat()
+    })
 
 @app.route('/download/<filename>', methods=['GET'])
 def download_file(filename):
@@ -1198,64 +1192,58 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
             'failed_at': datetime.now().isoformat()
         })
 
-@app.route('/process_to_shorts_async', methods=['POST'])
 def generate_shorts_async():
-    """Асинхронная генерация Shorts: запускает задачу и сразу возвращает task_id"""
-    try:
-        data = request.json
-        if not data:
-            return jsonify({"success": False, "error": "JSON data required"}), 400
+    """Внутренняя функция для асинхронной генерации Shorts"""
+    data = request.json
+    if not data:
+        return jsonify({"success": False, "error": "JSON data required"}), 400
 
-        # Подготавливаем параметры через общую функцию
-        params = prepare_video_params(data)
+    # Подготавливаем параметры через общую функцию
+    params = prepare_video_params(data)
 
-        # Валидация обязательных параметров
-        if not all([params['video_url'], params['start_time'] is not None, params['end_time'] is not None]):
-            return jsonify({
-                "success": False,
-                "error": "video_url, start_time, and end_time are required"
-            }), 400
-
-        # Создаём задачу
-        task_id = str(uuid.uuid4())
-        task_data = {
-            'task_id': task_id,
-            'status': 'queued',
-            'progress': 0,
-            'video_url': params['video_url'],
-            'start_time': params['start_time'],
-            'end_time': params['end_time'],
-            'crop_mode': params['crop_mode'],
-            'title_text': params['title_text'],
-            'subtitles': params['subtitles'],
-            'title_config': params['title_config'],
-            'subtitle_config': params['subtitle_config'],
-            'created_at': datetime.now().isoformat()
-        }
-        save_task(task_id, task_data)
-
-        # Запускаем фоновую обработку
-        thread = threading.Thread(
-            target=process_video_background,
-            args=(task_id, params['video_url'], params['start_time'], params['end_time'], params['crop_mode'],
-                  params['title_text'], params['subtitles'], params['title_config'], params['subtitle_config'])
-        )
-        thread.daemon = True
-        thread.start()
-
-        logger.info(f"Task {task_id}: Created and started")
-
+    # Валидация обязательных параметров
+    if not all([params['video_url'], params['start_time'] is not None, params['end_time'] is not None]):
         return jsonify({
-            "success": True,
-            "task_id": task_id,
-            "status": "queued",
-            "message": "Task created and processing started",
-            "check_status_url": f"/task_status/{task_id}"
-        }), 202
+            "success": False,
+            "error": "video_url, start_time, and end_time are required"
+        }), 400
 
-    except Exception as e:
-        logger.error(f"Async processing error: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+    # Создаём задачу
+    task_id = str(uuid.uuid4())
+    task_data = {
+        'task_id': task_id,
+        'status': 'queued',
+        'progress': 0,
+        'video_url': params['video_url'],
+        'start_time': params['start_time'],
+        'end_time': params['end_time'],
+        'crop_mode': params['crop_mode'],
+        'title_text': params['title_text'],
+        'subtitles': params['subtitles'],
+        'title_config': params['title_config'],
+        'subtitle_config': params['subtitle_config'],
+        'created_at': datetime.now().isoformat()
+    }
+    save_task(task_id, task_data)
+
+    # Запускаем фоновую обработку
+    thread = threading.Thread(
+        target=process_video_background,
+        args=(task_id, params['video_url'], params['start_time'], params['end_time'], params['crop_mode'],
+              params['title_text'], params['subtitles'], params['title_config'], params['subtitle_config'])
+    )
+    thread.daemon = True
+    thread.start()
+
+    logger.info(f"Task {task_id}: Created and started")
+
+    return jsonify({
+        "success": True,
+        "task_id": task_id,
+        "status": "queued",
+        "message": "Task created and processing started",
+        "check_status_url": f"/task_status/{task_id}"
+    }), 202
 
 @app.route('/task_status/<task_id>', methods=['GET'])
 def get_task_status(task_id):
