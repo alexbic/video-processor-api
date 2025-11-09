@@ -117,6 +117,50 @@ def cleanup_old_files():
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
 
+
+def download_additional_inputs(additional_inputs_urls: dict) -> dict:
+    """
+    Скачивает дополнительные входные данные (аудио, изображения и т.д.)
+
+    Args:
+        additional_inputs_urls: Словарь {name: url}
+
+    Returns:
+        Словарь {name: local_path} с локальными путями к скачанным файлам
+    """
+    import requests
+
+    additional_inputs_paths = {}
+
+    for name, url in additional_inputs_urls.items():
+        try:
+            # Определяем расширение файла из URL
+            ext = url.split('.')[-1].split('?')[0]
+            if ext not in ['mp3', 'wav', 'aac', 'm4a', 'png', 'jpg', 'jpeg', 'gif', 'mp4']:
+                ext = 'bin'
+
+            # Скачиваем файл
+            filename = f"additional_{name}_{uuid.uuid4()}.{ext}"
+            file_path = os.path.join(UPLOAD_DIR, filename)
+
+            logger.info(f"Downloading additional input '{name}' from {url}")
+            response = requests.get(url, stream=True, timeout=60)
+            response.raise_for_status()
+
+            with open(file_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+
+            additional_inputs_paths[name] = file_path
+            logger.info(f"Downloaded additional input '{name}' to {file_path}")
+
+        except Exception as e:
+            logger.error(f"Failed to download additional input '{name}': {e}")
+            raise Exception(f"Failed to download additional input '{name}': {e}")
+
+    return additional_inputs_paths
+
+
 # ============================================
 # VIDEO OPERATIONS REGISTRY
 # ============================================
@@ -135,8 +179,16 @@ class VideoOperation:
                 return False, f"Missing required parameter: {param}"
         return True, ""
 
-    def execute(self, input_path: str, output_path: str, params: dict) -> tuple[bool, str]:
-        """Выполнение операции (переопределяется в подклассах)"""
+    def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
+        """
+        Выполнение операции (переопределяется в подклассах)
+
+        Args:
+            input_path: Путь к входному видео
+            output_path: Путь к выходному видео
+            params: Параметры операции
+            additional_inputs: Дополнительные входные данные (аудио, изображения и т.д.)
+        """
         raise NotImplementedError()
 
 
@@ -149,7 +201,7 @@ class CutOperation(VideoOperation):
             optional_params={}
         )
 
-    def execute(self, input_path: str, output_path: str, params: dict) -> tuple[bool, str]:
+    def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
         """Нарезка видео"""
         start_time = params['start_time']
         end_time = params['end_time']
@@ -179,6 +231,7 @@ class ToShortsOperation(VideoOperation):
             required_params=[],
             optional_params={
                 'crop_mode': 'center',
+                'letterbox_config': {},
                 'title_text': '',
                 'title_config': {},
                 'subtitles': [],
@@ -186,11 +239,25 @@ class ToShortsOperation(VideoOperation):
             }
         )
 
-    def execute(self, input_path: str, output_path: str, params: dict) -> tuple[bool, str]:
+    def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
         """Конвертация в Shorts формат (1080x1920)"""
         # Применяем значения по умолчанию
         crop_mode = params.get('crop_mode', 'center')
         title_text = params.get('title_text', '')
+
+        # additional_inputs может содержать аудио дорожки, изображения и т.д.
+        # Пока не используется в базовой реализации, но доступно для расширения
+        additional_inputs = additional_inputs or {}
+
+        # Конфигурация letterbox режима
+        letterbox_config_raw = params.get('letterbox_config', {})
+        letterbox_config = {
+            'blur_radius': letterbox_config_raw.get('blur_radius', 20),
+            'bg_scale': letterbox_config_raw.get('bg_scale', '1080:1920'),
+            'fg_scale': letterbox_config_raw.get('fg_scale', '-1:1080'),
+            'overlay_x': letterbox_config_raw.get('overlay_x', '(W-w)/2'),
+            'overlay_y': letterbox_config_raw.get('overlay_y', '(H-h)/2')
+        }
 
         # Конфигурации с оптимальными fallback для Shorts
         title_config_raw = params.get('title_config', {})
@@ -225,9 +292,9 @@ class ToShortsOperation(VideoOperation):
         # Определяем фильтр обрезки
         if crop_mode == 'letterbox':
             video_filter = (
-                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20[bg];"
-                "[0:v]scale=-1:1080:force_original_aspect_ratio=decrease[fg];"
-                "[bg][fg]overlay=(W-w)/2:(H-h)/2"
+                f"[0:v]scale={letterbox_config['bg_scale']}:force_original_aspect_ratio=increase,crop=1080:1920,boxblur={letterbox_config['blur_radius']}[bg];"
+                f"[0:v]scale={letterbox_config['fg_scale']}:force_original_aspect_ratio=decrease[fg];"
+                f"[bg][fg]overlay={letterbox_config['overlay_x']}:{letterbox_config['overlay_y']}"
             )
         elif crop_mode == 'top':
             video_filter = "crop=ih*9/16:ih:0:0,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
@@ -392,7 +459,7 @@ class ExtractAudioOperation(VideoOperation):
             }
         )
 
-    def execute(self, input_path: str, output_path: str, params: dict) -> tuple[bool, str]:
+    def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
         """Извлечение аудио из видео"""
         audio_format = params.get('format', 'mp3')
         bitrate = params.get('bitrate', '192k')
@@ -1684,6 +1751,7 @@ def process_video():
         is_async = data.get('async', False)
         mode = data.get('mode', 'simple')  # simple или advanced
         webhook_url = data.get('webhook_url', os.getenv('WEBHOOK_URL'))
+        additional_inputs_urls = data.get('additional_inputs', {})  # {name: url}
 
         if not video_url:
             return jsonify({"success": False, "error": "video_url is required"}), 400
@@ -1748,6 +1816,7 @@ def process_video():
                     'progress': 0,
                     'video_url': video_url,
                     'operations': operations,
+                    'additional_inputs': additional_inputs_urls,
                     'webhook_url': webhook_url,
                     'created_at': datetime.now().isoformat()
                 }
@@ -1756,7 +1825,7 @@ def process_video():
                 # Запускаем фоновую обработку
                 thread = threading.Thread(
                     target=process_video_pipeline_background,
-                    args=(task_id, video_url, operations, webhook_url)
+                    args=(task_id, video_url, operations, webhook_url, additional_inputs_urls)
                 )
                 thread.daemon = True
                 thread.start()
@@ -1768,22 +1837,31 @@ def process_video():
                     "task_id": task_id,
                     "status": "queued",
                     "operations_count": len(operations),
+                    "additional_inputs_count": len(additional_inputs_urls),
                     "message": "Task created and processing started",
                     "check_status_url": f"/task_status/{task_id}"
                 }), 202
 
             else:
                 # Синхронный режим
-                return process_video_pipeline_sync(video_url, operations)
+                return process_video_pipeline_sync(video_url, operations, additional_inputs_urls)
 
     except Exception as e:
         logger.error(f"Process video error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
+def process_video_pipeline_sync(video_url: str, operations: list, additional_inputs_urls: dict = None) -> dict:
     """Синхронное выполнение pipeline операций"""
     import requests
+
+    additional_inputs_urls = additional_inputs_urls or {}
+
+    # Скачиваем дополнительные входные данные (если указаны)
+    additional_inputs_paths = {}
+    if additional_inputs_urls:
+        logger.info(f"Downloading {len(additional_inputs_urls)} additional inputs")
+        additional_inputs_paths = download_additional_inputs(additional_inputs_urls)
 
     # Скачиваем исходное видео
     input_filename = f"{uuid.uuid4()}.mp4"
@@ -1814,8 +1892,8 @@ def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
 
         logger.info(f"Executing operation {idx+1}/{len(operations)}: {op_type}")
 
-        # Выполняем операцию
-        success, message = operation.execute(current_input, output_path, op_data)
+        # Выполняем операцию с additional_inputs
+        success, message = operation.execute(current_input, output_path, op_data, additional_inputs_paths)
 
         if not success:
             # Ошибка - удаляем временные файлы
@@ -1830,9 +1908,14 @@ def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
         # Следующая операция будет использовать этот файл как вход
         current_input = output_path
 
-    # Удаляем исходный файл
+    # Удаляем исходный файл и дополнительные входные данные
     if os.path.exists(input_path):
         os.remove(input_path)
+
+    for name, path in additional_inputs_paths.items():
+        if os.path.exists(path):
+            os.remove(path)
+            logger.info(f"Cleaned up additional input: {name}")
 
     # Финальный результат
     os.chmod(final_output, 0o644)
@@ -1855,12 +1938,20 @@ def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
     })
 
 
-def process_video_pipeline_background(task_id: str, video_url: str, operations: list, webhook_url: str = None):
+def process_video_pipeline_background(task_id: str, video_url: str, operations: list, webhook_url: str = None, additional_inputs_urls: dict = None):
     """Фоновое выполнение pipeline операций"""
     import requests
 
+    additional_inputs_urls = additional_inputs_urls or {}
+
     try:
         update_task(task_id, {'status': 'processing', 'progress': 5})
+
+        # Скачиваем дополнительные входные данные (если указаны)
+        additional_inputs_paths = {}
+        if additional_inputs_urls:
+            logger.info(f"Task {task_id}: Downloading {len(additional_inputs_urls)} additional inputs")
+            additional_inputs_paths = download_additional_inputs(additional_inputs_urls)
 
         # Скачиваем исходное видео
         input_filename = f"{uuid.uuid4()}.mp4"
@@ -1899,8 +1990,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
             logger.info(f"Task {task_id}: Executing operation {idx+1}/{total_ops}: {op_type}")
 
-            # Выполняем операцию
-            success, message = operation.execute(current_input, output_path, op_data)
+            # Выполняем операцию с additional_inputs
+            success, message = operation.execute(current_input, output_path, op_data, additional_inputs_paths)
 
             if not success:
                 raise Exception(f"Operation '{op_type}' failed: {message}")
@@ -1912,9 +2003,14 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             # Следующая операция будет использовать этот файл как вход
             current_input = output_path
 
-        # Удаляем исходный файл
+        # Удаляем исходный файл и дополнительные входные данные
         if os.path.exists(input_path):
             os.remove(input_path)
+
+        for name, path in additional_inputs_paths.items():
+            if os.path.exists(path):
+                os.remove(path)
+                logger.info(f"Task {task_id}: Cleaned up additional input: {name}")
 
         # Финальный результат
         os.chmod(final_output, 0o644)
