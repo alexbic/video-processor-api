@@ -1,6 +1,6 @@
 # Video Processor API
 
-**Open Source** REST API для обработки видео с FFmpeg. Создание вертикальных Shorts, субтитры, нарезка, извлечение аудио, расширенный режим с raw FFmpeg командами.
+**Open Source** REST API для обработки видео с FFmpeg. Создание вертикальных Shorts, субтитры, нарезка, извлечение аудио.
 
 [![Docker Hub](https://img.shields.io/docker/v/alexbic/video-processor-api?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/alexbic/video-processor-api)
 [![GitHub](https://img.shields.io/badge/GitHub-alexbic/video--processor--api-blue?logo=github)](https://github.com/alexbic/video-processor-api)
@@ -15,8 +15,7 @@
 - 📝 **Динамические субтитры** - с поддержкой кастомных шрифтов, цветов, позиций
 - 🎨 **Текстовые оверлеи** - заголовки с fade-эффектами
 - ✂️ **Нарезка видео** - по таймкодам с конвертацией в Shorts
-- 🎵 **Извлечение аудио** - автоматическое разбиение на чанки
-- 🚀 **Advanced Mode** - raw FFmpeg команды с placeholders для сложных операций
+- 🎵 **Извлечение аудио** - из видеофайлов
 - 📡 **Webhooks** - уведомления о завершении обработки с retry-логикой
 - ⚡ **Async Processing** - фоновая обработка с отслеживанием статуса
 - 🔠 **Custom Fonts** - поддержка загрузки своих шрифтов (.ttf/.otf)
@@ -108,18 +107,13 @@ curl http://localhost:5001/fonts
 
 `POST /process_video`
 
-**Два режима работы:**
-
-#### 1. Simple Mode (операции)
-
-Используйте готовые операции из registry:
+Используйте готовые операции для обработки видео:
 
 ```bash
 curl -X POST http://localhost:5001/process_video \
   -H "Content-Type: application/json" \
   -d '{
     "video_url": "https://example.com/video.mp4",
-    "mode": "simple",
     "execution": "sync",
     "operations": [
       {
@@ -156,37 +150,6 @@ curl -X POST http://localhost:5001/process_video \
 - `cut` - нарезка видео по таймкодам
 - `to_shorts` - конверсия в Shorts формат (letterbox + title + subtitles)
 - `extract_audio` - извлечение аудиодорожки
-
----
-
-#### 2. Advanced Mode (raw FFmpeg)
-
-Для сложных операций используйте raw FFmpeg команды с placeholders:
-
-```bash
-curl -X POST http://localhost:5001/process_video \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video_url": "https://example.com/video.mp4",
-    "mode": "advanced",
-    "execution": "sync",
-    "ffmpeg": {
-      "input_options": ["-ss", "10", "-t", "30"],
-      "filter_complex": "[{input:v}][{logo:v}]overlay=W-w-10:10[v];[{input:a}][{background_music:a}]amix=inputs=2:weights=1 0.3[a]",
-      "output_options": ["-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-crf", "23"]
-    },
-    "additional_inputs": {
-      "logo": "https://example.com/logo.png",
-      "background_music": "https://example.com/music.mp3"
-    }
-  }'
-```
-
-**Placeholders:**
-- `{input:v}` → видео из основного файла
-- `{input:a}` → аудио из основного файла
-- `{logo:v}` → видео из дополнительного файла "logo"
-- `{background_music:a}` → аудио из дополнительного файла "background_music"
 
 ---
 
@@ -297,7 +260,6 @@ curl http://localhost:5001/task_status/abc123
 ```json
 {
   "video_url": "https://example.com/landscape.mp4",
-  "mode": "simple",
   "execution": "sync",
   "operations": [
     {
@@ -317,7 +279,6 @@ curl http://localhost:5001/task_status/abc123
 ```json
 {
   "video_url": "https://example.com/video.mp4",
-  "mode": "simple",
   "execution": "async",
   "operations": [
     {
@@ -351,7 +312,6 @@ curl http://localhost:5001/task_status/abc123
 ```json
 {
   "video_url": "https://example.com/long-video.mp4",
-  "mode": "simple",
   "execution": "sync",
   "operations": [
     {
@@ -363,30 +323,11 @@ curl http://localhost:5001/task_status/abc123
 }
 ```
 
-### Example 4: Advanced - лого + фоновая музыка
+### Example 4: Pipeline - несколько операций
 
 ```json
 {
   "video_url": "https://example.com/video.mp4",
-  "mode": "advanced",
-  "execution": "sync",
-  "ffmpeg": {
-    "filter_complex": "[{input:v}][{logo:v}]overlay=W-w-10:10[v];[{input:a}][{background_music:a}]amix=inputs=2:weights=1 0.3[a]",
-    "output_options": ["-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "medium"]
-  },
-  "additional_inputs": {
-    "logo": "https://example.com/watermark.png",
-    "background_music": "https://example.com/bgm.mp3"
-  }
-}
-```
-
-### Example 5: Pipeline - несколько операций
-
-```json
-{
-  "video_url": "https://example.com/video.mp4",
-  "mode": "simple",
   "execution": "async",
   "operations": [
     {
@@ -480,8 +421,3 @@ Pull requests приветствуются! Для больших изменен
 - GitHub: [@alexbic](https://github.com/alexbic)
 - Issues: [GitHub Issues](https://github.com/alexbic/video-processor-api/issues)
 
----
-
-## 🔗 Related Projects
-
-- **Video Processor API Pro** (private) - расширенная версия с token-based authentication, PostgreSQL, file management
