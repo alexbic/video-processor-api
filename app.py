@@ -291,7 +291,6 @@ class ToShortsOperation(VideoOperation):
         """Конвертация в Shorts формат (1080x1920)"""
         # Применяем значения по умолчанию
         crop_mode = params.get('crop_mode', 'center')
-        title_text = params.get('title_text', '')
 
         # additional_inputs может содержать аудио дорожки, изображения и т.д.
         # Пока не используется в базовой реализации, но доступно для расширения
@@ -307,35 +306,76 @@ class ToShortsOperation(VideoOperation):
             'overlay_y': letterbox_config_raw.get('overlay_y', '(H-h)/2')
         }
 
-        # Конфигурации с оптимальными fallback для Shorts
-        title_config_raw = params.get('title_config', {})
-        title_config = {
-            'fontfile': title_config_raw.get('fontfile'),
-            'font': title_config_raw.get('font'),
-            'fontsize': title_config_raw.get('fontsize', 70),
-            'fontcolor': title_config_raw.get('fontcolor', 'white'),
-            'bordercolor': title_config_raw.get('bordercolor', 'black'),
-            'borderw': title_config_raw.get('borderw', 3),
-            'text_align': title_config_raw.get('text_align', 'center'),
-            'y': title_config_raw.get('y', 150),
-            'start_time': title_config_raw.get('start_time', 0.5),
-            'duration': title_config_raw.get('duration', 4),
-            'fade_in': title_config_raw.get('fade_in', 0.5),
-            'fade_out': title_config_raw.get('fade_out', 0.5)
-        }
+        # Обработка title в новом формате (объект) или старом (разделенные поля)
+        title_raw = params.get('title')
+        if title_raw and isinstance(title_raw, dict):
+            # Новый формат: {"text": "...", "font": "...", "fontsize": 70, ...}
+            title_text = title_raw.get('text', '')
+            title_config = {
+                'fontfile': title_raw.get('fontfile'),
+                'font': title_raw.get('font'),
+                'fontsize': title_raw.get('fontsize', 70),
+                'fontcolor': title_raw.get('fontcolor', 'white'),
+                'bordercolor': title_raw.get('bordercolor', 'black'),
+                'borderw': title_raw.get('borderw', 3),
+                'text_align': title_raw.get('text_align', 'center'),
+                'box': title_raw.get('box', False),
+                'boxcolor': title_raw.get('boxcolor', 'black@0.5'),
+                'x': title_raw.get('x', 'center'),
+                'y': title_raw.get('y', 150),
+                'start_time': title_raw.get('start_time', 0.5),
+                'duration': title_raw.get('duration', 4),
+                'fade_in': title_raw.get('fade_in', 0.5),
+                'fade_out': title_raw.get('fade_out', 0.5)
+            }
+        else:
+            # Старый формат: title_text + title_config отдельно
+            title_text = params.get('title_text', '')
+            title_config_raw = params.get('title_config', {})
+            title_config = {
+                'fontfile': title_config_raw.get('fontfile'),
+                'font': title_config_raw.get('font'),
+                'fontsize': title_config_raw.get('fontsize', 70),
+                'fontcolor': title_config_raw.get('fontcolor', 'white'),
+                'bordercolor': title_config_raw.get('bordercolor', 'black'),
+                'borderw': title_config_raw.get('borderw', 3),
+                'text_align': title_config_raw.get('text_align', 'center'),
+                'y': title_config_raw.get('y', 150),
+                'start_time': title_config_raw.get('start_time', 0.5),
+                'duration': title_config_raw.get('duration', 4),
+                'fade_in': title_config_raw.get('fade_in', 0.5),
+                'fade_out': title_config_raw.get('fade_out', 0.5)
+            }
 
-        subtitles = params.get('subtitles', [])
-        subtitle_config_raw = params.get('subtitle_config', {})
-        subtitle_config = {
-            'fontfile': subtitle_config_raw.get('fontfile'),
-            'font': subtitle_config_raw.get('font'),
-            'fontsize': subtitle_config_raw.get('fontsize', 60),
-            'fontcolor': subtitle_config_raw.get('fontcolor', 'white'),
-            'bordercolor': subtitle_config_raw.get('bordercolor', 'black'),
-            'borderw': subtitle_config_raw.get('borderw', 3),
-            'text_align': subtitle_config_raw.get('text_align', 'center'),
-            'y': subtitle_config_raw.get('y', 'h-200')
-        }
+        # Обработка subtitles в новом формате (объект с items) или старом (прямой массив)
+        subtitles_raw = params.get('subtitles')
+        if subtitles_raw and isinstance(subtitles_raw, dict):
+            # Новый формат: {"items": [...], "font": "...", "fontsize": 64, ...}
+            subtitles = subtitles_raw.get('items', [])
+            subtitle_config = {
+                'fontfile': subtitles_raw.get('fontfile'),
+                'font': subtitles_raw.get('font'),
+                'fontsize': subtitles_raw.get('fontsize', 60),
+                'fontcolor': subtitles_raw.get('fontcolor', 'white'),
+                'bordercolor': subtitles_raw.get('bordercolor', 'black'),
+                'borderw': subtitles_raw.get('borderw', 3),
+                'text_align': subtitles_raw.get('text_align', 'center'),
+                'y': subtitles_raw.get('y', 'h-200')
+            }
+        else:
+            # Старый формат: subtitles как массив + subtitle_config отдельно
+            subtitles = params.get('subtitles', [])
+            subtitle_config_raw = params.get('subtitle_config', {})
+            subtitle_config = {
+                'fontfile': subtitle_config_raw.get('fontfile'),
+                'font': subtitle_config_raw.get('font'),
+                'fontsize': subtitle_config_raw.get('fontsize', 60),
+                'fontcolor': subtitle_config_raw.get('fontcolor', 'white'),
+                'bordercolor': subtitle_config_raw.get('bordercolor', 'black'),
+                'borderw': subtitle_config_raw.get('borderw', 3),
+                'text_align': subtitle_config_raw.get('text_align', 'center'),
+                'y': subtitle_config_raw.get('y', 'h-200')
+            }
 
         # Определяем фильтр обрезки
         if crop_mode == 'letterbox':
