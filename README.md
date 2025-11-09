@@ -1,43 +1,57 @@
 # Video Processor API
 
-REST API для обработки видео с FFmpeg. Создание вертикальных Shorts с субтитрами, нарезка видео, извлечение аудио.
+**Open Source** REST API для обработки видео с FFmpeg. Создание вертикальных Shorts, субтитры, нарезка, извлечение аудио, расширенный режим с raw FFmpeg командами.
 
 [![Docker Hub](https://img.shields.io/docker/v/alexbic/video-processor-api?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/alexbic/video-processor-api)
-[![GitHub Container Registry](https://img.shields.io/badge/ghcr.io-image-blue?logo=github)](https://github.com/alexbic/video-processor-api/pkgs/container/video-processor-api)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/alexbic/video-processor-api/docker-build.yml?branch=main)](https://github.com/alexbic/video-processor-api/actions)
+[![GitHub](https://img.shields.io/badge/GitHub-alexbic/video--processor--api-blue?logo=github)](https://github.com/alexbic/video-processor-api)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Features
+---
 
-- ⚡ Async processing - параллельная обработка множества клипов
-- 📦 Letterbox mode - горизонтальное видео с размытым фоном
-- 📝 Динамические субтитры - автосубтитры из Whisper API с таймкодами
-- 🎨 Текстовые оверлеи - заголовки с fade-эффектами
-- 🎵 Извлечение аудио - автоматическое разбиение на чанки < 25 МБ
-- ✂️ Нарезка видео - по таймкодам с конвертацией в Shorts (1080x1920)
+## ✨ Features
 
-## Installation
+- 🎬 **Pipeline Processing** - цепочка операций над видео (letterbox → title → subtitles)
+- 📦 **Letterbox Mode** - горизонтальное видео в вертикальный формат (1080x1920) с размытым фоном
+- 📝 **Динамические субтитры** - с поддержкой кастомных шрифтов, цветов, позиций
+- 🎨 **Текстовые оверлеи** - заголовки с fade-эффектами
+- ✂️ **Нарезка видео** - по таймкодам с конвертацией в Shorts
+- 🎵 **Извлечение аудио** - автоматическое разбиение на чанки
+- 🚀 **Advanced Mode** - raw FFmpeg команды с placeholders для сложных операций
+- 📡 **Webhooks** - уведомления о завершении обработки с retry-логикой
+- ⚡ **Async Processing** - фоновая обработка с отслеживанием статуса
+- 🔠 **Custom Fonts** - поддержка загрузки своих шрифтов (.ttf/.otf)
+- 🐳 **Redis Support** - multi-worker режим для высоких нагрузок
 
-### Single Worker (No Redis)
+---
+
+## 🚀 Quick Start
+
+### Single Worker (без Redis)
 
 ```bash
 docker pull alexbic/video-processor-api:latest
-docker run -d -p 5001:5001 --name video-processor alexbic/video-processor-api:latest
+docker run -d -p 5001:5001 \
+  -v $(pwd)/uploads:/app/uploads \
+  -v $(pwd)/outputs:/app/outputs \
+  --name video-processor \
+  alexbic/video-processor-api:latest
 ```
 
-### Multi-Worker with Redis (Recommended for Production)
+### Multi-Worker с Redis (рекомендуется для production)
 
-See [docker-compose.redis-example.yml](docker-compose.redis-example.yml) for full configuration.
+См. [docker-compose.redis-example.yml](docker-compose.redis-example.yml) для полной конфигурации.
 
 ```bash
-# Add redis service and update video-processor in your docker-compose.yml
 docker-compose up -d redis video-processor
 ```
 
-The API automatically detects Redis availability:
-- **With Redis**: Multi-worker mode enabled (2+ workers)
-- **Without Redis**: Single-worker mode (fallback)
+API автоматически определяет доступность Redis:
+- **С Redis**: Multi-worker mode (2+ workers)
+- **Без Redis**: Single-worker mode (fallback)
 
-## API Reference
+---
+
+## 📚 API Reference
 
 ### Health Check
 
@@ -52,49 +66,338 @@ curl http://localhost:5001/health
   "service": "video-processor-api",
   "storage_mode": "redis",
   "redis_available": true,
-  "timestamp": "2025-01-06T18:40:00.000Z"
+  "timestamp": "2025-01-08T10:00:00"
 }
 ```
 
 ---
 
-### Extract Audio
+### Доступные шрифты
 
-Извлечь аудио из видео. Автоматически разбивает на чанки если файл > 25 МБ.
-
-**Request:**
 ```bash
-curl -X POST http://localhost:5001/extract_audio \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video_url": "http://youtube_downloader:5000/download_file/video.mp4"
-  }'
+curl http://localhost:5001/fonts
 ```
 
-**Response (single file):**
+**Response:**
 ```json
 {
-  "success": true,
-  "mode": "single",
-  "download_url": "http://video-processor:5001/download/audio_20250115_103000.mp3",
-  "file_size_mb": 15.5,
-  "whisper_ready": true
+  "status": "success",
+  "total_fonts": 10,
+  "fonts": {
+    "system_fonts": [
+      {"name": "DejaVu Sans", "family": "sans-serif"},
+      {"name": "DejaVu Sans Bold", "family": "sans-serif"},
+      {"name": "Roboto", "family": "sans-serif"},
+      ...
+    ],
+    "custom_fonts": []
+  }
 }
 ```
 
-**Response (chunked):**
+**Кастомные шрифты:**
+1. Поместите .ttf/.otf файлы в `/opt/n8n-docker/volumes/video_processor/fonts/`
+2. Перезапустите контейнер
+3. Используйте через `"font": "YourFontName"`
+
+См. [FONTS.md](FONTS.md) для подробностей.
+
+---
+
+### Обработка видео
+
+`POST /process_video`
+
+**Два режима работы:**
+
+#### 1. Simple Mode (операции)
+
+Используйте готовые операции из registry:
+
+```bash
+curl -X POST http://localhost:5001/process_video \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_url": "https://example.com/video.mp4",
+    "mode": "simple",
+    "execution": "sync",
+    "operations": [
+      {
+        "type": "to_shorts",
+        "letterbox_config": {
+          "width": 1080,
+          "height": 1920,
+          "color": "black"
+        },
+        "title": {
+          "text": "My Shorts Video",
+          "font": "DejaVu Sans Bold",
+          "fontsize": 70,
+          "fontcolor": "white",
+          "x": "center",
+          "y": 100
+        },
+        "subtitles": {
+          "items": [
+            {"text": "First subtitle", "start": 0, "end": 3},
+            {"text": "Second subtitle", "start": 3, "end": 6}
+          ],
+          "font": "Roboto",
+          "fontsize": 64,
+          "fontcolor": "yellow"
+        }
+      }
+    ],
+    "webhook_url": "https://n8n.example.com/webhook/video-completed"
+  }'
+```
+
+**Доступные операции:**
+- `cut` - нарезка видео по таймкодам
+- `to_shorts` - конверсия в Shorts формат (letterbox + title + subtitles)
+- `extract_audio` - извлечение аудиодорожки
+
+---
+
+#### 2. Advanced Mode (raw FFmpeg)
+
+Для сложных операций используйте raw FFmpeg команды с placeholders:
+
+```bash
+curl -X POST http://localhost:5001/process_video \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_url": "https://example.com/video.mp4",
+    "mode": "advanced",
+    "execution": "sync",
+    "ffmpeg": {
+      "input_options": ["-ss", "10", "-t", "30"],
+      "filter_complex": "[{input:v}][{logo:v}]overlay=W-w-10:10[v];[{input:a}][{background_music:a}]amix=inputs=2:weights=1 0.3[a]",
+      "output_options": ["-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-crf", "23"]
+    },
+    "additional_inputs": {
+      "logo": "https://example.com/logo.png",
+      "background_music": "https://example.com/music.mp3"
+    }
+  }'
+```
+
+**Placeholders:**
+- `{input:v}` → видео из основного файла
+- `{input:a}` → аудио из основного файла
+- `{logo:v}` → видео из дополнительного файла "logo"
+- `{background_music:a}` → аудио из дополнительного файла "background_music"
+
+---
+
+### Execution Modes
+
+#### Sync (синхронный)
+
+```json
+{
+  "execution": "sync"
+}
+```
+
+**Response (сразу):**
 ```json
 {
   "success": true,
-  "mode": "chunked",
-  "total_chunks": 3,
-  "chunks": [
+  "filename": "output_20250108_100523.mp4",
+  "file_size_mb": 15.3,
+  "download_url": "http://video-processor:5001/download/output_20250108_100523.mp4",
+  "note": "File will auto-delete after 2 hours."
+}
+```
+
+#### Async (асинхронный)
+
+```json
+{
+  "execution": "async"
+}
+```
+
+**Response (сразу):**
+```json
+{
+  "success": true,
+  "task_id": "abc123",
+  "status": "processing",
+  "message": "Task created and processing in background"
+}
+```
+
+**Проверка статуса:**
+```bash
+curl http://localhost:5001/task_status/abc123
+```
+
+**Response:**
+```json
+{
+  "task_id": "abc123",
+  "status": "completed",
+  "progress": 100,
+  "filename": "output.mp4",
+  "download_url": "http://video-processor:5001/download/output.mp4",
+  "completed_at": "2025-01-08T10:05:23"
+}
+```
+
+---
+
+### Webhooks
+
+Добавьте `webhook_url` для получения уведомлений:
+
+```json
+{
+  "webhook_url": "https://n8n.example.com/webhook/video-completed"
+}
+```
+
+**Webhook Payload (success):**
+```json
+{
+  "task_id": "abc123",
+  "event": "task_completed",
+  "status": "completed",
+  "filename": "output.mp4",
+  "file_size_mb": 15.3,
+  "file_ttl_seconds": 7200,
+  "file_ttl_human": "2 hours",
+  "download_url": "http://video-processor:5001/download/output.mp4",
+  "completed_at": "2025-01-08T10:05:23"
+}
+```
+
+**Webhook Payload (error):**
+```json
+{
+  "task_id": "abc123",
+  "event": "task_failed",
+  "status": "failed",
+  "error": "FFmpeg error: ...",
+  "failed_at": "2025-01-08T10:05:23"
+}
+```
+
+**Retry логика:**
+- 3 попытки отправки
+- Exponential backoff: 1s, 2s, 4s
+
+---
+
+## 📖 Examples
+
+### Example 1: Простая конверсия в Shorts
+
+```json
+{
+  "video_url": "https://example.com/landscape.mp4",
+  "mode": "simple",
+  "execution": "sync",
+  "operations": [
     {
-      "chunk_index": 0,
-      "download_url": "http://video-processor:5001/download/audio_xxx_chunk000.mp3",
-      "start_time": 0.0,
-      "end_time": 630.0,
-      "file_size_mb": 24.0
+      "type": "to_shorts",
+      "letterbox_config": {
+        "width": 1080,
+        "height": 1920,
+        "color": "black"
+      }
+    }
+  ]
+}
+```
+
+### Example 2: Shorts с заголовком и субтитрами
+
+```json
+{
+  "video_url": "https://example.com/video.mp4",
+  "mode": "simple",
+  "execution": "async",
+  "operations": [
+    {
+      "type": "to_shorts",
+      "letterbox_config": {"width": 1080, "height": 1920, "color": "#1a1a1a"},
+      "title": {
+        "text": "Amazing Content",
+        "font": "DejaVu Sans Bold",
+        "fontsize": 80,
+        "fontcolor": "yellow",
+        "box": true,
+        "boxcolor": "black@0.5"
+      },
+      "subtitles": {
+        "items": [
+          {"text": "Welcome to our channel", "start": 0, "end": 3},
+          {"text": "Subscribe for more", "start": 3, "end": 6}
+        ],
+        "font": "Roboto",
+        "fontsize": 64,
+        "fontcolor": "white"
+      }
+    }
+  ],
+  "webhook_url": "https://n8n.example.com/webhook/completed"
+}
+```
+
+### Example 3: Нарезка видео
+
+```json
+{
+  "video_url": "https://example.com/long-video.mp4",
+  "mode": "simple",
+  "execution": "sync",
+  "operations": [
+    {
+      "type": "cut",
+      "start_time": "00:01:30",
+      "end_time": "00:02:00"
+    }
+  ]
+}
+```
+
+### Example 4: Advanced - лого + фоновая музыка
+
+```json
+{
+  "video_url": "https://example.com/video.mp4",
+  "mode": "advanced",
+  "execution": "sync",
+  "ffmpeg": {
+    "filter_complex": "[{input:v}][{logo:v}]overlay=W-w-10:10[v];[{input:a}][{background_music:a}]amix=inputs=2:weights=1 0.3[a]",
+    "output_options": ["-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "medium"]
+  },
+  "additional_inputs": {
+    "logo": "https://example.com/watermark.png",
+    "background_music": "https://example.com/bgm.mp3"
+  }
+}
+```
+
+### Example 5: Pipeline - несколько операций
+
+```json
+{
+  "video_url": "https://example.com/video.mp4",
+  "mode": "simple",
+  "execution": "async",
+  "operations": [
+    {
+      "type": "cut",
+      "start_time": "00:00:10",
+      "end_time": "00:01:00"
+    },
+    {
+      "type": "to_shorts",
+      "letterbox_config": {"width": 1080, "height": 1920},
+      "title": {"text": "Episode 1", "fontsize": 70}
     }
   ]
 }
@@ -102,353 +405,83 @@ curl -X POST http://localhost:5001/extract_audio \
 
 ---
 
-### Create Short (Async) - Recommended
+## 🔧 Configuration
 
-Создать вертикальный Short асинхронно. Возвращает task_id мгновенно.
+### Environment Variables
 
-#### Базовый пример (без текста)
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WORKERS` | `1` | Количество gunicorn workers (используйте 2+ с Redis) |
+| `REDIS_HOST` | `redis` | Redis hostname |
+| `REDIS_PORT` | `6379` | Redis port |
+| `REDIS_DB` | `0` | Redis database number |
+
+### Docker Volumes
+
+```yaml
+volumes:
+  - /path/to/uploads:/app/uploads      # Временные загрузки
+  - /path/to/outputs:/app/outputs      # Выходные файлы (TTL: 2 часа)
+  - /path/to/fonts:/app/fonts/custom   # Кастомные шрифты
+```
+
+---
+
+## 📝 File Retention
+
+- **Outputs**: Автоматически удаляются через **2 часа**
+- **Uploads**: Удаляются сразу после обработки
+- **Redis Tasks**: TTL = 24 часа
+
+---
+
+## 🛠 Development
+
+### Local Build
 
 ```bash
-curl -X POST http://localhost:5001/process_to_shorts_async \
+git clone https://github.com/alexbic/video-processor-api.git
+cd video-processor-api
+docker build -t video-processor-api:local .
+docker run -d -p 5001:5001 video-processor-api:local
+```
+
+### Testing
+
+```bash
+# Health check
+curl http://localhost:5001/health
+
+# List fonts
+curl http://localhost:5001/fonts
+
+# Test simple mode
+curl -X POST http://localhost:5001/process_video \
   -H "Content-Type: application/json" \
-  -d '{
-    "video_url": "http://youtube_downloader:5000/download_file/video.mp4",
-    "start_time": 10.5,
-    "end_time": 45.2,
-    "crop_mode": "letterbox"
-  }'
-```
-
-#### С заголовком
-
-```bash
-curl -X POST http://localhost:5001/process_to_shorts_async \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video_url": "http://youtube_downloader:5000/download_file/video.mp4",
-    "start_time": 50.0,
-    "end_time": 80.5,
-    "crop_mode": "letterbox",
-    "title_text": "Невероятный трюк!"
-  }'
-```
-
-#### С динамическими субтитрами (полный пример)
-
-```bash
-curl -X POST http://localhost:5001/process_to_shorts_async \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video_url": "http://youtube_downloader:5000/download_file/video.mp4",
-    "start_time": 125.5,
-    "end_time": 165.8,
-    "crop_mode": "letterbox",
-    "title_text": "Эпичный момент!",
-    "subtitles": [
-      {"text": "Смотрите что", "start": 0.0, "end": 1.2},
-      {"text": "я сейчас сделаю", "start": 1.3, "end": 2.5},
-      {"text": "это будет нереально", "start": 2.6, "end": 4.8}
-    ],
-    "title_config": {
-      "fontsize": 60,
-      "fontcolor": "white",
-      "bordercolor": "black",
-      "borderw": 3,
-      "y": 100,
-      "start_time": 0.5,
-      "duration": 4,
-      "fade_in": 0.5,
-      "fade_out": 0.5
-    },
-    "subtitle_config": {
-      "fontsize": 48,
-      "fontcolor": "#90EE90",
-      "bordercolor": "white",
-      "borderw": 3,
-      "y": "h-150"
-    }
-  }'
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "task_id": "a1b2c3d4-5678-90ab-cdef-1234567890ab",
-  "status": "queued",
-  "check_status_url": "/task_status/a1b2c3d4-5678-90ab-cdef-1234567890ab"
-}
+  -d '{"video_url": "https://example.com/video.mp4", "mode": "simple", "operations": [{"type": "to_shorts"}]}'
 ```
 
 ---
 
-### Check Task Status
+## 📄 License
 
-```bash
-curl http://localhost:5001/task_status/a1b2c3d4-5678-90ab-cdef-1234567890ab
-```
-
-**Response (processing):**
-```json
-{
-  "success": true,
-  "task_id": "a1b2c3d4-5678-90ab-cdef-1234567890ab",
-  "status": "processing",
-  "progress": 65
-}
-```
-
-**Response (completed):**
-```json
-{
-  "success": true,
-  "task_id": "a1b2c3d4-5678-90ab-cdef-1234567890ab",
-  "status": "completed",
-  "progress": 100,
-  "download_url": "http://video-processor:5001/download/shorts_xxx.mp4",
-  "file_size": 12582912
-}
-```
+MIT License - см. [LICENSE](LICENSE) для подробностей.
 
 ---
 
-### Download File
+## 🤝 Contributing
 
-```bash
-curl -O http://localhost:5001/download/shorts_xxx.mp4
-```
+Pull requests приветствуются! Для больших изменений сначала откройте issue.
 
 ---
 
-## Parameters Reference
+## 📧 Contact
 
-### crop_mode
-
-| Value | Description |
-|-------|-------------|
-| `letterbox` | ✅ Recommended - горизонтальное видео с размытым фоном |
-| `center` | Обрезка по центру |
-| `top` | Обрезка сверху |
-| `bottom` | Обрезка снизу |
-
-### title_config
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `fontsize` | int | 60 | Размер шрифта |
-| `fontcolor` | string | "white" | Цвет текста |
-| `bordercolor` | string | "black" | Цвет обводки |
-| `borderw` | int | 3 | Толщина обводки |
-| `y` | int/string | 100 | Позиция по вертикали |
-| `start_time` | float | 0.5 | Когда появляется (сек) |
-| `duration` | float | 4 | Длительность (сек) |
-| `fade_in` | float | 0.5 | Fade in (сек) |
-| `fade_out` | float | 0.5 | Fade out (сек) |
-
-### subtitle_config
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `fontsize` | int | 48 | Размер шрифта |
-| `fontcolor` | string | "#90EE90" | Цвет текста (светло-зеленый) |
-| `bordercolor` | string | "white" | Цвет обводки |
-| `borderw` | int | 3 | Толщина обводки |
-| `y` | string | "h-150" | Позиция (150px от низа) |
-
-### subtitles array
-
-Массив объектов с полями:
-- `text` (string) - текст субтитра
-- `start` (float) - начало **относительно клипа** (сек)
-- `end` (float) - конец **относительно клипа** (сек)
-
-**⚠️ ВАЖНО:** Timestamps должны быть **относительные** от начала клипа (0-based), не абсолютные!
+- GitHub: [@alexbic](https://github.com/alexbic)
+- Issues: [GitHub Issues](https://github.com/alexbic/video-processor-api/issues)
 
 ---
 
-## Preset Configurations
+## 🔗 Related Projects
 
-### Цветовые схемы субтитров
-
-```bash
-# Светло-зеленый (по умолчанию)
-"subtitle_config": {"fontcolor": "#90EE90", "bordercolor": "white"}
-
-# Желтый (TikTok style)
-"subtitle_config": {"fontcolor": "yellow", "bordercolor": "black"}
-
-# Белый классический
-"subtitle_config": {"fontcolor": "white", "bordercolor": "black"}
-
-# Неоновый розовый
-"subtitle_config": {"fontcolor": "#FF69B4", "bordercolor": "white"}
-```
-
-### Позиционирование
-
-```bash
-# Внизу (по умолчанию)
-"y": "h-150"
-
-# Выше от низа
-"y": "h-200"
-
-# По центру
-"y": "(h-text_h)/2"
-
-# Вверху под title
-"y": "200"
-```
-
----
-
-## n8n Integration
-
-### Full Workflow
-
-```
-YouTube Downloader
-  ↓ download_url
-Extract Audio
-  ↓ audio file
-Whisper API (timestamp_granularities: "word")
-  ↓ words: [{word, start, end}]
-LLM (Gemini/GPT) - см. llm-prompts/shorts-extractor.md
-  ↓ shorts: [{start, end, title, subtitles}]
-Process to Shorts Async (параллельно для всех клипов)
-  ↓ task_ids
-Check Status (loop)
-  ↓ download_urls
-Download & Publish
-```
-
-### Code Nodes
-
-**Prepare Whisper data for LLM:**
-```javascript
-// Input: items из Whisper API с {text, words, duration, source_video_url}
-return items.map(item => {
-  const dur = Number(item.json.duration || 0);
-
-  // Округление до 3 знаков (важно для LLM!)
-  const round3 = (n) => Math.round(Number(n) * 1000) / 1000;
-
-  // Whisper возвращает words при timestamp_granularities: "word"
-  const wordsLLM = (item.json.words || []).map(w => ({
-    w: w.word,
-    s: round3(w.start),
-    e: round3(w.end),
-  }));
-
-  // Формируем данные для LLM
-  item.json.video_duration = round3(dur);
-  item.json.words_llm = wordsLLM;
-  item.json.text_llm = item.json.text;
-  item.json.source_video_url = item.json.source_video_url;
-
-  return item;
-});
-```
-
-**Process LLM response:**
-```javascript
-const response = $json;
-const shorts = response.shorts || [];
-
-const title_config = {
-  fontsize: 60,
-  fontcolor: "white",
-  bordercolor: "black",
-  borderw: 3,
-  y: 200,  // Опущено ниже для баланса композиции
-  start_time: 0.5,
-  duration: 4,
-  fade_in: 0.5,
-  fade_out: 0.5
-};
-
-const subtitle_config = {
-  fontsize: 64,  // Увеличен для лучшей читаемости на TikTok/Shorts
-  fontcolor: "#90EE90",
-  bordercolor: "white",
-  borderw: 4,  // Увеличена обводка для контрастности
-  y: "h-300"  // Поднято выше для баланса композиции
-};
-
-const requests = shorts.map((short, index) => ({
-  video_url: response.source_video_url,
-  start_time: short.start,
-  end_time: short.end,
-  crop_mode: "letterbox",
-  title_text: short.title,
-  subtitles: short.subtitles,
-  title_config: title_config,
-  subtitle_config: subtitle_config,
-  metadata: {
-    tiktok_description: short.video_description_for_tiktok,
-    instagram_description: short.video_description_for_instagram,
-    youtube_title: short.video_title_for_youtube_short,
-    clip_index: index + 1,
-    total_clips: shorts.length
-  }
-}));
-
-return requests.map(req => ({ json: req }));
-```
-
----
-
-## Text Wrapping
-
-API автоматически переносит длинный текст заголовков и субтитров на 2 строки при необходимости.
-
-**Расчёт переноса:**
-- Формула: `max_chars_per_line = 950 / (fontsize * 0.55)`
-- `fontsize: 64` → ~12 символов на строку (субтитры)
-- `fontsize: 60` → ~14 символов на строку (заголовок)
-- `fontsize: 48` → ~16 символов на строку
-- Максимум 2 строки одновременно
-- Используется `expansion=normal` в FFmpeg drawtext для поддержки `\n`
-
-**Работает для:**
-- ✅ Заголовка (title_text)
-- ✅ Субтитров (subtitles[].text)
-
-**Пример:**
-```
-Текст: "Это очень длинная фраза для субтитров"
-Результат (fontsize 64):
-Это очень
-длинная фраза
-```
-
-**Рекомендация:** Группируйте субтитры по 2-4 слова для оптимальной читаемости.
-
----
-
-## Troubleshooting
-
-**Субтитры не синхронны**
-→ Timestamps должны быть относительные (0-based), не абсолютные. LLM должен вычесть `clip.start`.
-
-**Слишком много текста**
-→ API автоматически переносит текст, но лучше группировать по 2-4 слова.
-
-**Плохая контрастность**
-→ Увеличьте `borderw` до 4-5 или смените `bordercolor`.
-
-**Timeout**
-→ Используйте `/process_to_shorts_async` вместо sync версии.
-
----
-
-## Additional Resources
-
-- [LLM Prompt для выделения моментов](llm-prompts/shorts-extractor.md)
-- [YouTube Downloader API](https://github.com/alexbic/youtube-downloader-api)
-
----
-
-## License
-
-MIT License
+- **Video Processor API Pro** (private) - расширенная версия с token-based authentication, PostgreSQL, file management
