@@ -161,6 +161,54 @@ def download_additional_inputs(additional_inputs_urls: dict) -> dict:
     return additional_inputs_paths
 
 
+def send_webhook(webhook_url: str, payload: dict, max_retries: int = 3) -> bool:
+    """
+    Отправляет webhook с retry логикой
+
+    Args:
+        webhook_url: URL для отправки webhook
+        payload: Данные для отправки (JSON)
+        max_retries: Максимальное количество попыток (default: 3)
+
+    Returns:
+        True если успешно отправлено, False если все попытки провалились
+    """
+    import requests
+    import time
+
+    if not webhook_url:
+        return False
+
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Sending webhook to {webhook_url} (attempt {attempt + 1}/{max_retries})")
+
+            response = requests.post(
+                webhook_url,
+                json=payload,
+                timeout=10,
+                headers={'Content-Type': 'application/json'}
+            )
+
+            response.raise_for_status()
+            logger.info(f"Webhook sent successfully to {webhook_url}")
+            return True
+
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Webhook attempt {attempt + 1}/{max_retries} failed: {e}")
+
+            if attempt < max_retries - 1:
+                # Exponential backoff: 1s, 2s, 4s
+                sleep_time = 2 ** attempt
+                logger.info(f"Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+            else:
+                logger.error(f"All {max_retries} webhook attempts failed for {webhook_url}")
+                return False
+
+    return False
+
+
 # ============================================
 # VIDEO OPERATIONS REGISTRY
 # ============================================
@@ -1274,6 +1322,23 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             if not success:
                 raise Exception(f"Operation '{op_type}' failed: {message}")
 
+            # Operation-level webhook (опционально)
+            operation_webhook_url = op_data.get('webhook_url')
+            if operation_webhook_url:
+                operation_file_size = os.path.getsize(output_path)
+                operation_payload = {
+                    'task_id': task_id,
+                    'event': 'operation_completed',
+                    'operation_index': idx + 1,
+                    'operation_total': total_ops,
+                    'operation_type': op_type,
+                    'operation_status': 'success',
+                    'operation_message': message,
+                    'file_size': operation_file_size,
+                    'timestamp': datetime.now().isoformat()
+                }
+                send_webhook(operation_webhook_url, operation_payload)
+
             # Удаляем предыдущий временный файл
             if current_input != input_path and os.path.exists(current_input):
                 os.remove(current_input)
@@ -1311,7 +1376,24 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
         logger.info(f"Task {task_id}: Completed successfully")
 
-        # TODO: Отправить webhook если указан
+        # Отправляем финальный webhook если указан
+        if webhook_url:
+            file_ttl_seconds = 7200  # 2 часа
+            webhook_payload = {
+                'task_id': task_id,
+                'event': 'task_completed',
+                'status': 'completed',
+                'filename': os.path.basename(final_output),
+                'file_size': file_size,
+                'file_size_mb': round(file_size / (1024 * 1024), 2),
+                'file_ttl_seconds': file_ttl_seconds,
+                'file_ttl_human': '2 hours',
+                'download_path': download_path,
+                'download_url': f"http://video-processor:5001{download_path}",
+                'operations_executed': total_ops,
+                'completed_at': datetime.now().isoformat()
+            }
+            send_webhook(webhook_url, webhook_payload)
 
     except Exception as e:
         logger.error(f"Task {task_id}: Error - {e}")
@@ -1320,6 +1402,17 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             'error': str(e),
             'failed_at': datetime.now().isoformat()
         })
+
+        # Отправляем error webhook если указан
+        if webhook_url:
+            error_payload = {
+                'task_id': task_id,
+                'event': 'task_failed',
+                'status': 'failed',
+                'error': str(e),
+                'failed_at': datetime.now().isoformat()
+            }
+            send_webhook(webhook_url, error_payload)
 
 
 if __name__ == '__main__':
