@@ -1087,16 +1087,19 @@ def process_video():
             # Advanced режим - raw FFmpeg команды
             ffmpeg_params = data.get('ffmpeg', {})
 
+            if not ffmpeg_params:
+                return jsonify({
+                    "success": False,
+                    "error": "ffmpeg parameters are required for advanced mode"
+                }), 400
+
             # Валидация FFmpeg параметров
             is_valid, error_msg = validate_ffmpeg_params(ffmpeg_params)
             if not is_valid:
                 return jsonify({"success": False, "error": error_msg}), 400
 
-            # TODO: Реализовать выполнение raw FFmpeg команд
-            return jsonify({
-                "success": False,
-                "error": "Advanced mode not yet implemented"
-            }), 501
+            # Выполняем raw FFmpeg команды (только sync режим)
+            return execute_ffmpeg_advanced(video_url, ffmpeg_params, additional_inputs_urls)
 
         else:
             # Простой режим - операции
@@ -1175,6 +1178,148 @@ def process_video():
     except Exception as e:
         logger.error(f"Process video error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+
+def execute_ffmpeg_advanced(video_url: str, ffmpeg_params: dict, additional_inputs_urls: dict = None) -> dict:
+    """
+    Выполнение raw FFmpeg команд (advanced режим)
+
+    Args:
+        video_url: URL исходного видео
+        ffmpeg_params: Параметры FFmpeg {
+            'input_options': ['-ss', '10', '-t', '5'],
+            'filter_complex': 'overlay=W-w-10:10',  # для наложения
+            'video_filters': ['scale=1080:1920', 'fps=30'],
+            'audio_filters': ['volume=2.0'],
+            'output_options': ['-c:v', 'libx264', '-crf', '23']
+        }
+        additional_inputs_urls: Дополнительные входные файлы {
+            'logo': 'https://logo.png',
+            'background_audio': 'https://music.mp3'
+        }
+
+    Returns:
+        JSON response с результатом
+    """
+    import requests
+
+    additional_inputs_urls = additional_inputs_urls or {}
+
+    # Скачиваем дополнительные входные данные
+    additional_inputs_paths = {}
+    if additional_inputs_urls:
+        logger.info(f"Advanced mode: Downloading {len(additional_inputs_urls)} additional inputs")
+        additional_inputs_paths = download_additional_inputs(additional_inputs_urls)
+
+    # Скачиваем исходное видео
+    input_filename = f"{uuid.uuid4()}.mp4"
+    input_path = os.path.join(UPLOAD_DIR, input_filename)
+
+    logger.info(f"Advanced mode: Downloading video from {video_url}")
+    response = requests.get(video_url, stream=True, timeout=300)
+    with open(input_path, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+    # Формируем выходной файл
+    output_filename = f"advanced_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+    output_path = os.path.join(OUTPUT_DIR, output_filename)
+
+    # Строим FFmpeg команду
+    cmd = ['ffmpeg']
+
+    # Input options (перед -i)
+    input_options = ffmpeg_params.get('input_options', [])
+    if input_options:
+        cmd.extend(input_options)
+
+    # Основное видео всегда первое
+    cmd.extend(['-i', input_path])
+
+    # Добавляем дополнительные входы (для overlay, amix и т.д.)
+    for name, path in additional_inputs_paths.items():
+        cmd.extend(['-i', path])
+
+    # Filter complex (для сложных фильтров с несколькими входами)
+    filter_complex = ffmpeg_params.get('filter_complex')
+    if filter_complex:
+        # Заменяем placeholders на индексы FFmpeg
+        # {input} -> [0:v] или [0:a]
+        # {logo} -> [1:v] (первый дополнительный вход)
+        # {background_music} -> [2:a] (второй дополнительный вход)
+
+        # Маппинг: название -> индекс
+        input_mapping = {'input': 0}
+        for idx, name in enumerate(additional_inputs_paths.keys(), start=1):
+            input_mapping[name] = idx
+
+        # Заменяем placeholders
+        for name, index in input_mapping.items():
+            filter_complex = filter_complex.replace(f'{{{name}:v}}', f'[{index}:v]')
+            filter_complex = filter_complex.replace(f'{{{name}:a}}', f'[{index}:a]')
+            filter_complex = filter_complex.replace(f'{{{name}}}', f'[{index}]')
+
+        cmd.extend(['-filter_complex', filter_complex])
+    else:
+        # Video filters (простые)
+        video_filters = ffmpeg_params.get('video_filters', [])
+        if video_filters:
+            vf_string = ','.join(video_filters)
+            cmd.extend(['-vf', vf_string])
+
+        # Audio filters (простые)
+        audio_filters = ffmpeg_params.get('audio_filters', [])
+        if audio_filters:
+            af_string = ','.join(audio_filters)
+            cmd.extend(['-af', af_string])
+
+    # Output options
+    output_options = ffmpeg_params.get('output_options', [])
+    if output_options:
+        cmd.extend(output_options)
+
+    # Финальные параметры
+    cmd.extend(['-y', output_path])
+
+    logger.info(f"Advanced mode: Executing FFmpeg: {' '.join(cmd)}")
+
+    # Выполняем команду
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    # Удаляем входной файл и дополнительные входы
+    if os.path.exists(input_path):
+        os.remove(input_path)
+
+    for name, path in additional_inputs_paths.items():
+        if os.path.exists(path):
+            os.remove(path)
+            logger.info(f"Advanced mode: Cleaned up additional input: {name}")
+
+    if result.returncode != 0:
+        logger.error(f"Advanced mode FFmpeg error: {result.stderr}")
+        return jsonify({"success": False, "error": f"FFmpeg error: {result.stderr}"}), 500
+
+    # Результат
+    os.chmod(output_path, 0o644)
+    file_size = os.path.getsize(output_path)
+
+    download_path = f"/download/{output_filename}"
+    base_url = request.host_url.rstrip('/')
+    full_download_url = f"{base_url}{download_path}"
+
+    return jsonify({
+        "success": True,
+        "mode": "advanced",
+        "filename": output_filename,
+        "file_path": output_path,
+        "file_size": file_size,
+        "file_size_mb": round(file_size / (1024 * 1024), 2),
+        "download_url": full_download_url,
+        "download_path": download_path,
+        "ffmpeg_command": ' '.join(cmd),
+        "note": "File will auto-delete after 2 hours.",
+        "processed_at": datetime.now().isoformat()
+    })
 
 
 def process_video_pipeline_sync(video_url: str, operations: list, additional_inputs_urls: dict = None) -> dict:
