@@ -79,10 +79,46 @@ def list_tasks() -> list:
         return list(tasks_memory.values())[-100:]
 
 # Конфигурация
-UPLOAD_DIR = "/app/uploads"
-OUTPUT_DIR = "/app/outputs"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+TASKS_DIR = "/app/tasks"
+os.makedirs(TASKS_DIR, exist_ok=True)
+
+# Вспомогательные функции для работы с задачами
+def get_task_dir(task_id: str) -> str:
+    """Получить директорию задачи"""
+    return os.path.join(TASKS_DIR, task_id)
+
+def get_task_input_dir(task_id: str) -> str:
+    """Получить директорию для входных файлов задачи"""
+    return os.path.join(TASKS_DIR, task_id, "input")
+
+def get_task_temp_dir(task_id: str) -> str:
+    """Получить директорию для временных файлов задачи"""
+    return os.path.join(TASKS_DIR, task_id, "temp")
+
+def get_task_output_dir(task_id: str) -> str:
+    """Получить директорию для выходных файлов задачи"""
+    return os.path.join(TASKS_DIR, task_id, "output")
+
+def create_task_dirs(task_id: str):
+    """Создать структуру директорий для задачи"""
+    os.makedirs(get_task_input_dir(task_id), exist_ok=True)
+    os.makedirs(get_task_temp_dir(task_id), exist_ok=True)
+    os.makedirs(get_task_output_dir(task_id), exist_ok=True)
+
+def save_task_metadata(task_id: str, metadata: dict):
+    """Сохранить metadata.json для задачи"""
+    metadata_path = os.path.join(get_task_dir(task_id), "metadata.json")
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    os.chmod(metadata_path, 0o644)
+
+def load_task_metadata(task_id: str) -> dict:
+    """Загрузить metadata.json для задачи"""
+    metadata_path = os.path.join(get_task_dir(task_id), "metadata.json")
+    if os.path.exists(metadata_path):
+        with open(metadata_path, 'r') as f:
+            return json.load(f)
+    return None
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -102,18 +138,25 @@ logger.info(f"=" * 60)
 
 # Очистка старых файлов (старше 2 часов)
 def cleanup_old_files():
-    """Удаляет файлы старше 2 часов"""
+    """Удаляет задачи старше 2 часов"""
     import time
+    import shutil
     current_time = time.time()
     try:
-        for directory in [UPLOAD_DIR, OUTPUT_DIR]:
-            for filename in os.listdir(directory):
-                file_path = os.path.join(directory, filename)
-                if not os.path.isfile(file_path):
-                    continue
-                if current_time - os.path.getmtime(file_path) > 7200:  # 2 часа
-                    os.remove(file_path)
-                    logger.info(f"Cleaned up old file: {filename}")
+        if not os.path.exists(TASKS_DIR):
+            return
+        
+        for task_id in os.listdir(TASKS_DIR):
+            task_path = os.path.join(TASKS_DIR, task_id)
+            if not os.path.isdir(task_path):
+                continue
+            
+            # Проверяем время модификации папки output
+            output_dir = get_task_output_dir(task_id)
+            if os.path.exists(output_dir):
+                if current_time - os.path.getmtime(output_dir) > 7200:  # 2 часа
+                    shutil.rmtree(task_path)
+                    logger.info(f"Cleaned up old task: {task_id}")
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
 
@@ -720,13 +763,23 @@ def list_fonts():
         logger.error(f"Error listing fonts: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/download/<filename>', methods=['GET'])
-def download_file(filename):
-    """Скачать обработанный файл"""
+@app.route('/download/<path:file_path>', methods=['GET'])
+def download_file(file_path):
+    """Скачать файл из задачи
+    
+    Поддерживаемые форматы:
+    - /download/{task_id}/output/{filename}
+    - /download/{task_id}/metadata.json
+    """
     try:
-        file_path = os.path.join(OUTPUT_DIR, filename)
-        if os.path.exists(file_path):
-            return send_file(file_path, as_attachment=True)
+        full_path = os.path.join(TASKS_DIR, file_path)
+        
+        # Проверка безопасности - файл должен быть внутри TASKS_DIR
+        if not os.path.abspath(full_path).startswith(os.path.abspath(TASKS_DIR)):
+            return jsonify({"error": "Invalid file path"}), 403
+        
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            return send_file(full_path, as_attachment=True)
         else:
             return jsonify({"error": "File not found"}), 404
     except Exception as e:
@@ -740,7 +793,7 @@ def download_file(filename):
 def process_video_background(task_id: str, video_url: str, start_time, end_time, crop_mode: str,
                            title_text: str = '', subtitles: list = None,
                            title_config: dict = None, subtitle_config: dict = None):
-    """Фоновая обработка видео"""
+    """Фоновая обработка видео с использованием task-based архитектуры"""
     if title_config is None:
         title_config = {}
     if subtitle_config is None:
@@ -748,11 +801,14 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
     if subtitles is None:
         subtitles = []
     try:
+        # Создаем директории для задачи
+        create_task_dirs(task_id)
+        
         update_task(task_id, {'status': 'processing', 'progress': 0})
 
-        # Скачиваем видео
+        # Скачиваем видео в input директорию
         input_filename = f"{uuid.uuid4()}.mp4"
-        input_path = os.path.join(UPLOAD_DIR, input_filename)
+        input_path = os.path.join(get_task_input_dir(task_id), input_filename)
 
         logger.info(f"Task {task_id}: Downloading video from {video_url}")
         import requests
@@ -763,9 +819,9 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
 
         update_task(task_id, {'progress': 30})
 
-        # Создаём выходной файл
+        # Создаём выходной файл в output директории
         output_filename = f"shorts_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id[:8]}.mp4"
-        output_path = os.path.join(OUTPUT_DIR, output_filename)
+        output_path = os.path.join(get_task_output_dir(task_id), output_filename)
 
         # Вычисляем длительность
         if isinstance(start_time, (int, float)) and isinstance(end_time, (int, float)):
@@ -983,7 +1039,27 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
             os.remove(input_path)
 
         file_size = os.path.getsize(output_path)
-        download_path = f"/download/{output_filename}"
+        
+        # Сохраняем метаданные
+        metadata = {
+            'task_id': task_id,
+            'status': 'completed',
+            'output_files': [{
+                'filename': output_filename,
+                'file_size': file_size,
+                'file_size_mb': round(file_size / (1024 * 1024), 2),
+                'download_url': f"http://video-processor:5001/download/{task_id}/output/{output_filename}",
+                'download_path': f"/download/{task_id}/output/{output_filename}"
+            }],
+            'total_files': 1,
+            'total_size': file_size,
+            'total_size_mb': round(file_size / (1024 * 1024), 2),
+            'created_at': datetime.now().isoformat(),
+            'completed_at': datetime.now().isoformat(),
+            'ttl_seconds': 7200,
+            'ttl_human': '2 hours'
+        }
+        save_task_metadata(task_id, metadata)
 
         # Обновляем задачу
         update_task(task_id, {
@@ -991,8 +1067,9 @@ def process_video_background(task_id: str, video_url: str, start_time, end_time,
             'progress': 100,
             'filename': output_filename,
             'file_size': file_size,
-            'download_path': download_path,
-            'download_url': f"http://video-processor:5001{download_path}",
+            'download_path': f"/download/{task_id}/output/{output_filename}",
+            'download_url': f"http://video-processor:5001/download/{task_id}/output/{output_filename}",
+            'metadata_url': f"http://video-processor:5001/download/{task_id}/metadata.json",
             'completed_at': datetime.now().isoformat()
         })
 
@@ -1185,6 +1262,10 @@ def process_video():
         if execution == 'async':
             # Асинхронный режим
             task_id = str(uuid.uuid4())
+            
+            # Создаем директории для задачи
+            create_task_dirs(task_id)
+            
             task_data = {
                 'task_id': task_id,
                 'status': 'queued',
@@ -1216,20 +1297,25 @@ def process_video():
 
         else:
             # Синхронный режим
-            return process_video_pipeline_sync(video_url, operations)
+            task_id = str(uuid.uuid4())
+            
+            # Создаем директории для задачи
+            create_task_dirs(task_id)
+            
+            return process_video_pipeline_sync(task_id, video_url, operations, webhook_url)
 
     except Exception as e:
         logger.error(f"Process video error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
+def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, webhook_url: str = None) -> dict:
     """Синхронное выполнение pipeline операций"""
     import requests
 
-    # Скачиваем исходное видео
+    # Скачиваем исходное видео в input/
     input_filename = f"{uuid.uuid4()}.mp4"
-    input_path = os.path.join(UPLOAD_DIR, input_filename)
+    input_path = os.path.join(get_task_input_dir(task_id), input_filename)
 
     response = requests.get(video_url, stream=True)
     with open(input_path, 'wb') as f:
@@ -1237,7 +1323,7 @@ def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
             f.write(chunk)
 
     current_input = input_path
-    final_output = None
+    output_files = []  # Список всех созданных output файлов
 
     # Выполняем операции последовательно
     for idx, op_data in enumerate(operations):
@@ -1246,14 +1332,14 @@ def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
 
         # Генерируем временный выходной файл
         if idx == len(operations) - 1:
-            # Последняя операция - финальный файл
+            # Последняя операция - финальный файл в output/
             output_filename = f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-            output_path = os.path.join(OUTPUT_DIR, output_filename)
+            output_path = os.path.join(get_task_output_dir(task_id), output_filename)
         else:
-            # Промежуточный файл
-            output_path = os.path.join(UPLOAD_DIR, f"temp_{idx}_{uuid.uuid4()}.mp4")
+            # Промежуточный файл в temp/
+            output_path = os.path.join(get_task_temp_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
-        logger.info(f"Executing operation {idx+1}/{len(operations)}: {op_type}")
+        logger.info(f"Task {task_id}: Executing operation {idx+1}/{len(operations)}: {op_type}")
 
         # Выполняем операцию
         result = operation.execute(current_input, output_path, op_data)
@@ -1261,21 +1347,24 @@ def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
         # Обрабатываем результат (может быть 2 или 3 значения)
         if len(result) == 3:
             success, message, actual_output = result
-            # Если операция вернула другой путь (например extract_audio создал .mp3)
-            if actual_output and actual_output != output_path:
-                output_path = actual_output
+            # Если операция вернула другой путь (например extract_audio создал .mp3 или чанки)
+            if actual_output:
+                if isinstance(actual_output, list):
+                    # Список файлов (например чанки)
+                    output_files.extend(actual_output)
+                    output_path = actual_output[0] if actual_output else output_path
+                elif actual_output != output_path:
+                    output_path = actual_output
         else:
             success, message = result
 
         if not success:
-            # Ошибка - удаляем временные файлы
-            if os.path.exists(input_path):
-                os.remove(input_path)
-            return jsonify({"success": False, "error": message}), 500
+            return jsonify({"success": False, "error": message, "task_id": task_id}), 500
         
-        # Обновляем final_output если это последняя операция
+        # Сохраняем output файл если это последняя операция
         if idx == len(operations) - 1:
-            final_output = output_path
+            if not output_files:  # Если операция не вернула список файлов
+                output_files.append(output_path)
 
         # Удаляем предыдущий временный файл
         if current_input != input_path and os.path.exists(current_input):
@@ -1284,47 +1373,82 @@ def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
         # Следующая операция будет использовать этот файл как вход
         current_input = output_path
 
-    # Удаляем исходный файл
-    if os.path.exists(input_path):
-        os.remove(input_path)
+    # Удаляем временные файлы
+    import shutil
+    input_dir = get_task_input_dir(task_id)
+    temp_dir = get_task_temp_dir(task_id)
+    if os.path.exists(input_dir):
+        shutil.rmtree(input_dir)
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
 
-    # Финальный результат
-    if not final_output or not os.path.exists(final_output):
-        return jsonify({
-            "success": False,
-            "error": "Final output file not found. This may happen if operations failed or no operations were executed."
-        }), 500
+    # Собираем информацию о всех output файлах
+    files_info = []
+    for file_path in output_files:
+        if os.path.exists(file_path):
+            os.chmod(file_path, 0o644)
+            file_size = os.path.getsize(file_path)
+            filename = os.path.basename(file_path)
+            download_path = f"/download/{task_id}/output/{filename}"
+            
+            files_info.append({
+                "filename": filename,
+                "file_size": file_size,
+                "file_size_mb": round(file_size / (1024 * 1024), 2),
+                "download_path": download_path,
+                "download_url": f"http://video-processor:5001{download_path}"
+            })
 
-    os.chmod(final_output, 0o644)
-    file_size = os.path.getsize(final_output)
+    # Сохраняем metadata
+    metadata = {
+        "task_id": task_id,
+        "status": "completed",
+        "video_url": video_url,
+        "operations": operations,
+        "output_files": files_info,
+        "total_files": len(files_info),
+        "completed_at": datetime.now().isoformat()
+    }
+    save_task_metadata(task_id, metadata)
 
-    download_path = f"/download/{os.path.basename(final_output)}"
-    base_url = request.host_url.rstrip('/')
-    full_download_url = f"{base_url}{download_path}"
+    # Отправляем webhook если указан
+    if webhook_url:
+        webhook_payload = {
+            "task_id": task_id,
+            "event": "task_completed",
+            "status": "completed",
+            "output_files": files_info,
+            "total_files": len(files_info),
+            "metadata_url": f"http://video-processor:5001/download/{task_id}/metadata.json",
+            "completed_at": metadata["completed_at"]
+        }
+        send_webhook(webhook_url, webhook_payload)
 
     return jsonify({
         "success": True,
-        "filename": os.path.basename(final_output),
-        "file_size": file_size,
-        "file_size_mb": round(file_size / (1024 * 1024), 2),
-        "download_url": full_download_url,
-        "download_path": download_path,
-        "operations_executed": len(operations),
-        "note": "File will auto-delete after 2 hours.",
-        "processed_at": datetime.now().isoformat()
+        "task_id": task_id,
+        "status": "completed",
+        "output_files": files_info,
+        "total_files": len(files_info),
+        "metadata_url": f"/download/{task_id}/metadata.json",
+        "note": "Files will auto-delete after 2 hours.",
+        "completed_at": metadata["completed_at"]
     })
 
 
 def process_video_pipeline_background(task_id: str, video_url: str, operations: list, webhook_url: str = None):
-    """Фоновое выполнение pipeline операций"""
+    """Фоновое выполнение pipeline операций с использованием task-based архитектуры"""
     import requests
 
     try:
+        # Создаем директории для задачи
+        create_task_dirs(task_id)
+        
         update_task(task_id, {'status': 'processing', 'progress': 5})
 
-        # Скачиваем исходное видео
+        # Скачиваем исходное видео в input директорию
         input_filename = f"{uuid.uuid4()}.mp4"
-        input_path = os.path.join(UPLOAD_DIR, input_filename)
+        input_path = os.path.join(get_task_input_dir(task_id), input_filename)
 
         logger.info(f"Task {task_id}: Downloading video from {video_url}")
         response = requests.get(video_url, stream=True, timeout=300)
@@ -1335,7 +1459,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         update_task(task_id, {'progress': 20})
 
         current_input = input_path
-        final_output = None
+        final_outputs = []  # Может быть несколько выходных файлов (например при chunking)
 
         # Выполняем операции последовательно
         total_ops = len(operations)
@@ -1347,14 +1471,14 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             progress = 20 + int((idx / total_ops) * 70)
             update_task(task_id, {'progress': progress, 'current_operation': op_type})
 
-            # Генерируем временный выходной файл
+            # Генерируем выходной файл
             if idx == total_ops - 1:
-                # Последняя операция - финальный файл
+                # Последняя операция - в output директорию
                 output_filename = f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id[:8]}.mp4"
-                output_path = os.path.join(OUTPUT_DIR, output_filename)
+                output_path = os.path.join(get_task_output_dir(task_id), output_filename)
             else:
-                # Промежуточный файл
-                output_path = os.path.join(UPLOAD_DIR, f"temp_{idx}_{uuid.uuid4()}.mp4")
+                # Промежуточный файл - в temp директорию
+                output_path = os.path.join(get_task_temp_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
             logger.info(f"Task {task_id}: Executing operation {idx+1}/{total_ops}: {op_type}")
 
@@ -1364,68 +1488,108 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             # Обрабатываем результат (может быть 2 или 3 значения)
             if len(result) == 3:
                 success, message, actual_output = result
+                # Если операция вернула список файлов (например chunks)
+                if isinstance(actual_output, list):
+                    output_paths = actual_output
                 # Если операция вернула другой путь (например extract_audio создал .mp3)
-                if actual_output and actual_output != output_path:
-                    output_path = actual_output
+                elif actual_output and actual_output != output_path:
+                    output_paths = [actual_output]
+                else:
+                    output_paths = [output_path]
             else:
                 success, message = result
+                output_paths = [output_path]
 
             if not success:
                 raise Exception(f"Operation '{op_type}' failed: {message}")
 
-            # Обновляем final_output если это последняя операция
+            # Если это последняя операция - сохраняем все выходные файлы
             if idx == total_ops - 1:
-                final_output = output_path
-
+                final_outputs = output_paths
+            
             # Удаляем предыдущий временный файл
             if current_input != input_path and os.path.exists(current_input):
                 os.remove(current_input)
 
-            # Следующая операция будет использовать этот файл как вход
-            current_input = output_path
+            # Следующая операция будет использовать первый файл как вход
+            current_input = output_paths[0] if output_paths else output_path
 
         # Удаляем исходный файл
         if os.path.exists(input_path):
             os.remove(input_path)
 
         # Финальный результат
-        if not final_output or not os.path.exists(final_output):
+        if not final_outputs:
             raise Exception("Final output file not found. This may happen if operations failed or no operations were executed.")
 
-        os.chmod(final_output, 0o644)
+        # Устанавливаем права доступа для всех выходных файлов
+        for output_file in final_outputs:
+            if os.path.exists(output_file):
+                os.chmod(output_file, 0o644)
+
         update_task(task_id, {'progress': 95})
 
-        file_size = os.path.getsize(final_output)
-        download_path = f"/download/{os.path.basename(final_output)}"
+        # Собираем информацию о выходных файлах
+        output_files_info = []
+        total_size = 0
+        for output_file in final_outputs:
+            if os.path.exists(output_file):
+                file_size = os.path.getsize(output_file)
+                total_size += file_size
+                filename = os.path.basename(output_file)
+                
+                output_files_info.append({
+                    'filename': filename,
+                    'file_size': file_size,
+                    'file_size_mb': round(file_size / (1024 * 1024), 2),
+                    'download_url': f"http://video-processor:5001/download/{task_id}/output/{filename}",
+                    'download_path': f"/download/{task_id}/output/{filename}"
+                })
+
+        # Сохраняем метаданные
+        metadata = {
+            'task_id': task_id,
+            'status': 'completed',
+            'operations': operations,
+            'operations_count': total_ops,
+            'output_files': output_files_info,
+            'total_files': len(output_files_info),
+            'total_size': total_size,
+            'total_size_mb': round(total_size / (1024 * 1024), 2),
+            'created_at': datetime.now().isoformat(),
+            'completed_at': datetime.now().isoformat(),
+            'ttl_seconds': 7200,
+            'ttl_human': '2 hours'
+        }
+        save_task_metadata(task_id, metadata)
 
         # Обновляем задачу
         update_task(task_id, {
             'status': 'completed',
             'progress': 100,
-            'filename': os.path.basename(final_output),
-            'file_size': file_size,
-            'download_path': download_path,
-            'download_url': f"http://video-processor:5001{download_path}",
+            'output_files': output_files_info,
+            'total_files': len(output_files_info),
+            'total_size': total_size,
+            'metadata_url': f"http://video-processor:5001/download/{task_id}/metadata.json",
             'operations_executed': total_ops,
             'completed_at': datetime.now().isoformat()
         })
 
-        logger.info(f"Task {task_id}: Completed successfully")
+        logger.info(f"Task {task_id}: Completed successfully with {len(output_files_info)} output file(s)")
 
         # Отправляем финальный webhook если указан
         if webhook_url:
-            file_ttl_seconds = 7200  # 2 часа
             webhook_payload = {
                 'task_id': task_id,
                 'event': 'task_completed',
                 'status': 'completed',
-                'filename': os.path.basename(final_output),
-                'file_size': file_size,
-                'file_size_mb': round(file_size / (1024 * 1024), 2),
-                'file_ttl_seconds': file_ttl_seconds,
+                'output_files': output_files_info,
+                'total_files': len(output_files_info),
+                'total_size': total_size,
+                'total_size_mb': round(total_size / (1024 * 1024), 2),
+                'metadata_url': f"http://video-processor:5001/download/{task_id}/metadata.json",
+                'file_ttl_seconds': 7200,
                 'file_ttl_human': '2 hours',
-                'download_path': download_path,
-                'download_url': f"http://video-processor:5001{download_path}",
                 'operations_executed': total_ops,
                 'completed_at': datetime.now().isoformat()
             }

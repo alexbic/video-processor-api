@@ -366,13 +366,21 @@ curl -X POST http://localhost:5001/process_video \
 ```json
 {
   "success": true,
-  "filename": "audio_20251112_194523.mp3",
-  "file_size": 5048576,
-  "file_size_mb": 4.8,
-  "download_url": "http://localhost:5001/download/audio_20251112_194523.mp3",
-  "download_path": "/download/audio_20251112_194523.mp3",
+  "task_id": "abc123-def456",
+  "output_files": [
+    {
+      "filename": "audio_20251112_194523.mp3",
+      "file_size": 5048576,
+      "file_size_mb": 4.8,
+      "download_url": "http://localhost:5001/download/abc123-def456/output/audio_20251112_194523.mp3",
+      "download_path": "/download/abc123-def456/output/audio_20251112_194523.mp3"
+    }
+  ],
+  "total_files": 1,
+  "metadata_url": "http://localhost:5001/download/abc123-def456/metadata.json",
   "operations_executed": 1,
-  "note": "File will auto-delete after 2 hours."
+  "note": "Files will auto-delete after 2 hours.",
+  "completed_at": "2025-11-12T19:45:23"
 }
 ```
 
@@ -416,10 +424,17 @@ curl http://localhost:5001/task_status/abc123-def456
   "task_id": "abc123-def456",
   "status": "completed",
   "progress": 100,
-  "filename": "audio_20251112_194523.mp3",
-  "file_size": 5048576,
-  "download_url": "http://video-processor:5001/download/audio_20251112_194523.mp3",
-  "download_path": "/download/audio_20251112_194523.mp3",
+  "output_files": [
+    {
+      "filename": "audio_20251112_194523.mp3",
+      "file_size": 5048576,
+      "file_size_mb": 4.8,
+      "download_url": "http://video-processor:5001/download/abc123-def456/output/audio_20251112_194523.mp3",
+      "download_path": "/download/abc123-def456/output/audio_20251112_194523.mp3"
+    }
+  ],
+  "total_files": 1,
+  "metadata_url": "http://video-processor:5001/download/abc123-def456/metadata.json",
   "completed_at": "2025-11-12T19:45:23"
 }
 ```
@@ -430,13 +445,21 @@ curl http://localhost:5001/task_status/abc123-def456
   "task_id": "abc123-def456",
   "event": "task_completed",
   "status": "completed",
-  "filename": "audio_20251112_194523.mp3",
-  "file_size": 5048576,
-  "file_size_mb": 4.8,
+  "output_files": [
+    {
+      "filename": "audio_20251112_194523.mp3",
+      "file_size": 5048576,
+      "file_size_mb": 4.8,
+      "download_url": "http://video-processor:5001/download/abc123-def456/output/audio_20251112_194523.mp3",
+      "download_path": "/download/abc123-def456/output/audio_20251112_194523.mp3"
+    }
+  ],
+  "total_files": 1,
+  "total_size": 5048576,
+  "total_size_mb": 4.8,
+  "metadata_url": "http://video-processor:5001/download/abc123-def456/metadata.json",
   "file_ttl_seconds": 7200,
   "file_ttl_human": "2 hours",
-  "download_url": "http://video-processor:5001/download/audio_20251112_194523.mp3",
-  "download_path": "/download/audio_20251112_194523.mp3",
   "operations_executed": 1,
   "completed_at": "2025-11-12T19:45:23"
 }
@@ -513,17 +536,46 @@ curl http://localhost:5001/task_status/abc123-def456
   "task_id": "xyz123",
   "event": "task_completed",
   "status": "completed",
-  "filename": "audio_20251112_194523_chunk000.mp3",
-  "download_url": "http://video-processor:5001/download/audio_20251112_194523_chunk000.mp3",
+  "output_files": [
+    {
+      "filename": "audio_20251112_194523_chunk000.mp3",
+      "file_size": 24641536,
+      "file_size_mb": 23.5,
+      "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk000.mp3",
+      "download_path": "/download/xyz123/output/audio_20251112_194523_chunk000.mp3"
+    },
+    {
+      "filename": "audio_20251112_194523_chunk001.mp3",
+      "file_size": 24330240,
+      "file_size_mb": 23.2,
+      "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk001.mp3",
+      "download_path": "/download/xyz123/output/audio_20251112_194523_chunk001.mp3"
+    },
+    {
+      "filename": "audio_20251112_194523_chunk002.mp3",
+      "file_size": 18980864,
+      "file_size_mb": 18.1,
+      "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk002.mp3",
+      "download_path": "/download/xyz123/output/audio_20251112_194523_chunk002.mp3"
+    }
+  ],
+  "total_files": 3,
+  "total_size": 67952640,
+  "total_size_mb": 64.8,
+  "metadata_url": "http://video-processor:5001/download/xyz123/metadata.json",
+  "file_ttl_seconds": 7200,
+  "file_ttl_human": "2 hours",
+  "operations_executed": 1,
   "completed_at": "2025-11-12T19:45:23"
 }
 ```
 
-**Файлы в /outputs:**
+**Файлы доступны по следующим URL:**
 ```
-audio_20251112_194523_chunk000.mp3  (23.5 MB, 0:00 - 15:30)
-audio_20251112_194523_chunk001.mp3  (23.2 MB, 15:30 - 31:00)
-audio_20251112_194523_chunk002.mp3  (18.1 MB, 31:00 - 45:00)
+/download/xyz123/output/audio_20251112_194523_chunk000.mp3  (23.5 MB, 0:00 - 15:30)
+/download/xyz123/output/audio_20251112_194523_chunk001.mp3  (23.2 MB, 15:30 - 31:00)
+/download/xyz123/output/audio_20251112_194523_chunk002.mp3  (18.1 MB, 31:00 - 45:00)
+/download/xyz123/metadata.json  (метаданные всех файлов)
 ```
 
 **Как скачать все чанки:**
