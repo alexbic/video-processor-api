@@ -802,6 +802,10 @@ def get_task_status(task_id):
                 'file_size': task.get('file_size'),
                 'download_url': task.get('download_url'),
                 'download_path': task.get('download_path'),
+                'output_files': task.get('output_files'),
+                'total_files': task.get('total_files'),
+                'total_size': task.get('total_size'),
+                'metadata_url': task.get('metadata_url'),
                 'completed_at': task.get('completed_at')
             })
         elif task['status'] == 'failed':
