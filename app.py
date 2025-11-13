@@ -493,42 +493,156 @@ class ToShortsOperation(VideoOperation):
 
 
 class ExtractAudioOperation(VideoOperation):
-    """Операция извлечения аудио"""
+    """Операция извлечения аудио с поддержкой chunking для Whisper API"""
     def __init__(self):
         super().__init__(
             name="extract_audio",
             required_params=[],
             optional_params={
                 'format': 'mp3',
-                'bitrate': '192k'
+                'bitrate': '192k',
+                'chunk_duration_minutes': None,  # Длительность чанка в минутах (опционально)
+                'max_chunk_size_mb': 24,         # Максимальный размер чанка в МБ (для Whisper API)
+                'optimize_for_whisper': False    # Оптимизация для Whisper (16kHz, mono, 64k bitrate)
             }
         )
 
     def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str, str]:
-        """Извлечение аудио из видео"""
+        """Извлечение аудио из видео с опциональным chunking для Whisper API"""
         audio_format = params.get('format', 'mp3')
         bitrate = params.get('bitrate', '192k')
+        chunk_duration_minutes = params.get('chunk_duration_minutes')
+        max_chunk_size_mb = params.get('max_chunk_size_mb', 24)
+        optimize_for_whisper = params.get('optimize_for_whisper', False)
 
         # Генерируем собственное имя для аудиофайла в той же директории
         output_dir = os.path.dirname(output_path)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         output_audio = os.path.join(output_dir, f"audio_{timestamp}.{audio_format}")
 
-        cmd = [
-            'ffmpeg',
-            '-i', input_path,
-            '-vn',  # Без видео
-            '-acodec', 'libmp3lame' if audio_format == 'mp3' else 'aac',
-            '-b:a', bitrate,
-            '-y',
-            output_audio
-        ]
+        # Извлекаем полное аудио
+        if optimize_for_whisper:
+            # Оптимизация для Whisper API
+            cmd = [
+                'ffmpeg',
+                '-i', input_path,
+                '-vn',
+                '-acodec', 'libmp3lame',
+                '-ar', '16000',  # 16kHz sample rate (оптимально для речи)
+                '-ac', '1',      # Моно
+                '-b:a', '64k',   # Низкий битрейт
+                '-y',
+                output_audio
+            ]
+        else:
+            # Стандартное извлечение
+            cmd = [
+                'ffmpeg',
+                '-i', input_path,
+                '-vn',
+                '-acodec', 'libmp3lame' if audio_format == 'mp3' else 'aac',
+                '-b:a', bitrate,
+                '-y',
+                output_audio
+            ]
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             return False, f"FFmpeg error: {result.stderr}", output_audio
 
-        return True, f"Audio extracted to {audio_format}", output_audio
+        os.chmod(output_audio, 0o644)
+        file_size = os.path.getsize(output_audio)
+        file_size_mb = file_size / (1024 * 1024)
+
+        # Получаем длительность аудио
+        probe_cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            output_audio
+        ]
+        probe_result = subprocess.run(probe_cmd, capture_output=True, text=True)
+        
+        if probe_result.returncode != 0:
+            return False, f"FFprobe error: {probe_result.stderr}", output_audio
+            
+        total_duration = float(probe_result.stdout.strip())
+
+        # Проверяем нужно ли разбивать на чанки
+        if chunk_duration_minutes or file_size_mb > max_chunk_size_mb:
+            # Определяем длительность чанка
+            if chunk_duration_minutes:
+                chunk_duration_seconds = chunk_duration_minutes * 60
+            else:
+                # Автоматически вычисляем длительность чанка
+                chunk_duration_seconds = (max_chunk_size_mb / file_size_mb) * total_duration * 0.95  # 5% запас
+
+            logger.info(f"Splitting audio into chunks of {chunk_duration_seconds/60:.1f} minutes")
+
+            # Разбиваем на чанки
+            chunk_start = 0
+            chunk_index = 0
+            chunk_files = []
+
+            while chunk_start < total_duration:
+                chunk_end = min(chunk_start + chunk_duration_seconds, total_duration)
+                chunk_filename = f"audio_{timestamp}_chunk{chunk_index:03d}.{audio_format}"
+                chunk_path = os.path.join(output_dir, chunk_filename)
+
+                # Извлекаем чанк
+                if optimize_for_whisper:
+                    chunk_cmd = [
+                        'ffmpeg',
+                        '-i', output_audio,
+                        '-ss', str(chunk_start),
+                        '-t', str(chunk_end - chunk_start),
+                        '-acodec', 'libmp3lame',
+                        '-ar', '16000',  # 16kHz
+                        '-ac', '1',      # Моно
+                        '-b:a', '64k',   # Низкий bitrate
+                        '-y',
+                        chunk_path
+                    ]
+                else:
+                    chunk_cmd = [
+                        'ffmpeg',
+                        '-i', output_audio,
+                        '-ss', str(chunk_start),
+                        '-t', str(chunk_end - chunk_start),
+                        '-acodec', 'libmp3lame' if audio_format == 'mp3' else 'aac',
+                        '-b:a', bitrate,
+                        '-y',
+                        chunk_path
+                    ]
+
+                chunk_result = subprocess.run(chunk_cmd, capture_output=True, text=True)
+                
+                if chunk_result.returncode != 0:
+                    logger.error(f"Chunk {chunk_index} error: {chunk_result.stderr}")
+                    chunk_start = chunk_end
+                    chunk_index += 1
+                    continue
+
+                os.chmod(chunk_path, 0o644)
+                chunk_files.append(chunk_filename)
+                
+                chunk_start = chunk_end
+                chunk_index += 1
+
+            # Удаляем полный аудиофайл, оставляем только чанки
+            if os.path.exists(output_audio):
+                os.remove(output_audio)
+
+            logger.info(f"Created {len(chunk_files)} chunks")
+            
+            # Возвращаем путь к первому чанку (для совместимости с pipeline)
+            first_chunk_path = os.path.join(output_dir, chunk_files[0])
+            return True, f"Audio extracted and split into {len(chunk_files)} chunks", first_chunk_path
+
+        else:
+            # Файл не требует разбиения
+            return True, f"Audio extracted to {audio_format}", output_audio
 
 
 # Регистрация всех операций

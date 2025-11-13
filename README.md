@@ -471,6 +471,87 @@ curl http://localhost:5001/task_status/abc123-def456
 **Параметры extract_audio:**
 - `format` (опционально): `mp3` (default) или `aac`
 - `bitrate` (опционально): `128k`, `192k` (default), `256k`, `320k`
+- `chunk_duration_minutes` (опционально): Длительность чанка в минутах для разбиения больших файлов
+- `max_chunk_size_mb` (опционально): Максимальный размер чанка в МБ (default: 24 для Whisper API)
+- `optimize_for_whisper` (опционально): `true` - оптимизация для Whisper API (16kHz, mono, 64k bitrate)
+
+### Example 8: Извлечение аудио с автоматическим chunking для Whisper API
+
+**Проблема:** Whisper API не принимает файлы больше 25 МБ.
+
+**Решение:** Автоматическое разбиение на чанки < 24 МБ.
+
+```json
+{
+  "video_url": "https://example.com/long-video.mp4",
+  "execution": "async",
+  "operations": [
+    {
+      "type": "extract_audio",
+      "format": "mp3",
+      "max_chunk_size_mb": 24,
+      "optimize_for_whisper": true
+    }
+  ],
+  "webhook_url": "https://n8n.example.com/webhook/audio-chunks-ready"
+}
+```
+
+**Response (async):**
+```json
+{
+  "success": true,
+  "task_id": "xyz123",
+  "status": "processing",
+  "check_status_url": "/task_status/xyz123"
+}
+```
+
+**Webhook payload (когда готово):**
+```json
+{
+  "task_id": "xyz123",
+  "event": "task_completed",
+  "status": "completed",
+  "filename": "audio_20251112_194523_chunk000.mp3",
+  "download_url": "http://video-processor:5001/download/audio_20251112_194523_chunk000.mp3",
+  "completed_at": "2025-11-12T19:45:23"
+}
+```
+
+**Файлы в /outputs:**
+```
+audio_20251112_194523_chunk000.mp3  (23.5 MB, 0:00 - 15:30)
+audio_20251112_194523_chunk001.mp3  (23.2 MB, 15:30 - 31:00)
+audio_20251112_194523_chunk002.mp3  (18.1 MB, 31:00 - 45:00)
+```
+
+**Как скачать все чанки:**
+```bash
+# Все чанки доступны по паттерну
+curl http://localhost:5001/download/audio_20251112_194523_chunk000.mp3 -o chunk000.mp3
+curl http://localhost:5001/download/audio_20251112_194523_chunk001.mp3 -o chunk001.mp3
+curl http://localhost:5001/download/audio_20251112_194523_chunk002.mp3 -o chunk002.mp3
+```
+
+### Example 9: Ручное задание длительности чанков
+
+```json
+{
+  "video_url": "https://example.com/video.mp4",
+  "execution": "sync",
+  "operations": [
+    {
+      "type": "extract_audio",
+      "format": "mp3",
+      "chunk_duration_minutes": 10,
+      "optimize_for_whisper": true
+    }
+  ]
+}
+```
+
+Создаст чанки по 10 минут каждый, оптимизированные для Whisper API (16kHz, mono, 64k bitrate).
 
 ---
 
