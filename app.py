@@ -783,7 +783,7 @@ def get_task_status(task_id):
         task = get_task(task_id)
 
         if not task:
-        return jsonify({"success": False, "error": "Task not found"}), 404
+            return jsonify({"status": "error", "error": "Task not found"}), 404
 
         response = {
             "task_id": task_id,
@@ -808,7 +808,7 @@ def get_task_status(task_id):
                 'metadata_url': task.get('metadata_url'),
                 'completed_at': task.get('completed_at')
             })
-        elif task['status'] == 'failed':
+        elif task['status'] == 'error':
             response.update({
                 'error': task.get('error'),
                 'failed_at': task.get('failed_at')
@@ -818,7 +818,7 @@ def get_task_status(task_id):
 
     except Exception as e:
         logger.error(f"Status check error: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 @app.route('/tasks', methods=['GET'])
 def list_all_tasks():
@@ -832,7 +832,7 @@ def list_all_tasks():
         })
     except Exception as e:
         logger.error(f"List tasks error: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 @app.route('/process_video', methods=['POST'])
 def process_video():
@@ -860,7 +860,7 @@ def process_video():
 
         data = request.json
         if not data:
-            return jsonify({"success": False, "error": "JSON data required"}), 400
+            return jsonify({"status": "error", "error": "JSON data required"}), 400
 
         # Базовые параметры
         video_url = data.get('video_url')
@@ -869,11 +869,11 @@ def process_video():
         webhook_url = data.get('webhook_url', os.getenv('WEBHOOK_URL'))
 
         if not video_url:
-            return jsonify({"success": False, "error": "video_url is required"}), 400
+            return jsonify({"status": "error", "error": "video_url is required"}), 400
 
         if not operations:
             return jsonify({
-                "success": False,
+                "status": "error",
                 "error": "operations list is required"
             }), 400
 
@@ -882,13 +882,13 @@ def process_video():
             op_type = op.get('type')
             if not op_type:
                 return jsonify({
-                    "success": False,
+                    "status": "error",
                     "error": "Each operation must have 'type' field"
                 }), 400
 
             if op_type not in OPERATIONS_REGISTRY:
                 return jsonify({
-                    "success": False,
+                    "status": "error",
                     "error": f"Unknown operation type: {op_type}. Available: {list(OPERATIONS_REGISTRY.keys())}"
                 }), 400
 
@@ -897,7 +897,7 @@ def process_video():
             is_valid, error_msg = operation_handler.validate(op)
             if not is_valid:
                 return jsonify({
-                    "success": False,
+                    "status": "error",
                     "error": f"Operation '{op_type}' validation failed: {error_msg}"
                 }), 400
 
@@ -948,7 +948,7 @@ def process_video():
 
     except Exception as e:
         logger.error(f"Process video error: {e}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 
 def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, webhook_url: str = None) -> dict:
@@ -1001,7 +1001,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             success, message = result
 
         if not success:
-            return jsonify({"success": False, "error": message, "task_id": task_id}), 500
+            return jsonify({"status": "error", "error": message, "task_id": task_id}), 500
         
         # Сохраняем output файл если это последняя операция
         if idx == len(operations) - 1:
@@ -1298,7 +1298,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
     except Exception as e:
         logger.error(f"Task {task_id}: Error - {e}")
         update_task(task_id, {
-            'status': 'failed',
+            'status': 'error',
             'error': str(e),
             'failed_at': datetime.now().isoformat()
         })
@@ -1308,7 +1308,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             error_payload = {
                 'task_id': task_id,
                 'event': 'task_failed',
-                'status': 'failed',
+                'status': 'error',
                 'error': str(e),
                 'failed_at': datetime.now().isoformat()
             }

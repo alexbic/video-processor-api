@@ -320,7 +320,7 @@ curl http://localhost:5001/task_status/abc123
 {
   "task_id": "abc123",
   "event": "task_failed",
-  "status": "failed",
+  "status": "error",
   "error": "FFmpeg error: ...",
   "failed_at": "2025-01-08T10:05:23"
 }
