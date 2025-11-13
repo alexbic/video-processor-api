@@ -1249,7 +1249,6 @@ def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
             # Последняя операция - финальный файл
             output_filename = f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
             output_path = os.path.join(OUTPUT_DIR, output_filename)
-            final_output = output_path
         else:
             # Промежуточный файл
             output_path = os.path.join(UPLOAD_DIR, f"temp_{idx}_{uuid.uuid4()}.mp4")
@@ -1273,6 +1272,10 @@ def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
             if os.path.exists(input_path):
                 os.remove(input_path)
             return jsonify({"success": False, "error": message}), 500
+        
+        # Обновляем final_output если это последняя операция
+        if idx == len(operations) - 1:
+            final_output = output_path
 
         # Удаляем предыдущий временный файл
         if current_input != input_path and os.path.exists(current_input):
@@ -1286,6 +1289,12 @@ def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
         os.remove(input_path)
 
     # Финальный результат
+    if not final_output or not os.path.exists(final_output):
+        return jsonify({
+            "success": False,
+            "error": "Final output file not found. This may happen if operations failed or no operations were executed."
+        }), 500
+
     os.chmod(final_output, 0o644)
     file_size = os.path.getsize(final_output)
 
@@ -1365,6 +1374,10 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             if not success:
                 raise Exception(f"Operation '{op_type}' failed: {message}")
 
+            # Обновляем final_output если это последняя операция
+            if idx == total_ops - 1:
+                final_output = output_path
+
             # Удаляем предыдущий временный файл
             if current_input != input_path and os.path.exists(current_input):
                 os.remove(current_input)
@@ -1377,6 +1390,9 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             os.remove(input_path)
 
         # Финальный результат
+        if not final_output or not os.path.exists(final_output):
+            raise Exception("Final output file not found. This may happen if operations failed or no operations were executed.")
+
         os.chmod(final_output, 0o644)
         update_task(task_id, {'progress': 95})
 
