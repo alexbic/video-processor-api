@@ -783,13 +783,9 @@ def get_task_status(task_id):
         task = get_task(task_id)
 
         if not task:
-            return jsonify({
-                "success": False,
-                "error": "Task not found"
-            }), 404
+        return jsonify({"success": False, "error": "Task not found"}), 404
 
         response = {
-            "success": True,
             "task_id": task_id,
             "status": task['status'],
             "progress": task.get('progress', 0),
@@ -830,7 +826,6 @@ def list_all_tasks():
     try:
         recent_tasks = list_tasks()
         return jsonify({
-            "success": True,
             "total": len(recent_tasks),
             "tasks": recent_tasks,
             "storage_mode": STORAGE_MODE
@@ -936,7 +931,6 @@ def process_video():
             logger.info(f"Task {task_id}: Created with {len(operations)} operations")
 
             return jsonify({
-                "success": True,
                 "task_id": task_id,
                 "status": "processing",
                 "message": "Task created and processing in background",
@@ -1102,7 +1096,6 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
     is_chunked = any(f.get('chunk') for f in files_info)
 
     return jsonify({
-        "success": True,
         "task_id": task_id,
         "status": "completed",
         "video_url": video_url,

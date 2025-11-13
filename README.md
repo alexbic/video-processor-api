@@ -158,7 +158,6 @@ curl -X POST http://localhost:5001/process_video \
 
 ```json
 {
-  "success": true,
   "task_id": "abc123",
   "status": "completed",
   "video_url": "https://example.com/video.mp4",
@@ -210,7 +209,6 @@ curl -X POST http://localhost:5001/process_video \
 **Response (сразу):**
 ```json
 {
-  "success": true,
   "task_id": "abc123",
   "status": "completed",
   "video_url": "https://example.com/video.mp4",
@@ -242,7 +240,6 @@ curl -X POST http://localhost:5001/process_video \
 **Response (сразу):**
 ```json
 {
-  "success": true,
   "task_id": "abc123",
   "status": "processing",
   "message": "Task created and processing in background"
@@ -257,7 +254,6 @@ curl http://localhost:5001/task_status/abc123
 **Response:**
 ```json
 {
-  "success": true,
   "task_id": "abc123",
   "status": "completed",
   "progress": 100,
@@ -485,7 +481,6 @@ curl -X POST http://localhost:5001/process_video \
 **Response (sync - возвращается сразу после завершения):**
 ```json
 {
-  "success": true,
   "task_id": "abc123-def456",
   "status": "completed",
   "output_files": [
@@ -525,7 +520,6 @@ curl -X POST http://localhost:5001/process_video \
 **Response (async - возвращается сразу):**
 ```json
 {
-  "success": true,
   "task_id": "abc123-def456",
   "status": "processing",
   "message": "Task created and processing in background",
@@ -541,7 +535,6 @@ curl http://localhost:5001/task_status/abc123-def456
 **Response (когда готово):**
 ```json
 {
-  "success": true,
   "task_id": "abc123-def456",
   "status": "completed",
   "progress": 100,
@@ -650,7 +643,6 @@ curl http://localhost:5001/task_status/abc123-def456
 **Response (async):**
 ```json
 {
-  "success": true,
   "task_id": "xyz123",
   "status": "processing",
   "check_status_url": "/task_status/xyz123"
@@ -742,7 +734,6 @@ curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk002
 **Response (sync):**
 ```json
 {
-  "success": true,
   "task_id": "def456-ghi789",
   "output_files": [
     {
