@@ -1401,9 +1401,6 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         total = len(lst)
         for fname, idx in lst:
             chunk_map[fname] = {
-                'chunk_index': idx + 1,
-                'chunk_total': total,
-                'chunk_label': f"{idx + 1}/{total}",
                 'chunk': f"{idx + 1}:{total}"
             }
     for file_path in output_files:
@@ -1572,9 +1569,6 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             total = len(lst)
             for fname, idx in lst:
                 chunk_map[fname] = {
-                    'chunk_index': idx + 1,
-                    'chunk_total': total,
-                    'chunk_label': f"{idx + 1}/{total}",
                     'chunk': f"{idx + 1}:{total}"
                 }
 
