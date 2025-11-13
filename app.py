@@ -1352,7 +1352,6 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 # Последняя операция - финальный файл
                 output_filename = f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id[:8]}.mp4"
                 output_path = os.path.join(OUTPUT_DIR, output_filename)
-                final_output = output_path
             else:
                 # Промежуточный файл
                 output_path = os.path.join(UPLOAD_DIR, f"temp_{idx}_{uuid.uuid4()}.mp4")
