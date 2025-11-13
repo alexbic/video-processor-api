@@ -762,15 +762,15 @@ def download_file(file_path):
         
         # Проверка безопасности - файл должен быть внутри TASKS_DIR
         if not os.path.abspath(full_path).startswith(os.path.abspath(TASKS_DIR)):
-            return jsonify({"error": "Invalid file path"}), 403
+            return jsonify({"status": "error", "error": "Invalid file path"}), 403
         
         if os.path.exists(full_path) and os.path.isfile(full_path):
             return send_file(full_path, as_attachment=True)
         else:
-            return jsonify({"error": "File not found"}), 404
+            return jsonify({"status": "error", "error": "File not found"}), 404
     except Exception as e:
         logger.error(f"Download error: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"status": "error", "error": str(e)}), 500
 
 # ============================================
 # АСИНХРОННАЯ ОБРАБОТКА

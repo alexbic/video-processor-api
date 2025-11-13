@@ -183,6 +183,33 @@ curl -X POST http://localhost:5001/process_video \
 - `is_chunked` - `true` если файлы разбиты на чанки (для Whisper API)
 - `total_files` - общее количество файлов
 
+### Error Responses (Ошибки)
+
+Все ошибки возвращаются с HTTP-кодом, полем `status: "error"` и сообщением в `error`.
+
+- 400 Bad Request (валидация):
+  ```json
+  { "status": "error", "error": "video_url is required" }
+  ```
+- 404 Not Found (статус задачи):
+  ```json
+  { "status": "error", "error": "Task not found" }
+  ```
+- 403 Forbidden (скачивание файла вне task-директории):
+  ```json
+  { "status": "error", "error": "Invalid file path" }
+  ```
+- 404 Not Found (файл не найден при скачивании):
+  ```json
+  { "status": "error", "error": "File not found" }
+  ```
+- 500 Internal Server Error (ошибка выполнения):
+  ```json
+  { "status": "error", "error": "FFmpeg error: ..." }
+  ```
+
+В вебхуках при ошибке событие остаётся `event: "task_failed"`, а статус — `status: "error"`.
+
 **Для chunked файлов** (extract_audio с разбиением):
 ```json
 {
