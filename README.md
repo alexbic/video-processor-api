@@ -497,6 +497,11 @@ curl http://localhost:5001/task_status/abc123-def456
 - `max_chunk_size_mb` (опционально): Максимальный размер чанка в МБ (default: 24 для Whisper API)
 - `optimize_for_whisper` (опционально): `true` - оптимизация для Whisper API (16kHz, mono, 64k bitrate)
 
+Примечание: При включённом разбиении (через `chunk_duration_minutes` или `max_chunk_size_mb`) каждый объект в `output_files` дополнительно содержит:
+- `chunk`: компактный индекс чанка в формате `i:n` (например, `"1:7"`)
+
+Совместимость: Для обратной совместимости также могут присутствовать поля `chunk_index`, `chunk_total`, `chunk_label` — их можно игнорировать, если вы используете `chunk`.
+
 ### Example 8: Извлечение аудио с автоматическим chunking для Whisper API
 
 **Проблема:** Whisper API не принимает файлы больше 25 МБ.
@@ -540,6 +545,10 @@ curl http://localhost:5001/task_status/abc123-def456
       "filename": "audio_20251112_194523_chunk000.mp3",
       "file_size": 24641536,
       "file_size_mb": 23.5,
+      "chunk": "1:3",
+      "chunk_index": 1,
+      "chunk_total": 3,
+      "chunk_label": "1/3",
       "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk000.mp3",
       "download_path": "/download/xyz123/output/audio_20251112_194523_chunk000.mp3"
     },
@@ -547,6 +556,10 @@ curl http://localhost:5001/task_status/abc123-def456
       "filename": "audio_20251112_194523_chunk001.mp3",
       "file_size": 24330240,
       "file_size_mb": 23.2,
+      "chunk": "2:3",
+      "chunk_index": 2,
+      "chunk_total": 3,
+      "chunk_label": "2/3",
       "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk001.mp3",
       "download_path": "/download/xyz123/output/audio_20251112_194523_chunk001.mp3"
     },
@@ -554,6 +567,10 @@ curl http://localhost:5001/task_status/abc123-def456
       "filename": "audio_20251112_194523_chunk002.mp3",
       "file_size": 18980864,
       "file_size_mb": 18.1,
+      "chunk": "3:3",
+      "chunk_index": 3,
+      "chunk_total": 3,
+      "chunk_label": "3/3",
       "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk002.mp3",
       "download_path": "/download/xyz123/output/audio_20251112_194523_chunk002.mp3"
     }
@@ -580,10 +597,15 @@ curl http://localhost:5001/task_status/abc123-def456
 **Как скачать все чанки:**
 ```bash
 # Все чанки доступны по паттерну
-curl http://localhost:5001/download/audio_20251112_194523_chunk000.mp3 -o chunk000.mp3
-curl http://localhost:5001/download/audio_20251112_194523_chunk001.mp3 -o chunk001.mp3
-curl http://localhost:5001/download/audio_20251112_194523_chunk002.mp3 -o chunk002.mp3
+curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk000.mp3 -o chunk000.mp3
+curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk001.mp3 -o chunk001.mp3
+curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk002.mp3 -o chunk002.mp3
 ```
+
+**Поля чанков в ответах:**
+- `chunk_index`: номер текущего чанка (начиная с 1)
+- `chunk_total`: сколько чанков всего
+- `chunk_label`: человекочитаемая метка `"i/n"`
 
 ### Example 9: Ручное задание длительности чанков
 
@@ -603,6 +625,38 @@ curl http://localhost:5001/download/audio_20251112_194523_chunk002.mp3 -o chunk0
 ```
 
 Создаст чанки по 10 минут каждый, оптимизированные для Whisper API (16kHz, mono, 64k bitrate).
+
+**Response (sync):**
+```json
+{
+  "success": true,
+  "task_id": "def456-ghi789",
+  "output_files": [
+    {
+      "filename": "audio_20251112_200100_chunk000.mp3",
+      "file_size": 24117248,
+      "file_size_mb": 23.0,
+      "chunk": "1:6",
+      "download_url": "http://localhost:5001/download/def456-ghi789/output/audio_20251112_200100_chunk000.mp3",
+      "download_path": "/download/def456-ghi789/output/audio_20251112_200100_chunk000.mp3"
+    },
+    {
+      "filename": "audio_20251112_200100_chunk001.mp3",
+      "file_size": 24379392,
+      "file_size_mb": 23.25,
+      "chunk": "2:6",
+      "download_url": "http://localhost:5001/download/def456-ghi789/output/audio_20251112_200100_chunk001.mp3",
+      "download_path": "/download/def456-ghi789/output/audio_20251112_200100_chunk001.mp3"
+    }
+  ],
+  "total_files": 6,
+  "metadata_url": "http://localhost:5001/download/def456-ghi789/metadata.json",
+  "operations_executed": 1,
+  "completed_at": "2025-11-12T20:01:25"
+}
+```
+
+Подсказка: для парсинга `chunk` разделите строку по `:` → `i` и `n`.
 
 ---
 

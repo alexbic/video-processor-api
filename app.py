@@ -1403,7 +1403,8 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             chunk_map[fname] = {
                 'chunk_index': idx + 1,
                 'chunk_total': total,
-                'chunk_label': f"{idx + 1}/{total}"
+                'chunk_label': f"{idx + 1}/{total}",
+                'chunk': f"{idx + 1}:{total}"
             }
     for file_path in output_files:
         if os.path.exists(file_path):
@@ -1573,7 +1574,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 chunk_map[fname] = {
                     'chunk_index': idx + 1,
                     'chunk_total': total,
-                    'chunk_label': f"{idx + 1}/{total}"
+                    'chunk_label': f"{idx + 1}/{total}",
+                    'chunk': f"{idx + 1}:{total}"
                 }
 
         total_size = 0
