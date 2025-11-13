@@ -279,6 +279,8 @@ class ToShortsOperation(VideoOperation):
             name="to_shorts",
             required_params=[],
             optional_params={
+                'start_time': None,
+                'end_time': None,
                 'crop_mode': 'center',
                 'letterbox_config': {},
                 'title_text': '',
@@ -292,6 +294,8 @@ class ToShortsOperation(VideoOperation):
         """Конвертация в Shorts формат (1080x1920)"""
         # Применяем значения по умолчанию
         crop_mode = params.get('crop_mode', 'center')
+        start_time = params.get('start_time')
+        end_time = params.get('end_time')
 
         # additional_inputs может содержать аудио дорожки, изображения и т.д.
         # Пока не используется в базовой реализации, но доступно для расширения
@@ -515,9 +519,28 @@ class ToShortsOperation(VideoOperation):
                     video_filter += f",drawtext={':'.join(sub_drawtext_params)}"
 
         # Выполняем FFmpeg команду
-        cmd = [
-            'ffmpeg',
-            '-i', input_path,
+        cmd = ['ffmpeg']
+        
+        # Добавляем таймкоды для нарезки если указаны
+        if start_time is not None:
+            cmd.extend(['-ss', str(start_time)])
+        
+        cmd.extend(['-i', input_path])
+        
+        # Добавляем конечный таймкод или длительность
+        if end_time is not None:
+            if start_time is not None:
+                # Если есть start и end - вычисляем duration
+                if isinstance(start_time, (int, float)) and isinstance(end_time, (int, float)):
+                    duration = end_time - start_time
+                    cmd.extend(['-t', str(duration)])
+                else:
+                    # Для строковых таймкодов используем -to
+                    cmd.extend(['-to', str(end_time)])
+            else:
+                cmd.extend(['-to', str(end_time)])
+        
+        cmd.extend([
             '-filter_complex' if crop_mode == 'letterbox' else '-vf', video_filter,
             '-c:v', 'libx264',
             '-preset', 'medium',
@@ -527,7 +550,7 @@ class ToShortsOperation(VideoOperation):
             '-movflags', '+faststart',
             '-y',
             output_path
-        ]
+        ])
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
