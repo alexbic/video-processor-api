@@ -28,8 +28,7 @@ services:
     networks:
       - n8n_net
     volumes:
-      - /opt/n8n-docker/volumes/video_processor/uploads:/app/uploads
-      - /opt/n8n-docker/volumes/video_processor/outputs:/app/outputs
+      - /opt/n8n-docker/volumes/video_processor/tasks:/app/tasks  # Task-based storage (input/temp/output + metadata.json)
       - /opt/n8n-docker/volumes/video_processor/fonts:/app/fonts/custom  # Custom fonts directory
     restart: unless-stopped
     environment:
@@ -47,5 +46,8 @@ services:
 # 2. maxmemory=256mb with LRU eviction (old tasks auto-deleted)
 # 3. Tasks have 24h TTL in Redis
 # 4. If Redis is unavailable, video-processor falls back to single-worker mode
-# 5. Custom fonts: Place .ttf/.otf files in /opt/n8n-docker/volumes/video_processor/fonts/
+# 5. Task-based storage: Each task creates /app/tasks/{task_id}/ with input/, temp/, output/, metadata.json
+# 6. Files auto-delete after 2 hours (cleanup runs on each request)
+# 7. Custom fonts: Place .ttf/.otf files in /opt/n8n-docker/volumes/video_processor/fonts/
 #    They will be available inside container at /app/fonts/custom/
+# 8. Download URLs format: /download/{task_id}/output/{filename} or /download/{task_id}/metadata.json

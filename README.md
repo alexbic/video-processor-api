@@ -30,8 +30,7 @@
 ```bash
 docker pull alexbic/video-processor-api:latest
 docker run -d -p 5001:5001 \
-  -v $(pwd)/uploads:/app/uploads \
-  -v $(pwd)/outputs:/app/outputs \
+  -v $(pwd)/tasks:/app/tasks \
   --name video-processor \
   alexbic/video-processor-api:latest
 ```
@@ -622,17 +621,26 @@ curl http://localhost:5001/download/audio_20251112_194523_chunk002.mp3 -o chunk0
 
 ```yaml
 volumes:
-  - /path/to/uploads:/app/uploads      # Временные загрузки
-  - /path/to/outputs:/app/outputs      # Выходные файлы (TTL: 2 часа)
+  - /path/to/tasks:/app/tasks          # Task-based storage (input/temp/output + metadata.json)
   - /path/to/fonts:/app/fonts/custom   # Кастомные шрифты
+```
+
+**Структура task-директории:**
+```
+/app/tasks/{task_id}/
+  ├── input/          # Входные файлы (удаляются после обработки)
+  ├── temp/           # Промежуточные файлы (удаляются после обработки)
+  ├── output/         # Финальные файлы (TTL: 2 часа)
+  └── metadata.json   # Метаданные всех output файлов
 ```
 
 ---
 
 ## 📝 File Retention
 
-- **Outputs**: Автоматически удаляются через **2 часа**
-- **Uploads**: Удаляются сразу после обработки
+- **Task directories**: Автоматически удаляются через **2 часа** после создания
+- **Input/Temp files**: Удаляются сразу после завершения обработки
+- **Output files**: Хранятся 2 часа в `/app/tasks/{task_id}/output/`
 - **Redis Tasks**: TTL = 24 часа
 
 ---
