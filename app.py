@@ -283,10 +283,8 @@ class ToShortsOperation(VideoOperation):
                 'end_time': None,
                 'crop_mode': 'center',
                 'letterbox_config': {},
-                'title_text': '',
-                'title_config': {},
-                'subtitles': [],
-                'subtitle_config': {}
+                'title': {},
+                'subtitles': {}
             }
         )
 
@@ -311,76 +309,40 @@ class ToShortsOperation(VideoOperation):
             'overlay_y': letterbox_config_raw.get('overlay_y', '(H-h)/2')
         }
 
-        # Обработка title в новом формате (объект) или старом (разделенные поля)
-        title_raw = params.get('title')
-        if title_raw and isinstance(title_raw, dict):
-            # Новый формат: {"text": "...", "font": "...", "fontsize": 70, ...}
-            title_text = title_raw.get('text', '')
-            title_config = {
-                'fontfile': title_raw.get('fontfile'),
-                'font': title_raw.get('font'),
-                'fontsize': title_raw.get('fontsize', 70),
-                'fontcolor': title_raw.get('fontcolor', 'white'),
-                'bordercolor': title_raw.get('bordercolor', 'black'),
-                'borderw': title_raw.get('borderw', 3),
-                'text_align': title_raw.get('text_align', 'center'),
-                'box': title_raw.get('box', False),
-                'boxcolor': title_raw.get('boxcolor', 'black@0.5'),
-                'x': title_raw.get('x', 'center'),
-                'y': title_raw.get('y', 150),
-                'start_time': title_raw.get('start_time', 0.5),
-                'duration': title_raw.get('duration', 4),
-                'fade_in': title_raw.get('fade_in', 0.5),
-                'fade_out': title_raw.get('fade_out', 0.5)
-            }
-        else:
-            # Старый формат: title_text + title_config отдельно
-            title_text = params.get('title_text', '')
-            title_config_raw = params.get('title_config', {})
-            title_config = {
-                'fontfile': title_config_raw.get('fontfile'),
-                'font': title_config_raw.get('font'),
-                'fontsize': title_config_raw.get('fontsize', 70),
-                'fontcolor': title_config_raw.get('fontcolor', 'white'),
-                'bordercolor': title_config_raw.get('bordercolor', 'black'),
-                'borderw': title_config_raw.get('borderw', 3),
-                'text_align': title_config_raw.get('text_align', 'center'),
-                'y': title_config_raw.get('y', 150),
-                'start_time': title_config_raw.get('start_time', 0.5),
-                'duration': title_config_raw.get('duration', 4),
-                'fade_in': title_config_raw.get('fade_in', 0.5),
-                'fade_out': title_config_raw.get('fade_out', 0.5)
-            }
+        # Обработка title (новый формат: объект с text и настройками)
+        title_raw = params.get('title', {})
+        title_text = title_raw.get('text', '')
+        title_config = {
+            'fontfile': title_raw.get('fontfile'),
+            'font': title_raw.get('font'),
+            'fontsize': title_raw.get('fontsize', 70),
+            'fontcolor': title_raw.get('fontcolor', 'white'),
+            'bordercolor': title_raw.get('bordercolor', 'black'),
+            'borderw': title_raw.get('borderw', 3),
+            'text_align': title_raw.get('text_align', 'center'),
+            'box': title_raw.get('box', False),
+            'boxcolor': title_raw.get('boxcolor', 'black@0.5'),
+            'x': title_raw.get('x', 'center'),
+            'y': title_raw.get('y', 150),
+            'start_time': title_raw.get('start_time', 0.5),
+            'duration': title_raw.get('duration', 4),
+            'fade_in': title_raw.get('fade_in', 0.5),
+            'fade_out': title_raw.get('fade_out', 0.5)
+        }
 
-        # Обработка subtitles в новом формате (объект с items) или старом (прямой массив)
-        subtitles_raw = params.get('subtitles')
-        if subtitles_raw and isinstance(subtitles_raw, dict):
-            # Новый формат: {"items": [...], "font": "...", "fontsize": 64, ...}
-            subtitles = subtitles_raw.get('items', [])
-            subtitle_config = {
-                'fontfile': subtitles_raw.get('fontfile'),
-                'font': subtitles_raw.get('font'),
-                'fontsize': subtitles_raw.get('fontsize', 60),
-                'fontcolor': subtitles_raw.get('fontcolor', 'white'),
-                'bordercolor': subtitles_raw.get('bordercolor', 'black'),
-                'borderw': subtitles_raw.get('borderw', 3),
-                'text_align': subtitles_raw.get('text_align', 'center'),
-                'y': subtitles_raw.get('y', 'h-200')
-            }
-        else:
-            # Старый формат: subtitles как массив + subtitle_config отдельно
-            subtitles = params.get('subtitles', [])
-            subtitle_config_raw = params.get('subtitle_config', {})
-            subtitle_config = {
-                'fontfile': subtitle_config_raw.get('fontfile'),
-                'font': subtitle_config_raw.get('font'),
-                'fontsize': subtitle_config_raw.get('fontsize', 60),
-                'fontcolor': subtitle_config_raw.get('fontcolor', 'white'),
-                'bordercolor': subtitle_config_raw.get('bordercolor', 'black'),
-                'borderw': subtitle_config_raw.get('borderw', 3),
-                'text_align': subtitle_config_raw.get('text_align', 'center'),
-                'y': subtitle_config_raw.get('y', 'h-200')
-            }
+        # Обработка subtitles (новый формат: объект с items и настройками)
+        subtitles_raw = params.get('subtitles', {})
+        subtitles = subtitles_raw.get('items', [])
+        subtitle_config = {
+            'fontfile': subtitles_raw.get('fontfile'),
+            'font': subtitles_raw.get('font'),
+            'fontsize': subtitles_raw.get('fontsize', 60),
+            'fontcolor': subtitles_raw.get('fontcolor', 'white'),
+            'bordercolor': subtitles_raw.get('bordercolor', 'black'),
+            'borderw': subtitles_raw.get('borderw', 3),
+            'text_align': subtitles_raw.get('text_align', 'center'),
+            'y': subtitles_raw.get('y', 'h-200')
+        }
 
         # Определяем фильтр обрезки
         if crop_mode == 'letterbox':
@@ -813,352 +775,6 @@ def download_file(file_path):
 # ============================================
 # АСИНХРОННАЯ ОБРАБОТКА
 # ============================================
-
-def process_video_background(task_id: str, video_url: str, start_time, end_time, crop_mode: str,
-                           title_text: str = '', subtitles: list = None,
-                           title_config: dict = None, subtitle_config: dict = None):
-    """Фоновая обработка видео с использованием task-based архитектуры"""
-    if title_config is None:
-        title_config = {}
-    if subtitle_config is None:
-        subtitle_config = {}
-    if subtitles is None:
-        subtitles = []
-    try:
-        # Создаем директории для задачи
-        create_task_dirs(task_id)
-        
-        update_task(task_id, {'status': 'processing', 'progress': 0})
-
-        # Скачиваем видео в input директорию
-        input_filename = f"{uuid.uuid4()}.mp4"
-        input_path = os.path.join(get_task_input_dir(task_id), input_filename)
-
-        logger.info(f"Task {task_id}: Downloading video from {video_url}")
-        import requests
-        response = requests.get(video_url, stream=True, timeout=300)
-        with open(input_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-
-        update_task(task_id, {'progress': 30})
-
-        # Создаём выходной файл в output директории
-        output_filename = f"shorts_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id[:8]}.mp4"
-        output_path = os.path.join(get_task_output_dir(task_id), output_filename)
-
-        # Вычисляем длительность
-        if isinstance(start_time, (int, float)) and isinstance(end_time, (int, float)):
-            duration = end_time - start_time
-            start_str = str(start_time)
-            duration_str = str(duration)
-        else:
-            start_str = str(start_time)
-            duration_str = None
-
-        # Определяем фильтр обрезки
-        if crop_mode == 'letterbox':
-            # Letterbox: горизонтальное видео по центру + размытый фон
-            video_filter = (
-                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20[bg];"
-                "[0:v]scale=-1:1080:force_original_aspect_ratio=decrease[fg];"
-                "[bg][fg]overlay=(W-w)/2:(H-h)/2"
-            )
-        elif crop_mode == 'top':
-            video_filter = "crop=ih*9/16:ih:0:0,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
-        elif crop_mode == 'bottom':
-            video_filter = "crop=ih*9/16:ih:0:ih-oh,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
-        else:  # center (default)
-            video_filter = "crop=ih*9/16:ih,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
-
-        # Добавляем текстовые оверлеи с настройками если указаны
-        if title_text:
-            # Настройки заголовка (title) - появляется в начале с fade эффектом
-            # Оптимальные значения по умолчанию для Shorts (1080x1920)
-            title_fontfile = title_config.get('fontfile')              # Опционально: путь к файлу шрифта
-            title_font = title_config.get('font')                      # Опционально: имя системного шрифта
-            title_fontsize = title_config.get('fontsize', 70)          # Крупный размер для заголовка
-            title_fontcolor = title_config.get('fontcolor', 'white')   # Универсальный белый цвет
-            title_bordercolor = title_config.get('bordercolor', 'black')  # Чёрная обводка для контраста
-            title_borderw = title_config.get('borderw', 3)             # Достаточная обводка
-            title_y = title_config.get('y', 150)                       # Отступ от верха
-            title_start = title_config.get('start_time', 0.5)          # Когда появляется
-            title_duration = title_config.get('duration', 4)           # Как долго показывается
-            title_fade_in = title_config.get('fade_in', 0.5)           # Длительность fade in
-            title_fade_out = title_config.get('fade_out', 0.5)         # Длительность fade out
-
-            # Автоматический перенос текста заголовка если он длинный
-            # Для fontsize 60: ~14 символов на строку
-            max_chars_per_line_title = int(950 / (title_fontsize * 0.55))
-            if len(title_text) > max_chars_per_line_title:
-                words = title_text.split(' ')
-                lines = []
-                current_line = []
-                current_length = 0
-
-                for word in words:
-                    word_len = len(word) + 1  # +1 для пробела
-                    if current_length + word_len > max_chars_per_line_title and current_line:
-                        lines.append(' '.join(current_line))
-                        current_line = [word]
-                        current_length = word_len
-                    else:
-                        current_line.append(word)
-                        current_length += word_len
-
-                if current_line:
-                    lines.append(' '.join(current_line))
-
-                # FFmpeg поддерживает \n в тексте напрямую
-                title_text = '\n'.join(lines[:2])  # Максимум 2 строки
-
-            # Экранируем спецсимволы, \n экранируем как \\n для expansion
-            title_escaped = title_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
-
-            title_end = title_start + title_duration
-            fade_in_end = title_start + title_fade_in
-            fade_out_start = title_end - title_fade_out
-
-            # Извлекаем text_align (по умолчанию center для многострочного текста)
-            title_text_align = title_config.get('text_align', 'center')
-
-            # Формируем drawtext фильтр
-            drawtext_params = [
-                f"text='{title_escaped}'",
-                "expansion=normal",
-                f"text_align={title_text_align}"
-            ]
-
-            # Добавляем font или fontfile (fontfile имеет приоритет)
-            if title_fontfile:
-                fontfile_escaped = title_fontfile.replace(':', '\\:').replace("'", "\\'")
-                drawtext_params.append(f"fontfile='{fontfile_escaped}'")
-            elif title_font:
-                font_escaped = title_font.replace(':', '\\:').replace("'", "\\'")
-                drawtext_params.append(f"font='{font_escaped}'")
-
-            drawtext_params.extend([
-                f"fontsize={title_fontsize}",
-                f"fontcolor={title_fontcolor}",
-                f"bordercolor={title_bordercolor}",
-                f"borderw={title_borderw}",
-                f"x=(w-text_w)/2",
-                f"y={title_y}",
-                f"enable='between(t\\,{title_start}\\,{title_end})'",
-                f"alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
-            ])
-
-            video_filter += f",drawtext={':'.join(drawtext_params)}"
-
-        # Динамические субтитры - каждый сегмент со своими таймкодами
-        if subtitles:
-            # Настройки субтитров (subtitle) - появляются внизу экрана
-            # Оптимальные значения по умолчанию для Shorts (1080x1920)
-            subtitle_fontfile = subtitle_config.get('fontfile')               # Опционально: путь к файлу шрифта
-            subtitle_font = subtitle_config.get('font')                       # Опционально: имя системного шрифта
-            subtitle_fontsize = subtitle_config.get('fontsize', 60)           # Крупный размер для читаемости
-            subtitle_fontcolor = subtitle_config.get('fontcolor', 'white')    # Белый цвет для читаемости
-            subtitle_bordercolor = subtitle_config.get('bordercolor', 'black')  # Чёрная обводка для контраста
-            subtitle_borderw = subtitle_config.get('borderw', 3)              # Достаточная обводка
-            subtitle_y = subtitle_config.get('y', 'h-200')                    # Отступ от низа
-            subtitle_text_align = subtitle_config.get('text_align', 'center') # Выравнивание по центру
-
-            for subtitle in subtitles:
-                sub_text = subtitle.get('text', '')
-                sub_start = subtitle.get('start', 0)
-                sub_end = subtitle.get('end', 0)
-
-                if sub_text and sub_start is not None and sub_end is not None:
-                    # Автоматический перенос текста если он длинный
-                    # Для fontsize 64: ~12 символов на строку, для 48: ~16 символов (уменьшен для надёжности)
-                    max_chars_per_line = int(950 / (subtitle_fontsize * 0.55))  # Более консервативный расчёт
-                    if len(sub_text) > max_chars_per_line:
-                        words = sub_text.split(' ')
-                        lines = []
-                        current_line = []
-                        current_length = 0
-
-                        for word in words:
-                            word_len = len(word) + 1  # +1 для пробела
-                            if current_length + word_len > max_chars_per_line and current_line:
-                                lines.append(' '.join(current_line))
-                                current_line = [word]
-                                current_length = word_len
-                            else:
-                                current_line.append(word)
-                                current_length += word_len
-
-                        if current_line:
-                            lines.append(' '.join(current_line))
-
-                        # FFmpeg поддерживает \n в тексте напрямую
-                        sub_text = '\n'.join(lines[:2])  # Максимум 2 строки
-
-                    # Экранируем текст, \n экранируем как \\n для expansion
-                    sub_escaped = sub_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
-
-                    # Формируем drawtext фильтр для субтитров
-                    sub_drawtext_params = [
-                        f"text='{sub_escaped}'",
-                        "expansion=normal",
-                        f"text_align={subtitle_text_align}"
-                    ]
-
-                    # Добавляем font или fontfile (fontfile имеет приоритет)
-                    if subtitle_fontfile:
-                        subfontfile_escaped = subtitle_fontfile.replace(':', '\\:').replace("'", "\\'")
-                        sub_drawtext_params.append(f"fontfile='{subfontfile_escaped}'")
-                    elif subtitle_font:
-                        subfont_escaped = subtitle_font.replace(':', '\\:').replace("'", "\\'")
-                        sub_drawtext_params.append(f"font='{subfont_escaped}'")
-
-                    sub_drawtext_params.extend([
-                        f"fontsize={subtitle_fontsize}",
-                        f"fontcolor={subtitle_fontcolor}",
-                        f"bordercolor={subtitle_bordercolor}",
-                        f"borderw={subtitle_borderw}",
-                        f"x=(w-text_w)/2",
-                        f"y={subtitle_y}",
-                        f"enable='between(t\\,{sub_start}\\,{sub_end})'"
-                    ])
-
-                    video_filter += f",drawtext={':'.join(sub_drawtext_params)}"
-
-        update_task(task_id, {'progress': 40})
-
-        # FFmpeg обработка
-        logger.info(f"Task {task_id}: Processing video with FFmpeg")
-        cmd = [
-            'ffmpeg',
-            '-ss', start_str,
-            '-i', input_path,
-        ]
-
-        if duration_str:
-            cmd.extend(['-t', duration_str])
-        else:
-            cmd.extend(['-to', str(end_time)])
-
-        cmd.extend([
-            '-filter_complex' if crop_mode == 'letterbox' else '-vf', video_filter,
-            '-c:v', 'libx264',
-            '-preset', 'medium',
-            '-crf', '23',
-            '-c:a', 'aac',
-            '-b:a', '128k',
-            '-y',
-            output_path
-        ])
-
-        result = subprocess.run(cmd, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            raise Exception(f"FFmpeg error: {result.stderr}")
-
-        os.chmod(output_path, 0o644)
-        update_task(task_id, {'progress': 90})
-
-        # Удаляем входной файл
-        if os.path.exists(input_path):
-            os.remove(input_path)
-
-        file_size = os.path.getsize(output_path)
-        
-        # Сохраняем метаданные
-        metadata = {
-            'task_id': task_id,
-            'status': 'completed',
-            'output_files': [{
-                'filename': output_filename,
-                'file_size': file_size,
-                'file_size_mb': round(file_size / (1024 * 1024), 2),
-                'download_url': f"http://video-processor:5001/download/{task_id}/output/{output_filename}",
-                'download_path': f"/download/{task_id}/output/{output_filename}"
-            }],
-            'total_files': 1,
-            'total_size': file_size,
-            'total_size_mb': round(file_size / (1024 * 1024), 2),
-            'created_at': datetime.now().isoformat(),
-            'completed_at': datetime.now().isoformat(),
-            'ttl_seconds': 7200,
-            'ttl_human': '2 hours'
-        }
-        save_task_metadata(task_id, metadata)
-
-        # Обновляем задачу
-        update_task(task_id, {
-            'status': 'completed',
-            'progress': 100,
-            'filename': output_filename,
-            'file_size': file_size,
-            'download_path': f"/download/{task_id}/output/{output_filename}",
-            'download_url': f"http://video-processor:5001/download/{task_id}/output/{output_filename}",
-            'metadata_url': f"http://video-processor:5001/download/{task_id}/metadata.json",
-            'completed_at': datetime.now().isoformat()
-        })
-
-        logger.info(f"Task {task_id}: Completed successfully")
-
-    except Exception as e:
-        logger.error(f"Task {task_id}: Error - {e}")
-        update_task(task_id, {
-            'status': 'failed',
-            'error': str(e),
-            'failed_at': datetime.now().isoformat()
-        })
-
-def generate_shorts_async():
-    """Внутренняя функция для асинхронной генерации Shorts"""
-    data = request.json
-    if not data:
-        return jsonify({"success": False, "error": "JSON data required"}), 400
-
-    # Подготавливаем параметры через общую функцию
-    params = prepare_video_params(data)
-
-    # Валидация обязательных параметров
-    if not all([params['video_url'], params['start_time'] is not None, params['end_time'] is not None]):
-        return jsonify({
-            "success": False,
-            "error": "video_url, start_time, and end_time are required"
-        }), 400
-
-    # Создаём задачу
-    task_id = str(uuid.uuid4())
-    task_data = {
-        'task_id': task_id,
-        'status': 'queued',
-        'progress': 0,
-        'video_url': params['video_url'],
-        'start_time': params['start_time'],
-        'end_time': params['end_time'],
-        'crop_mode': params['crop_mode'],
-        'title_text': params['title_text'],
-        'subtitles': params['subtitles'],
-        'title_config': params['title_config'],
-        'subtitle_config': params['subtitle_config'],
-        'created_at': datetime.now().isoformat()
-    }
-    save_task(task_id, task_data)
-
-    # Запускаем фоновую обработку
-    thread = threading.Thread(
-        target=process_video_background,
-        args=(task_id, params['video_url'], params['start_time'], params['end_time'], params['crop_mode'],
-              params['title_text'], params['subtitles'], params['title_config'], params['subtitle_config'])
-    )
-    thread.daemon = True
-    thread.start()
-
-    logger.info(f"Task {task_id}: Created and started")
-
-    return jsonify({
-        "success": True,
-        "task_id": task_id,
-        "status": "queued",
-        "message": "Task created and processing started",
-        "check_status_url": f"/task_status/{task_id}"
-    }), 202
 
 @app.route('/task_status/<task_id>', methods=['GET'])
 def get_task_status(task_id):

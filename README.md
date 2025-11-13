@@ -272,10 +272,10 @@ curl http://localhost:5001/task_status/abc123
         "fontsize": 70,
         "fontcolor": "white"
       },
-      "subtitles": [
-        {"text": "Первый субтитр", "start": 0, "end": 3}
-      ],
-      "subtitle_config": {
+      "subtitles": {
+        "items": [
+          {"text": "Первый субтитр", "start": 0, "end": 3}
+        ],
         "font": "Roboto",
         "fontsize": 64,
         "fontcolor": "yellow"
@@ -286,6 +286,10 @@ curl http://localhost:5001/task_status/abc123
 ```
 
 **Примечание:** `start_time` и `end_time` могут быть числами (секунды) или строками (`"00:01:30"`). При указании обоих параметров будет вырезан фрагмент автоматически.
+
+**Формат полей:**
+- `title` — объект с полем `text` и настройками шрифта
+- `subtitles` — объект с полем `items` (массив субтитров) и настройками шрифта
 
 ### Example 2: Простая конверсия в Shorts (без нарезки)
 
