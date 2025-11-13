@@ -344,6 +344,134 @@ curl http://localhost:5001/task_status/abc123
 }
 ```
 
+### Example 5: Извлечение аудио (sync режим)
+
+```bash
+curl -X POST http://localhost:5001/process_video \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_url": "https://example.com/video.mp4",
+    "execution": "sync",
+    "operations": [
+      {
+        "type": "extract_audio",
+        "format": "mp3",
+        "bitrate": "192k"
+      }
+    ]
+  }'
+```
+
+**Response (sync - возвращается сразу после завершения):**
+```json
+{
+  "success": true,
+  "filename": "audio_20251112_194523.mp3",
+  "file_size": 5048576,
+  "file_size_mb": 4.8,
+  "download_url": "http://localhost:5001/download/audio_20251112_194523.mp3",
+  "download_path": "/download/audio_20251112_194523.mp3",
+  "operations_executed": 1,
+  "note": "File will auto-delete after 2 hours."
+}
+```
+
+### Example 6: Извлечение аудио (async режим с webhook)
+
+```json
+{
+  "video_url": "https://example.com/video.mp4",
+  "execution": "async",
+  "operations": [
+    {
+      "type": "extract_audio",
+      "format": "mp3",
+      "bitrate": "320k"
+    }
+  ],
+  "webhook_url": "https://n8n.example.com/webhook/audio-ready"
+}
+```
+
+**Response (async - возвращается сразу):**
+```json
+{
+  "success": true,
+  "task_id": "abc123-def456",
+  "status": "processing",
+  "message": "Task created and processing in background",
+  "check_status_url": "/task_status/abc123-def456"
+}
+```
+
+**Проверка статуса задачи:**
+```bash
+curl http://localhost:5001/task_status/abc123-def456
+```
+
+**Response (когда готово):**
+```json
+{
+  "success": true,
+  "task_id": "abc123-def456",
+  "status": "completed",
+  "progress": 100,
+  "filename": "audio_20251112_194523.mp3",
+  "file_size": 5048576,
+  "download_url": "http://video-processor:5001/download/audio_20251112_194523.mp3",
+  "download_path": "/download/audio_20251112_194523.mp3",
+  "completed_at": "2025-11-12T19:45:23"
+}
+```
+
+**Webhook payload (отправляется автоматически при завершении):**
+```json
+{
+  "task_id": "abc123-def456",
+  "event": "task_completed",
+  "status": "completed",
+  "filename": "audio_20251112_194523.mp3",
+  "file_size": 5048576,
+  "file_size_mb": 4.8,
+  "file_ttl_seconds": 7200,
+  "file_ttl_human": "2 hours",
+  "download_url": "http://video-processor:5001/download/audio_20251112_194523.mp3",
+  "download_path": "/download/audio_20251112_194523.mp3",
+  "operations_executed": 1,
+  "completed_at": "2025-11-12T19:45:23"
+}
+```
+
+### Example 7: Нарезка видео + извлечение аудио (pipeline)
+
+```json
+{
+  "video_url": "https://example.com/long-video.mp4",
+  "execution": "async",
+  "operations": [
+    {
+      "type": "cut",
+      "start_time": "00:01:30",
+      "end_time": "00:02:30"
+    },
+    {
+      "type": "extract_audio",
+      "format": "mp3",
+      "bitrate": "192k"
+    }
+  ],
+  "webhook_url": "https://n8n.example.com/webhook/audio-extracted"
+}
+```
+
+**Поддерживаемые форматы аудио:**
+- `mp3` (codec: libmp3lame) - универсальный формат
+- `aac` (codec: aac) - для Apple устройств
+
+**Параметры extract_audio:**
+- `format` (опционально): `mp3` (default) или `aac`
+- `bitrate` (опционально): `128k`, `192k` (default), `256k`, `320k`
+
 ---
 
 ## 🔧 Configuration

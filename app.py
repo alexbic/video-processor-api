@@ -504,13 +504,15 @@ class ExtractAudioOperation(VideoOperation):
             }
         )
 
-    def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
+    def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str, str]:
         """Извлечение аудио из видео"""
         audio_format = params.get('format', 'mp3')
         bitrate = params.get('bitrate', '192k')
 
-        # Меняем расширение выходного файла
-        output_audio = output_path.rsplit('.', 1)[0] + f'.{audio_format}'
+        # Генерируем собственное имя для аудиофайла в той же директории
+        output_dir = os.path.dirname(output_path)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_audio = os.path.join(output_dir, f"audio_{timestamp}.{audio_format}")
 
         cmd = [
             'ffmpeg',
@@ -524,9 +526,9 @@ class ExtractAudioOperation(VideoOperation):
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            return False, f"FFmpeg error: {result.stderr}"
+            return False, f"FFmpeg error: {result.stderr}", output_audio
 
-        return True, f"Audio extracted to {audio_format}"
+        return True, f"Audio extracted to {audio_format}", output_audio
 
 
 # Регистрация всех операций
@@ -1141,7 +1143,16 @@ def process_video_pipeline_sync(video_url: str, operations: list) -> dict:
         logger.info(f"Executing operation {idx+1}/{len(operations)}: {op_type}")
 
         # Выполняем операцию
-        success, message = operation.execute(current_input, output_path, op_data)
+        result = operation.execute(current_input, output_path, op_data)
+        
+        # Обрабатываем результат (может быть 2 или 3 значения)
+        if len(result) == 3:
+            success, message, actual_output = result
+            # Если операция вернула другой путь (например extract_audio создал .mp3)
+            if actual_output and actual_output != output_path:
+                output_path = actual_output
+        else:
+            success, message = result
 
         if not success:
             # Ошибка - удаляем временные файлы
@@ -1226,7 +1237,16 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             logger.info(f"Task {task_id}: Executing operation {idx+1}/{total_ops}: {op_type}")
 
             # Выполняем операцию
-            success, message = operation.execute(current_input, output_path, op_data)
+            result = operation.execute(current_input, output_path, op_data)
+            
+            # Обрабатываем результат (может быть 2 или 3 значения)
+            if len(result) == 3:
+                success, message, actual_output = result
+                # Если операция вернула другой путь (например extract_audio создал .mp3)
+                if actual_output and actual_output != output_path:
+                    output_path = actual_output
+            else:
+                success, message = result
 
             if not success:
                 raise Exception(f"Operation '{op_type}' failed: {message}")
