@@ -161,6 +161,7 @@ curl -X POST http://localhost:5001/process_video \
   "success": true,
   "task_id": "abc123",
   "status": "completed",
+  "video_url": "https://example.com/video.mp4",
   "output_files": [
     {
       "filename": "output.mp4",
@@ -178,6 +179,7 @@ curl -X POST http://localhost:5001/process_video \
 ```
 
 **Ключевые поля:**
+- `video_url` - исходный URL видео, с которым работали
 - `output_files` - **всегда массив** (даже если 1 файл)
 - `is_chunked` - `true` если файлы разбиты на чанки (для Whisper API)
 - `total_files` - общее количество файлов
@@ -211,6 +213,7 @@ curl -X POST http://localhost:5001/process_video \
   "success": true,
   "task_id": "abc123",
   "status": "completed",
+  "video_url": "https://example.com/video.mp4",
   "output_files": [
     {
       "filename": "output_20250108_100523.mp4",
@@ -258,6 +261,7 @@ curl http://localhost:5001/task_status/abc123
   "task_id": "abc123",
   "status": "completed",
   "progress": 100,
+  "video_url": "https://example.com/video.mp4",
   "output_files": [
     {
       "filename": "output.mp4",
@@ -293,6 +297,7 @@ curl http://localhost:5001/task_status/abc123
   "task_id": "abc123",
   "event": "task_completed",
   "status": "completed",
+  "video_url": "https://example.com/video.mp4",
   "output_files": [
     {
       "filename": "output.mp4",
