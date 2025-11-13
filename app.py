@@ -626,7 +626,7 @@ class ExtractAudioOperation(VideoOperation):
             # Разбиваем на чанки
             chunk_start = 0
             chunk_index = 0
-            chunk_files = []
+            chunk_files = []  # список ПОЛНЫХ путей к файлам чанков
 
             while chunk_start < total_duration:
                 chunk_end = min(chunk_start + chunk_duration_seconds, total_duration)
@@ -668,7 +668,8 @@ class ExtractAudioOperation(VideoOperation):
                     continue
 
                 os.chmod(chunk_path, 0o644)
-                chunk_files.append(chunk_filename)
+                # сохраняем полный путь, чтобы pipeline и metadata могли корректно обработать
+                chunk_files.append(chunk_path)
                 
                 chunk_start = chunk_end
                 chunk_index += 1
@@ -678,10 +679,9 @@ class ExtractAudioOperation(VideoOperation):
                 os.remove(output_audio)
 
             logger.info(f"Created {len(chunk_files)} chunks")
-            
-            # Возвращаем путь к первому чанку (для совместимости с pipeline)
-            first_chunk_path = os.path.join(output_dir, chunk_files[0])
-            return True, f"Audio extracted and split into {len(chunk_files)} chunks", first_chunk_path
+
+            # Возвращаем список полных путей к чанкам
+            return True, f"Audio extracted and split into {len(chunk_files)} chunks", chunk_files
 
         else:
             # Файл не требует разбиения
