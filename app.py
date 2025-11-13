@@ -797,14 +797,17 @@ def get_task_status(task_id):
         }
 
         if task['status'] == 'completed':
+            # Единообразный формат: всегда массив output_files
+            output_files = task.get('output_files', [])
+            
+            # Определяем chunked по наличию поля 'chunk' в метаданных
+            is_chunked = any(f.get('chunk') for f in output_files) if output_files else False
+            
             response.update({
-                'filename': task.get('filename'),
-                'file_size': task.get('file_size'),
-                'download_url': task.get('download_url'),
-                'download_path': task.get('download_path'),
-                'output_files': task.get('output_files'),
-                'total_files': task.get('total_files'),
+                'output_files': output_files,
+                'total_files': task.get('total_files', len(output_files)),
                 'total_size': task.get('total_size'),
+                'is_chunked': is_chunked,
                 'metadata_url': task.get('metadata_url'),
                 'completed_at': task.get('completed_at')
             })
@@ -1078,16 +1081,23 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
     # Отправляем webhook если указан
     if webhook_url:
+        # Определяем chunked по наличию поля 'chunk'
+        is_chunked = any(f.get('chunk') for f in files_info)
+        
         webhook_payload = {
             "task_id": task_id,
             "event": "task_completed",
             "status": "completed",
             "output_files": files_info,
             "total_files": len(files_info),
+            "is_chunked": is_chunked,
             "metadata_url": f"http://video-processor:5001/download/{task_id}/metadata.json",
             "completed_at": metadata["completed_at"]
         }
         send_webhook(webhook_url, webhook_payload)
+
+    # Определяем chunked
+    is_chunked = any(f.get('chunk') for f in files_info)
 
     return jsonify({
         "success": True,
@@ -1095,6 +1105,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         "status": "completed",
         "output_files": files_info,
         "total_files": len(files_info),
+        "is_chunked": is_chunked,
         "metadata_url": f"/download/{task_id}/metadata.json",
         "note": "Files will auto-delete after 2 hours.",
         "completed_at": metadata["completed_at"]
@@ -1266,6 +1277,9 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
         # Отправляем финальный webhook если указан
         if webhook_url:
+            # Определяем chunked
+            is_chunked = any(f.get('chunk') for f in output_files_info)
+            
             webhook_payload = {
                 'task_id': task_id,
                 'event': 'task_completed',
@@ -1274,6 +1288,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 'total_files': len(output_files_info),
                 'total_size': total_size,
                 'total_size_mb': round(total_size / (1024 * 1024), 2),
+                'is_chunked': is_chunked,
                 'metadata_url': f"http://video-processor:5001/download/{task_id}/metadata.json",
                 'file_ttl_seconds': 7200,
                 'file_ttl_human': '2 hours',
