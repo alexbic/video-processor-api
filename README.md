@@ -152,6 +152,49 @@ curl -X POST http://localhost:5001/process_video \
 
 ---
 
+### Response Format (Формат ответа)
+
+**Унифицированный формат** - все операции возвращают одинаковую структуру:
+
+```json
+{
+  "success": true,
+  "task_id": "abc123",
+  "status": "completed",
+  "output_files": [
+    {
+      "filename": "output.mp4",
+      "file_size": 16040960,
+      "file_size_mb": 15.3,
+      "download_url": "http://video-processor:5001/download/abc123/output/output.mp4",
+      "download_path": "/download/abc123/output/output.mp4"
+    }
+  ],
+  "total_files": 1,
+  "is_chunked": false,
+  "metadata_url": "/download/abc123/metadata.json",
+  "completed_at": "2025-01-08T10:05:23"
+}
+```
+
+**Ключевые поля:**
+- `output_files` - **всегда массив** (даже если 1 файл)
+- `is_chunked` - `true` если файлы разбиты на чанки (для Whisper API)
+- `total_files` - общее количество файлов
+
+**Для chunked файлов** (extract_audio с разбиением):
+```json
+{
+  "output_files": [
+    {"filename": "audio_chunk_000.mp3", "chunk": "1:7", ...},
+    {"filename": "audio_chunk_001.mp3", "chunk": "2:7", ...}
+  ],
+  "is_chunked": true
+}
+```
+
+---
+
 ### Execution Modes
 
 #### Sync (синхронный)
@@ -166,10 +209,22 @@ curl -X POST http://localhost:5001/process_video \
 ```json
 {
   "success": true,
-  "filename": "output_20250108_100523.mp4",
-  "file_size_mb": 15.3,
-  "download_url": "http://video-processor:5001/download/output_20250108_100523.mp4",
-  "note": "File will auto-delete after 2 hours."
+  "task_id": "abc123",
+  "status": "completed",
+  "output_files": [
+    {
+      "filename": "output_20250108_100523.mp4",
+      "file_size": 16040960,
+      "file_size_mb": 15.3,
+      "download_url": "http://video-processor:5001/download/abc123/output/output_20250108_100523.mp4",
+      "download_path": "/download/abc123/output/output_20250108_100523.mp4"
+    }
+  ],
+  "total_files": 1,
+  "is_chunked": false,
+  "metadata_url": "/download/abc123/metadata.json",
+  "note": "Files will auto-delete after 2 hours.",
+  "completed_at": "2025-01-08T10:05:23"
 }
 ```
 
@@ -199,11 +254,23 @@ curl http://localhost:5001/task_status/abc123
 **Response:**
 ```json
 {
+  "success": true,
   "task_id": "abc123",
   "status": "completed",
   "progress": 100,
-  "filename": "output.mp4",
-  "download_url": "http://video-processor:5001/download/output.mp4",
+  "output_files": [
+    {
+      "filename": "output.mp4",
+      "file_size": 16040960,
+      "file_size_mb": 15.3,
+      "download_url": "http://video-processor:5001/download/abc123/output/output.mp4",
+      "download_path": "/download/abc123/output/output.mp4"
+    }
+  ],
+  "total_files": 1,
+  "total_size": 16040960,
+  "is_chunked": false,
+  "metadata_url": "http://video-processor:5001/download/abc123/metadata.json",
   "completed_at": "2025-01-08T10:05:23"
 }
 ```
@@ -226,11 +293,23 @@ curl http://localhost:5001/task_status/abc123
   "task_id": "abc123",
   "event": "task_completed",
   "status": "completed",
-  "filename": "output.mp4",
-  "file_size_mb": 15.3,
+  "output_files": [
+    {
+      "filename": "output.mp4",
+      "file_size": 16040960,
+      "file_size_mb": 15.3,
+      "download_url": "http://video-processor:5001/download/abc123/output/output.mp4",
+      "download_path": "/download/abc123/output/output.mp4"
+    }
+  ],
+  "total_files": 1,
+  "total_size": 16040960,
+  "total_size_mb": 15.3,
+  "is_chunked": false,
+  "metadata_url": "http://video-processor:5001/download/abc123/metadata.json",
   "file_ttl_seconds": 7200,
   "file_ttl_human": "2 hours",
-  "download_url": "http://video-processor:5001/download/output.mp4",
+  "operations_executed": 1,
   "completed_at": "2025-01-08T10:05:23"
 }
 ```
@@ -403,6 +482,7 @@ curl -X POST http://localhost:5001/process_video \
 {
   "success": true,
   "task_id": "abc123-def456",
+  "status": "completed",
   "output_files": [
     {
       "filename": "audio_20251112_194523.mp3",
@@ -413,8 +493,8 @@ curl -X POST http://localhost:5001/process_video \
     }
   ],
   "total_files": 1,
+  "is_chunked": false,
   "metadata_url": "http://localhost:5001/download/abc123-def456/metadata.json",
-  "operations_executed": 1,
   "note": "Files will auto-delete after 2 hours.",
   "completed_at": "2025-11-12T19:45:23"
 }
@@ -470,6 +550,8 @@ curl http://localhost:5001/task_status/abc123-def456
     }
   ],
   "total_files": 1,
+  "total_size": 5048576,
+  "is_chunked": false,
   "metadata_url": "http://video-processor:5001/download/abc123-def456/metadata.json",
   "completed_at": "2025-11-12T19:45:23"
 }
@@ -493,6 +575,7 @@ curl http://localhost:5001/task_status/abc123-def456
   "total_files": 1,
   "total_size": 5048576,
   "total_size_mb": 4.8,
+  "is_chunked": false,
   "metadata_url": "http://video-processor:5001/download/abc123-def456/metadata.json",
   "file_ttl_seconds": 7200,
   "file_ttl_human": "2 hours",
@@ -604,6 +687,7 @@ curl http://localhost:5001/task_status/abc123-def456
   "total_files": 3,
   "total_size": 67952640,
   "total_size_mb": 64.8,
+  "is_chunked": true,
   "metadata_url": "http://video-processor:5001/download/xyz123/metadata.json",
   "file_ttl_seconds": 7200,
   "file_ttl_human": "2 hours",
