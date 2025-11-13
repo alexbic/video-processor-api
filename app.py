@@ -12,6 +12,35 @@ import json
 app = Flask(__name__)
 
 # ============================================
+# URL HELPERS
+# ============================================
+
+PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL') or os.getenv('EXTERNAL_BASE_URL')
+
+def _join_url(base: str, path: str) -> str:
+    if not base:
+        return path
+    return f"{base.rstrip('/')}/{path.lstrip('/')}"
+
+def build_absolute_url(path: str) -> str:
+    """Build absolute URL for a given API-relative path.
+
+    Priority:
+    1) PUBLIC_BASE_URL/EXTERNAL_BASE_URL env
+    2) Request host_url (when request context exists)
+    3) Return path as-is
+    """
+    try:
+        if PUBLIC_BASE_URL:
+            return _join_url(PUBLIC_BASE_URL, path)
+        # within request context
+        if request and hasattr(request, 'host_url') and request.host_url:
+            return _join_url(request.host_url, path)
+    except Exception:
+        pass
+    return path
+
+# ============================================
 # TASK STORAGE - Redis (multi-worker) or In-Memory (single-worker)
 # ============================================
 
@@ -765,7 +794,8 @@ def download_file(file_path):
             return jsonify({"status": "error", "error": "Invalid file path"}), 403
         
         if os.path.exists(full_path) and os.path.isfile(full_path):
-            return send_file(full_path, as_attachment=True)
+            # conditional=True позволяет поддерживать диапазоны (Range) и эффективное кеширование
+            return send_file(full_path, as_attachment=True, conditional=True)
         else:
             return jsonify({"status": "error", "error": "File not found"}), 404
     except Exception as e:
@@ -795,6 +825,11 @@ def get_task_status(task_id):
         if task['status'] == 'completed':
             # Единообразный формат: всегда массив output_files
             output_files = task.get('output_files', [])
+            # Пересобираем абсолютные ссылки под текущий хост/публичный URL
+            for f in output_files:
+                dp = f.get('download_path')
+                if dp:
+                    f['download_url'] = build_absolute_url(dp)
             
             # Определяем chunked по наличию поля 'chunk' в метаданных
             is_chunked = any(f.get('chunk') for f in output_files) if output_files else False
@@ -805,7 +840,7 @@ def get_task_status(task_id):
                 'total_files': task.get('total_files', len(output_files)),
                 'total_size': task.get('total_size'),
                 'is_chunked': is_chunked,
-                'metadata_url': task.get('metadata_url'),
+                'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json"),
                 'completed_at': task.get('completed_at')
             })
         elif task['status'] == 'error':
@@ -1056,7 +1091,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
                 "file_size": file_size,
                 "file_size_mb": round(file_size / (1024 * 1024), 2),
                 "download_path": download_path,
-                "download_url": f"http://video-processor:5001{download_path}"
+                "download_url": build_absolute_url(download_path)
             }
             if filename in chunk_map:
                 entry.update(chunk_map[filename])
@@ -1087,7 +1122,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             "output_files": files_info,
             "total_files": len(files_info),
             "is_chunked": is_chunked,
-            "metadata_url": f"http://video-processor:5001/download/{task_id}/metadata.json",
+            "metadata_url": build_absolute_url(f"/download/{task_id}/metadata.json"),
             "completed_at": metadata["completed_at"]
         }
         send_webhook(webhook_url, webhook_payload)
@@ -1102,7 +1137,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         "output_files": files_info,
         "total_files": len(files_info),
         "is_chunked": is_chunked,
-        "metadata_url": f"/download/{task_id}/metadata.json",
+        "metadata_url": build_absolute_url(f"/download/{task_id}/metadata.json"),
         "note": "Files will auto-delete after 2 hours.",
         "completed_at": metadata["completed_at"]
     })
@@ -1233,8 +1268,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                     'filename': filename,
                     'file_size': file_size,
                     'file_size_mb': round(file_size / (1024 * 1024), 2),
-                    'download_url': f"http://video-processor:5001/download/{task_id}/output/{filename}",
-                    'download_path': f"/download/{task_id}/output/{filename}"
+                    'download_path': f"/download/{task_id}/output/{filename}",
+                    'download_url': build_absolute_url(f"/download/{task_id}/output/{filename}")
                 }
                 if filename in chunk_map:
                     entry.update(chunk_map[filename])
@@ -1265,7 +1300,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             'output_files': output_files_info,
             'total_files': len(output_files_info),
             'total_size': total_size,
-            'metadata_url': f"http://video-processor:5001/download/{task_id}/metadata.json",
+            'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json"),
             'operations_executed': total_ops,
             'completed_at': datetime.now().isoformat()
         })
@@ -1287,7 +1322,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 'total_size': total_size,
                 'total_size_mb': round(total_size / (1024 * 1024), 2),
                 'is_chunked': is_chunked,
-                'metadata_url': f"http://video-processor:5001/download/{task_id}/metadata.json",
+                'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json"),
                 'file_ttl_seconds': 7200,
                 'file_ttl_human': '2 hours',
                 'operations_executed': total_ops,

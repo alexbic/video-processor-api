@@ -37,6 +37,9 @@ services:
       REDIS_PORT: 6379
       REDIS_DB: 0
       WORKERS: 2  # Can use 2+ workers with Redis
+      # Public base URL for generating absolute download links (no trailing slash)
+      # Example for reverse-proxy on a subpath:
+      PUBLIC_BASE_URL: https://alexbic.net/video-processor-api
     depends_on:
       redis:
         condition: service_healthy
@@ -51,3 +54,6 @@ services:
 # 7. Custom fonts: Place .ttf/.otf files in /opt/n8n-docker/volumes/video_processor/fonts/
 #    They will be available inside container at /app/fonts/custom/
 # 8. Download URLs format: /download/{task_id}/output/{filename} or /download/{task_id}/metadata.json
+# 9. When serving behind a reverse proxy under a subpath, set PUBLIC_BASE_URL
+#    to your full external base, e.g. https://example.com/video-processor-api
+#    A trailing slash is optional; the app will normalize it.
