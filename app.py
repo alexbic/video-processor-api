@@ -6,6 +6,7 @@ import uuid
 import logging
 import threading
 from typing import Dict, Any
+import re
 import json
 
 app = Flask(__name__)
@@ -1384,6 +1385,26 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
     # Собираем информацию о всех output файлах
     files_info = []
+
+    # Построение карты chunk-информации по шаблону имени *_chunkNNN.ext
+    pattern = re.compile(r"^(?P<prefix>.+)_chunk(?P<index>\d{3})\.(?P<ext>[^.]+)$")
+    chunk_groups = {}
+    for p in output_files:
+        fname = os.path.basename(p)
+        m = pattern.match(fname)
+        if m:
+            prefix = m.group('prefix')
+            idx = int(m.group('index'))
+            chunk_groups.setdefault(prefix, []).append((fname, idx))
+    chunk_map = {}
+    for prefix, lst in chunk_groups.items():
+        total = len(lst)
+        for fname, idx in lst:
+            chunk_map[fname] = {
+                'chunk_index': idx + 1,
+                'chunk_total': total,
+                'chunk_label': f"{idx + 1}/{total}"
+            }
     for file_path in output_files:
         if os.path.exists(file_path):
             os.chmod(file_path, 0o644)
@@ -1391,13 +1412,16 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             filename = os.path.basename(file_path)
             download_path = f"/download/{task_id}/output/{filename}"
             
-            files_info.append({
+            entry = {
                 "filename": filename,
                 "file_size": file_size,
                 "file_size_mb": round(file_size / (1024 * 1024), 2),
                 "download_path": download_path,
                 "download_url": f"http://video-processor:5001{download_path}"
-            })
+            }
+            if filename in chunk_map:
+                entry.update(chunk_map[filename])
+            files_info.append(entry)
 
     # Сохраняем metadata
     metadata = {
@@ -1531,6 +1555,27 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
         # Собираем информацию о выходных файлах
         output_files_info = []
+
+        # Построение карты chunk-информации по шаблону имени *_chunkNNN.ext
+        pattern = re.compile(r"^(?P<prefix>.+)_chunk(?P<index>\d{3})\.(?P<ext>[^.]+)$")
+        chunk_groups = {}
+        for p in final_outputs:
+            fname = os.path.basename(p)
+            m = pattern.match(fname)
+            if m:
+                prefix = m.group('prefix')
+                idx = int(m.group('index'))
+                chunk_groups.setdefault(prefix, []).append((fname, idx))
+        chunk_map = {}
+        for prefix, lst in chunk_groups.items():
+            total = len(lst)
+            for fname, idx in lst:
+                chunk_map[fname] = {
+                    'chunk_index': idx + 1,
+                    'chunk_total': total,
+                    'chunk_label': f"{idx + 1}/{total}"
+                }
+
         total_size = 0
         for output_file in final_outputs:
             if os.path.exists(output_file):
@@ -1538,13 +1583,16 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 total_size += file_size
                 filename = os.path.basename(output_file)
                 
-                output_files_info.append({
+                entry = {
                     'filename': filename,
                     'file_size': file_size,
                     'file_size_mb': round(file_size / (1024 * 1024), 2),
                     'download_url': f"http://video-processor:5001/download/{task_id}/output/{filename}",
                     'download_path': f"/download/{task_id}/output/{filename}"
-                })
+                }
+                if filename in chunk_map:
+                    entry.update(chunk_map[filename])
+                output_files_info.append(entry)
 
         # Сохраняем метаданные
         metadata = {
