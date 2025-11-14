@@ -20,13 +20,15 @@ PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL') or os.getenv('EXTERNAL_BASE_URL')
 API_KEY = os.getenv('API_KEY')  # Bearer token для авторизации
 
 # Умная логика авторизации:
-# - Если PUBLIC_BASE_URL задан (публичный API) - требуем API_KEY обязательно
-# - Если PUBLIC_BASE_URL не задан (внутренняя Docker сеть) - API_KEY опционален
+# - Если API_KEY не задан - работаем в режиме внутренней сети, PUBLIC_BASE_URL игнорируется
+# - Если API_KEY задан - PUBLIC_BASE_URL активируется для генерации внешних ссылок
 if PUBLIC_BASE_URL and not API_KEY:
     logger.warning("=" * 60)
     logger.warning("WARNING: PUBLIC_BASE_URL is set but API_KEY is not!")
-    logger.warning("Your API is publicly accessible without authentication!")
-    logger.warning("Generate API key: openssl rand -hex 32")
+    logger.warning("PUBLIC_BASE_URL will be IGNORED (internal network mode)")
+    logger.warning("To activate public mode with external URLs:")
+    logger.warning("  1. Generate API key: openssl rand -hex 32")
+    logger.warning("  2. Set API_KEY environment variable")
     logger.warning("=" * 60)
 
 API_KEY_ENABLED = bool(API_KEY)  # Авторизация включена только если API_KEY задан
@@ -224,18 +226,22 @@ else:
     logger.info(f"Multi-worker support: DISABLED (use --workers 1)")
 
 # Log API access mode
-if PUBLIC_BASE_URL:
-    logger.info(f"Public API mode: {PUBLIC_BASE_URL}")
-    if API_KEY_ENABLED:
-        logger.info(f"Authentication: ENABLED (Bearer token)")
+if API_KEY_ENABLED:
+    # Публичный режим (API_KEY задан)
+    if PUBLIC_BASE_URL:
+        logger.info(f"Mode: PUBLIC API with external URLs")
+        logger.info(f"Base URL: {PUBLIC_BASE_URL}")
+        logger.info(f"Authentication: ENABLED (Bearer token required)")
     else:
-        logger.warning(f"Authentication: DISABLED (WARNING: public API without auth!)")
+        logger.info(f"Mode: PUBLIC API with internal URLs")
+        logger.info(f"Authentication: ENABLED (Bearer token required)")
 else:
-    logger.info(f"Internal Docker network mode (no PUBLIC_BASE_URL)")
-    if API_KEY_ENABLED:
-        logger.info(f"Authentication: ENABLED (Bearer token)")
-    else:
-        logger.info(f"Authentication: DISABLED (internal network)")
+    # Внутренний режим (API_KEY не задан)
+    logger.info(f"Mode: INTERNAL (Docker network)")
+    if PUBLIC_BASE_URL:
+        logger.warning(f"PUBLIC_BASE_URL set but IGNORED (no API_KEY)")
+        logger.info(f"  Set API_KEY to activate: {PUBLIC_BASE_URL}")
+    logger.info(f"Authentication: DISABLED (internal network)")
 
 logger.info(f"=" * 60)
 
