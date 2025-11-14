@@ -12,6 +12,29 @@ For each selected clip, you MUST:
 - Add a "virality_reason" (1–3 sentences, in English, explaining why this moment is likely to go viral: e.g. emotional impact, humor, twist, relatability, etc.).
 - Do NOT return any clips with a virality_score below 7.5.
 
+CAPTION WRITING — RUSSIAN CAPTION PER CLIP:
+- For each clip, also write a Russian social caption in JSON field "caption" following these rules:
+  * Keep the total length around ~70 words including hashtags.
+  * Tone: spartan, classic Western style, but still fitting for Instagram/TikTok.
+  * First-person, conversational; every sentence must be > 5 words; university reading level.
+  * Use emojis sparingly.
+  * Hashtags: add 3–5 at the END only. Base them on the actual transcript and identifiable game elements.
+  * If a specific game can be identified from the transcript, include its hashtag (e.g. #HollowKnight #Silksong). If unclear, use neutral gaming tags (#gaming #геймплей #инди).
+  * Always include content-format hashtags like #shorts and #геймер.
+  * Do NOT invent game names — only use identifiable ones from the content.
+
+CLIENT_META PASS-THROUGH AND ENRICHMENT:
+- If input data includes {{ $json.client_meta }}, preserve ALL existing fields inside it.
+- Add the following NEW fields into client_meta for each clip:
+  * "caption" — the Russian caption you generated.
+  * "video_description_for_tiktok" — Russian TikTok description optimized for views.
+  * "video_description_for_instagram" — Russian Instagram description with emojis for views.
+  * "video_title_for_youtube_short" — Russian YouTube Shorts title for views.
+  * "virality_score" — float (7.5–10.0).
+  * "virality_reason" — short English explanation.
+- Do NOT remove or overwrite any fields that were already in client_meta on input.
+- Return the enriched client_meta object in each clip's JSON output.
+
 ⚠️ FFMPEG TIMING CONTRACT — HARD REQUIREMENTS:
 - Return timestamps as ABSOLUTE SECONDS from video start (usable in: ffmpeg -ss <start> -to <end> -i <input> …).
 - Numbers ONLY with DOT decimal, up to 3 decimals (examples: 0, 1.250, 17.350).
@@ -28,6 +51,9 @@ TRANSCRIPT_TEXT (raw):
 
 WORDS_JSON (array of {w, s, e} where s/e are seconds):
 {{ JSON.stringify($json.words_llm) }}
+
+CLIENT_META (input, may be empty or contain existing fields):
+{{ JSON.stringify($json.client_meta || {}) }}
 
 HARD EXCLUSIONS:
 - No generic intros/outros or sponsor-only segments unless they contain the hook.
@@ -61,11 +87,15 @@ Order clips by predicted performance (best first):
         {"text": "сегодня покажу", "start": 1.300, "end": 2.500},
         {"text": "как сделать крутые Shorts", "start": 2.600, "end": 5.100}
       ],
-      "video_description_for_tiktok": "<tiktok video russian description for get views>",
-      "video_description_for_instagram": "<instagram video russian description for get views>",
-      "video_title_for_youtube_short": "<youtube short video russian title for get views>"
-      ,"virality_score": <float, e.g. 9.5>,
-      "virality_reason": "<short explanation in English>"
+      "client_meta": {
+        ...existing fields from input client_meta (if any)...,
+        "caption": "<русская подпись ~70 слов, разговорно от первого лица; предложения >5 слов; минимум эмодзи; хэштеги только в конце (3–5) по содержанию; всегда #shorts #геймер; не выдумывай названия игр>",
+        "video_description_for_tiktok": "<описание для TikTok на русском с хэштегами для получения просмотров>",
+        "video_description_for_instagram": "<описание для Instagram на русском с эмодзи для получения просмотров>",
+        "video_title_for_youtube_short": "<заголовок для YouTube Shorts на русском для получения просмотров>",
+        "virality_score": <float, e.g. 9.5>,
+        "virality_reason": "<short explanation in English>"
+      }
     }
   ]
 }
@@ -74,7 +104,13 @@ EXAMPLE SUBTITLE CONVERSION:
 If clip.start = 100.0 and word in WORDS_JSON is {"w": "привет", "s": 100.5, "e": 101.2}
 Then in subtitles array: {"text": "привет", "start": 0.5, "end": 1.2}
 
-⚠️ CRITICAL: Subtitles timestamps MUST be relative to clip start (subtract clip.start from all word timestamps).
+EXAMPLE CLIENT_META ENRICHMENT:
+Input client_meta: {"user_id": "abc123", "campaign": "winter2025"}
+Output client_meta for a clip: {"user_id": "abc123", "campaign": "winter2025", "caption": "...", "video_description_for_tiktok": "...", "video_description_for_instagram": "...", "video_title_for_youtube_short": "...", "virality_score": 9.2, "virality_reason": "..."}
+
+⚠️ CRITICAL: 
+- Subtitles timestamps MUST be relative to clip start (subtract clip.start from all word timestamps).
+- Preserve ALL incoming client_meta fields and add new ones; do NOT replace the entire object.
 ```
 
 ---
@@ -88,6 +124,29 @@ Then in subtitles array: {"text": "привет", "start": 0.5, "end": 1.2}
 - Обязательно добавь поле "virality_score" (оценка вирусности, число с плавающей точкой от 7.5 до 10.0, например 9.5), отражающее насколько этот момент потенциально вирусный (10.0 = максимум).
 - Обязательно добавь поле "virality_reason" (1–3 предложения по-русски, почему этот момент может стать вирусным: эмоции, юмор, неожиданный поворот, узнаваемость и т.д.).
 - Не возвращай клипы с оценкой ниже 7.5.
+
+ГЕНЕРАЦИЯ ПОДПИСИ (RUSSIAN CAPTION) ДЛЯ КАЖДОГО КЛИПА:
+- Для каждого клипа также сгенерируй русскую подпись и верни её в поле JSON "caption" по правилам:
+  * Длина около ~70 слов вместе с хэштегами.
+  * Тон: «спартанский», классический западный стиль, но подходящий для Instagram/TikTok.
+  * Пиши разговорно, от первого лица; каждое предложение длиннее 5 слов; уровень чтения — университетский.
+  * Эмодзи допускаются, но очень умеренно.
+  * Хэштеги: 3–5 штук ТОЛЬКО В КОНЦЕ. Основаны на реальном содержании транскрипта и узнаваемых элементах игры.
+  * Если по транскрипту можно распознать конкретную игру — включи её хэштег (например, #HollowKnight #Silksong). Если игра неясна — используй нейтральные теги (#gaming #геймплей #инди).
+  * Всегда включай хэштеги формата контента: #shorts и #геймер.
+  * НЕ выдумывай названия игр — только те, что можно распознать из содержания.
+
+ПЕРЕДАЧА И ОБОГАЩЕНИЕ CLIENT_META:
+- Если входные данные включают {{ $json.client_meta }}, сохрани ВСЕ существующие поля внутри него.
+- Добавь следующие НОВЫЕ поля в client_meta для каждого клипа:
+  * "caption" — сгенерированная русская подпись.
+  * "video_description_for_tiktok" — русское описание для TikTok, оптимизированное для просмотров.
+  * "video_description_for_instagram" — русское описание для Instagram с эмодзи для просмотров.
+  * "video_title_for_youtube_short" — русский заголовок для YouTube Shorts для просмотров.
+  * "virality_score" — число с плавающей точкой (7.5–10.0).
+  * "virality_reason" — краткое объяснение по-русски.
+- НЕ удаляй и не перезаписывай поля, которые уже были в client_meta на входе.
+- Верни обогащённый объект client_meta в JSON-выводе каждого клипа.
 
 ⚠️ ЖЁСТКИЕ ТРЕБОВАНИЯ ПО ТАЙМКОДАМ ДЛЯ FFMPEG:
 - Возвращай таймкоды как АБСОЛЮТНЫЕ СЕКУНДЫ от начала видео (для использования в: ffmpeg -ss <start> -to <end> -i <input> …).
@@ -105,6 +164,9 @@ Then in subtitles array: {"text": "привет", "start": 0.5, "end": 1.2}
 
 МАССИВ_СЛОВ (массив объектов {w, s, e} где s/e - секунды):
 {{ JSON.stringify($json.words_llm) }}
+
+CLIENT_META (входные данные, могут быть пустыми или содержать существующие поля):
+{{ JSON.stringify($json.client_meta || {}) }}
 
 ИСКЛЮЧЕНИЯ:
 - Никаких общих интро/аутро или только рекламных сегментов, если только они не содержат хук.
@@ -138,11 +200,15 @@ Then in subtitles array: {"text": "привет", "start": 0.5, "end": 1.2}
         {"text": "сегодня покажу", "start": 1.300, "end": 2.500},
         {"text": "как сделать крутые Shorts", "start": 2.600, "end": 5.100}
       ],
-      "video_description_for_tiktok": "<описание для TikTok на русском с хэштегами для получения просмотров>",
-      "video_description_for_instagram": "<описание для Instagram на русском с эмодзи для получения просмотров>",
-      "video_title_for_youtube_short": "<заголовок для YouTube Shorts на русском для получения просмотров>"
-      ,"virality_score": <float, например 9.5>,
-      "virality_reason": "<короткое объяснение по-русски>"
+      "client_meta": {
+        ...существующие поля из входного client_meta (если есть)...,
+        "caption": "<русская подпись ~70 слов, разговорно от первого лица; предложения >5 слов; минимум эмодзи; хэштеги только в конце (3–5) по содержанию; всегда #shorts #геймер; не выдумывай названия игр>",
+        "video_description_for_tiktok": "<описание для TikTok на русском с хэштегами для получения просмотров>",
+        "video_description_for_instagram": "<описание для Instagram на русском с эмодзи для получения просмотров>",
+        "video_title_for_youtube_short": "<заголовок для YouTube Shorts на русском для получения просмотров>",
+        "virality_score": <float, например 9.5>,
+        "virality_reason": "<короткое объяснение по-русски>"
+      }
     }
   ]
 }
@@ -151,7 +217,13 @@ Then in subtitles array: {"text": "привет", "start": 0.5, "end": 1.2}
 Если clip.start = 100.0 и слово в МАССИВ_СЛОВ это {"w": "привет", "s": 100.5, "e": 101.2}
 Тогда в массиве subtitles: {"text": "привет", "start": 0.5, "end": 1.2}
 
-⚠️ КРИТИЧНО: Таймкоды субтитров ДОЛЖНЫ быть относительными от начала клипа (вычитай clip.start из всех таймкодов слов).
+ПРИМЕР ОБОГАЩЕНИЯ CLIENT_META:
+Входные данные client_meta: {"user_id": "abc123", "campaign": "winter2025"}
+Выходные данные client_meta для клипа: {"user_id": "abc123", "campaign": "winter2025", "caption": "...", "video_description_for_tiktok": "...", "video_description_for_instagram": "...", "video_title_for_youtube_short": "...", "virality_score": 9.2, "virality_reason": "..."}
+
+⚠️ КРИТИЧНО: 
+- Таймкоды субтитров ДОЛЖНЫ быть относительными от начала клипа (вычитай clip.start из всех таймкодов слов).
+- Сохраняй ВСЕ входящие поля client_meta и добавляй новые; НЕ заменяй весь объект.
 ```
 
 ---
@@ -236,10 +308,8 @@ const requests = shorts.map((short, index) => ({
   subtitles: short.subtitles,
   title_config: title_config,
   subtitle_config: subtitle_config,
-  metadata: {
-    tiktok_description: short.video_description_for_tiktok,
-    instagram_description: short.video_description_for_instagram,
-    youtube_title: short.video_title_for_youtube_short,
+  client_meta: {
+    ...(short.client_meta || {}),
     clip_index: index + 1,
     total_clips: shorts.length
   }
