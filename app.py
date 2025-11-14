@@ -77,12 +77,13 @@ def build_absolute_url(path: str) -> str:
     """Build absolute URL for a given API-relative path.
 
     Priority:
-    1) PUBLIC_BASE_URL/EXTERNAL_BASE_URL env
+    1) PUBLIC_BASE_URL (only if API_KEY is set - public mode)
     2) Request host_url (when request context exists)
-    3) Return path as-is
+    3) Return path as-is (internal mode)
     """
     try:
-        if PUBLIC_BASE_URL:
+        # PUBLIC_BASE_URL используется только если API_KEY задан (публичный режим)
+        if API_KEY_ENABLED and PUBLIC_BASE_URL:
             return _join_url(PUBLIC_BASE_URL, path)
         # within request context
         if request and hasattr(request, 'host_url') and request.host_url:
