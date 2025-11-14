@@ -136,6 +136,18 @@ Limits (to protect the service):
 - Max string length: `1000` chars
 - Allowed types: objects, arrays, strings, numbers, booleans, null
 
+Compatibility: `client_meta` may also be sent as a JSON string (it will be parsed server-side). Prefer sending an object directly.
+
+n8n tip: if you have a nested object available only via string, you can send it using `toJsonString()` and the API will parse nested JSON strings too. Example:
+```json
+{
+  "client_meta": {
+    "metadata": {{ $json.metadata.toJsonString() }}
+  }
+}
+```
+The server will convert `metadata` from a JSON string to an object before validation and saving.
+
 ---
 
 ### Endpoints Overview

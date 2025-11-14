@@ -255,6 +255,50 @@ MAX_CLIENT_META_LIST_LENGTH = int(os.getenv('MAX_CLIENT_META_LIST_LENGTH', 200))
 
 ALLOWED_JSON_PRIMITIVES = (str, int, float, bool, type(None))
 
+# Разрешить ли попытку распарсить вложенные JSON-строки в client_meta
+ALLOW_NESTED_JSON_IN_META = os.getenv('ALLOW_NESTED_JSON_IN_META', 'true').lower() in ('1', 'true', 'yes')
+
+
+def _try_parse_json_string(s: str):
+    if not isinstance(s, str):
+        return s, False
+    t = s.lstrip()
+    if not t:
+        return s, False
+    if t[0] not in ('{', '['):
+        return s, False
+    try:
+        parsed = json.loads(s)
+        return parsed, True
+    except Exception:
+        return s, False
+
+
+def normalize_client_meta(node, depth=0, conversions_left=200):
+    """Рекурсивно пытается распарсить вложенные значения-строки,
+    которые выглядят как JSON (объект/массив), если это включено.
+    Ограничиваем глубину и количество конверсий.
+    """
+    if depth > MAX_CLIENT_META_DEPTH or conversions_left <= 0:
+        return node
+
+    if isinstance(node, dict):
+        out = {}
+        for k, v in node.items():
+            nv = normalize_client_meta(v, depth + 1, conversions_left)
+            out[k] = nv
+        return out
+    if isinstance(node, list):
+        out_list = []
+        for v in node:
+            out_list.append(normalize_client_meta(v, depth + 1, conversions_left))
+        return out_list
+    if isinstance(node, str) and ALLOW_NESTED_JSON_IN_META:
+        parsed, ok = _try_parse_json_string(node)
+        if ok:
+            return normalize_client_meta(parsed, depth + 1, conversions_left - 1)
+    return node
+
 
 def _validate_meta_structure(node, depth=0, counters=None):
     if counters is None:
@@ -1062,6 +1106,32 @@ def process_video():
         if client_meta is None and 'meta' in data:
             # Поддержка алиаса 'meta' для совместимости
             client_meta = data.get('meta')
+
+        # Если client_meta пришёл строкой, пытаемся распарсить как JSON-объект
+        if isinstance(client_meta, str):
+            try:
+                # Сначала проверим грубый лимит размера строки до парсинга
+                if len(client_meta.encode('utf-8')) > MAX_CLIENT_META_BYTES:
+                    return jsonify({
+                        "status": "error",
+                        "error": f"Invalid client_meta: exceeds {MAX_CLIENT_META_BYTES} bytes"
+                    }), 400
+                parsed = json.loads(client_meta)
+                if not isinstance(parsed, dict):
+                    return jsonify({
+                        "status": "error",
+                        "error": "Invalid client_meta: must be an object or JSON stringified object"
+                    }), 400
+                client_meta = parsed
+            except json.JSONDecodeError as e:
+                return jsonify({
+                    "status": "error",
+                    "error": f"Invalid client_meta: JSON parse error ({str(e)})"
+                }), 400
+
+        # Пытаемся распарсить вложенные JSON-строки (вроде {{ $json.metadata.toJsonString() }})
+        if isinstance(client_meta, (dict, list)):
+            client_meta = normalize_client_meta(client_meta)
 
         # Валидация client_meta с ограничениями
         ok, err = validate_client_meta(client_meta)
