@@ -8,8 +8,56 @@ import threading
 from typing import Dict, Any
 import re
 import json
+from functools import wraps
 
 app = Flask(__name__)
+
+# ============================================
+# API KEY AUTHENTICATION
+# ============================================
+
+API_KEY = os.getenv('API_KEY')  # Bearer token для авторизации
+API_KEY_ENABLED = bool(API_KEY)  # Авторизация включена только если API_KEY задан
+
+def require_api_key(f):
+    """Декоратор для проверки API ключа через Bearer token"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Если API_KEY не задан - пропускаем авторизацию
+        if not API_KEY_ENABLED:
+            return f(*args, **kwargs)
+        
+        # Проверяем Authorization header
+        auth_header = request.headers.get('Authorization', '')
+        
+        if not auth_header:
+            return jsonify({
+                'status': 'error',
+                'error': 'Missing Authorization header',
+                'message': 'Please provide API key via "Authorization: Bearer YOUR_API_KEY"'
+            }), 401
+        
+        # Проверяем формат Bearer token
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != 'bearer':
+            return jsonify({
+                'status': 'error',
+                'error': 'Invalid Authorization header format',
+                'message': 'Expected format: "Authorization: Bearer YOUR_API_KEY"'
+            }), 401
+        
+        token = parts[1]
+        
+        # Проверяем совпадение ключа
+        if token != API_KEY:
+            return jsonify({
+                'status': 'error',
+                'error': 'Invalid API key',
+                'message': 'The provided API key is incorrect'
+            }), 403
+        
+        return f(*args, **kwargs)
+    return decorated_function
 
 # ============================================
 # URL HELPERS
@@ -713,16 +761,18 @@ OPERATIONS_REGISTRY = {
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint (не требует авторизации)"""
     return jsonify({
         "status": "healthy",
         "service": "video-processor-api",
         "storage_mode": STORAGE_MODE,
         "redis_available": STORAGE_MODE == "redis",
+        "api_key_enabled": API_KEY_ENABLED,
         "timestamp": datetime.now().isoformat()
     })
 
 @app.route('/fonts', methods=['GET'])
+@require_api_key
 def list_fonts():
     """
     Получить список доступных шрифтов
@@ -779,6 +829,7 @@ def list_fonts():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/download/<path:file_path>', methods=['GET'])
+@require_api_key
 def download_file(file_path):
     """Скачать файл из задачи
     
@@ -807,6 +858,7 @@ def download_file(file_path):
 # ============================================
 
 @app.route('/task_status/<task_id>', methods=['GET'])
+@require_api_key
 def get_task_status(task_id):
     """Получить статус задачи"""
     try:
@@ -856,6 +908,7 @@ def get_task_status(task_id):
         return jsonify({"status": "error", "error": str(e)}), 500
 
 @app.route('/tasks', methods=['GET'])
+@require_api_key
 def list_all_tasks():
     """Получить список всех задач"""
     try:
@@ -870,6 +923,7 @@ def list_all_tasks():
         return jsonify({"status": "error", "error": str(e)}), 500
 
 @app.route('/process_video', methods=['POST'])
+@require_api_key
 def process_video():
     """
     Endpoint для обработки видео

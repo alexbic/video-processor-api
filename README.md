@@ -51,15 +51,41 @@ API автоматически определяет доступность Redis
 
 ## 📚 API Reference
 
+### 🔐 Authentication
+
+API поддерживает Bearer token аутентификацию через API Key.
+
+**Включение:**
+```bash
+# Генерируем безопасный ключ
+openssl rand -hex 32
+
+# Устанавливаем в окружение
+export API_KEY="your-generated-key-here"
+```
+
+**Использование:**
+```bash
+curl -H "Authorization: Bearer your-api-key" \
+  http://localhost:5001/process_video
+```
+
+**Примечания:**
+- Если `API_KEY` не задан — API работает без авторизации
+- `/health` endpoint всегда доступен без авторизации
+- Все остальные endpoints требуют Bearer token, если `API_KEY` установлен
+
+---
+
 ### Endpoints Overview
 
-- `GET /health` — состояние сервиса (версии, `storage_mode`, доступность Redis)
-- `GET /fonts` — список системных и кастомных шрифтов
-- `POST /process_video` — запуск pipeline (sync/async; `operations`, опционально `webhook_url`)
-- `GET /task_status/{task_id}` — статус задачи (`queued`/`processing`/`completed`/`error`)
-- `GET /tasks` — последние задачи (для отладки)
-- `GET /download/{task_id}/output/{filename}` — скачать готовый файл
-- `GET /download/{task_id}/metadata.json` — метаданные результата
+- `GET /health` — состояние сервиса (версии, `storage_mode`, доступность Redis) **[без авторизации]**
+- `GET /fonts` — список системных и кастомных шрифтов **[требует API key]**
+- `POST /process_video` — запуск pipeline (sync/async; `operations`, опционально `webhook_url`) **[требует API key]**
+- `GET /task_status/{task_id}` — статус задачи (`queued`/`processing`/`completed`/`error`) **[требует API key]**
+- `GET /tasks` — последние задачи (для отладки) **[требует API key]**
+- `GET /download/{task_id}/output/{filename}` — скачать готовый файл **[требует API key]**
+- `GET /download/{task_id}/metadata.json` — метаданные результата **[требует API key]**
 
 ### Health Check
 
@@ -74,6 +100,7 @@ curl http://localhost:5001/health
   "service": "video-processor-api",
   "storage_mode": "redis",
   "redis_available": true,
+  "api_key_enabled": true,
   "timestamp": "2025-01-08T10:00:00"
 }
 ```

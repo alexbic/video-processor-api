@@ -40,6 +40,10 @@ services:
       # Public base URL for generating absolute download links (no trailing slash)
       # Example for reverse-proxy on a subpath:
       PUBLIC_BASE_URL: https://alexbic.net/video-processor-api
+      # API Key for authentication (Bearer token)
+      # If not set, API will work without authentication (not recommended for production)
+      # Generate secure key: openssl rand -hex 32
+      API_KEY: your-secure-api-key-here-change-me
     depends_on:
       redis:
         condition: service_healthy
@@ -57,3 +61,7 @@ services:
 # 9. When serving behind a reverse proxy under a subpath, set PUBLIC_BASE_URL
 #    to your full external base, e.g. https://example.com/video-processor-api
 #    A trailing slash is optional; the app will normalize it.
+# 10. API Key authentication: Set API_KEY env variable to enable Bearer token auth
+#     Generate secure key: openssl rand -hex 32
+#     Usage: curl -H "Authorization: Bearer YOUR_API_KEY" https://your-api.com/endpoint
+#     /health endpoint does not require authentication
