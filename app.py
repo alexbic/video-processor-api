@@ -16,7 +16,19 @@ app = Flask(__name__)
 # API KEY AUTHENTICATION
 # ============================================
 
+PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL') or os.getenv('EXTERNAL_BASE_URL')
 API_KEY = os.getenv('API_KEY')  # Bearer token для авторизации
+
+# Умная логика авторизации:
+# - Если PUBLIC_BASE_URL задан (публичный API) - требуем API_KEY обязательно
+# - Если PUBLIC_BASE_URL не задан (внутренняя Docker сеть) - API_KEY опционален
+if PUBLIC_BASE_URL and not API_KEY:
+    logger.warning("=" * 60)
+    logger.warning("WARNING: PUBLIC_BASE_URL is set but API_KEY is not!")
+    logger.warning("Your API is publicly accessible without authentication!")
+    logger.warning("Generate API key: openssl rand -hex 32")
+    logger.warning("=" * 60)
+
 API_KEY_ENABLED = bool(API_KEY)  # Авторизация включена только если API_KEY задан
 
 def require_api_key(f):
@@ -62,8 +74,6 @@ def require_api_key(f):
 # ============================================
 # URL HELPERS
 # ============================================
-
-PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL') or os.getenv('EXTERNAL_BASE_URL')
 
 def _join_url(base: str, path: str) -> str:
     if not base:
@@ -212,6 +222,21 @@ if STORAGE_MODE == "redis":
 else:
     logger.info(f"Redis: Not available")
     logger.info(f"Multi-worker support: DISABLED (use --workers 1)")
+
+# Log API access mode
+if PUBLIC_BASE_URL:
+    logger.info(f"Public API mode: {PUBLIC_BASE_URL}")
+    if API_KEY_ENABLED:
+        logger.info(f"Authentication: ENABLED (Bearer token)")
+    else:
+        logger.warning(f"Authentication: DISABLED (WARNING: public API without auth!)")
+else:
+    logger.info(f"Internal Docker network mode (no PUBLIC_BASE_URL)")
+    if API_KEY_ENABLED:
+        logger.info(f"Authentication: ENABLED (Bearer token)")
+    else:
+        logger.info(f"Authentication: DISABLED (internal network)")
+
 logger.info(f"=" * 60)
 
 # Очистка старых файлов (старше 2 часов)

@@ -38,10 +38,13 @@ services:
       REDIS_DB: 0
       WORKERS: 2  # Can use 2+ workers with Redis
       # Public base URL for generating absolute download links (no trailing slash)
-      # Example for reverse-proxy on a subpath:
+      # If set - API works in public mode, API_KEY becomes mandatory
+      # If not set - API works in internal Docker network mode, API_KEY is optional
       PUBLIC_BASE_URL: https://alexbic.net/video-processor-api
+      
       # API Key for authentication (Bearer token)
-      # If not set, API will work without authentication (not recommended for production)
+      # Required when PUBLIC_BASE_URL is set (public API mode)
+      # Optional when PUBLIC_BASE_URL is not set (internal Docker network)
       # Generate secure key: openssl rand -hex 32
       API_KEY: your-secure-api-key-here-change-me
     depends_on:
@@ -61,7 +64,9 @@ services:
 # 9. When serving behind a reverse proxy under a subpath, set PUBLIC_BASE_URL
 #    to your full external base, e.g. https://example.com/video-processor-api
 #    A trailing slash is optional; the app will normalize it.
-# 10. API Key authentication: Set API_KEY env variable to enable Bearer token auth
+# 10. API Key authentication: Smart auth logic based on PUBLIC_BASE_URL
+#     - If PUBLIC_BASE_URL is set (public API): API_KEY is REQUIRED (shows warning if missing)
+#     - If PUBLIC_BASE_URL is not set (internal Docker): API_KEY is optional
 #     Generate secure key: openssl rand -hex 32
 #     Usage: curl -H "Authorization: Bearer YOUR_API_KEY" https://your-api.com/endpoint
-#     /health endpoint does not require authentication
+#     Endpoints without auth: /health, /task_status/{task_id}, /download/{task_id}/...
