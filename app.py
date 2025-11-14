@@ -22,15 +22,6 @@ API_KEY = os.getenv('API_KEY')  # Bearer token для авторизации
 # Умная логика авторизации:
 # - Если API_KEY не задан - работаем в режиме внутренней сети, PUBLIC_BASE_URL игнорируется
 # - Если API_KEY задан - PUBLIC_BASE_URL активируется для генерации внешних ссылок
-if PUBLIC_BASE_URL and not API_KEY:
-    logger.warning("=" * 60)
-    logger.warning("WARNING: PUBLIC_BASE_URL is set but API_KEY is not!")
-    logger.warning("PUBLIC_BASE_URL will be IGNORED (internal network mode)")
-    logger.warning("To activate public mode with external URLs:")
-    logger.warning("  1. Generate API key: openssl rand -hex 32")
-    logger.warning("  2. Set API_KEY environment variable")
-    logger.warning("=" * 60)
-
 API_KEY_ENABLED = bool(API_KEY)  # Авторизация включена только если API_KEY задан
 
 def require_api_key(f):
@@ -239,8 +230,13 @@ else:
     # Внутренний режим (API_KEY не задан)
     logger.info(f"Mode: INTERNAL (Docker network)")
     if PUBLIC_BASE_URL:
-        logger.warning(f"PUBLIC_BASE_URL set but IGNORED (no API_KEY)")
-        logger.info(f"  Set API_KEY to activate: {PUBLIC_BASE_URL}")
+        logger.warning(f"=" * 60)
+        logger.warning(f"WARNING: PUBLIC_BASE_URL is set but API_KEY is not!")
+        logger.warning(f"PUBLIC_BASE_URL will be IGNORED: {PUBLIC_BASE_URL}")
+        logger.warning(f"To activate public mode with external URLs:")
+        logger.warning(f"  1. Generate API key: openssl rand -hex 32")
+        logger.warning(f"  2. Set API_KEY environment variable")
+        logger.warning(f"=" * 60)
     logger.info(f"Authentication: DISABLED (internal network)")
 
 logger.info(f"=" * 60)
