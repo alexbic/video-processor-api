@@ -1,16 +1,16 @@
 # Video Processor API
 
-**Open Source** REST API for video processing with FFmpeg. Create vertical Shorts, add subtitles, cut videos, extract audio.
+**Open Source** REST API для обработки видео с FFmpeg. Создание вертикальных Shorts, субтитры, нарезка, извлечение аудио.
 
 [![Docker Hub](https://img.shields.io/docker/v/alexbic/video-processor-api?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/alexbic/video-processor-api)
 [![GitHub](https://img.shields.io/badge/GitHub-alexbic/video--processor--api-blue?logo=github)](https://github.com/alexbic/video-processor-api)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**English** | [Русский](README.ru.md)
+[English](README.md) | **Русский**
 
 ---
 
-## ✨ Features
+## ✨ Возможности
 
 - 🎬 **Pipeline Processing** - цепочка операций над видео (letterbox → title → subtitles)
 - 📦 **Letterbox Mode** - горизонтальное видео в вертикальный формат (1080x1920) с размытым фоном
@@ -25,7 +25,7 @@
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Быстрый старт
 
 ### Single Worker (без Redis)
 
@@ -53,40 +53,40 @@ API автоматически определяет доступность Redis
 
 ## 📚 API Reference
 
-### 🔐 Authentication
+### 🔐 Аутентификация
 
-API supports **smart dual-mode operation** with Bearer token authentication:
+API поддерживает **умную двухрежимную работу** с Bearer token аутентификацией:
 
-**🔑 Two Operation Modes:**
+**🔑 Два режима работы:**
 
-1️⃣ **Public API Mode** (when `API_KEY` is set):
-   - Protected endpoints require Bearer token authentication
-   - `PUBLIC_BASE_URL` should be configured for external access
-   - Download URLs use public domain from `PUBLIC_BASE_URL`
-   - Recommended for production with reverse proxy/CDN
+1️⃣ **Публичный API режим** (когда `API_KEY` задан):
+   - Защищенные endpoints требуют Bearer token аутентификацию
+   - `PUBLIC_BASE_URL` должен быть настроен для внешнего доступа
+   - Download URL используют публичный домен из `PUBLIC_BASE_URL`
+   - Рекомендуется для production с reverse proxy/CDN
 
-2️⃣ **Internal Docker Network Mode** (when `API_KEY` is NOT set):
-   - All endpoints work without authentication
-   - API operates within Docker network (e.g., with n8n)
-   - `PUBLIC_BASE_URL` is **ignored** (even if set)
-   - Download URLs use internal Docker hostnames (`http://video-processor:5001`)
-   - Ideal for trusted internal services
+2️⃣ **Внутренний Docker режим** (когда `API_KEY` НЕ задан):
+   - Все endpoints работают без аутентификации
+   - API работает внутри Docker сети (например, с n8n)
+   - `PUBLIC_BASE_URL` **игнорируется** (даже если задан)
+   - Download URL используют внутренние Docker хосты (`http://video-processor:5001`)
+   - Идеально для доверенных внутренних сервисов
 
-**Setup:**
+**Настройка:**
 ```bash
-# Generate secure API key
+# Генерируем безопасный ключ
 openssl rand -hex 32
 
-# Public API mode (requires authentication)
+# Публичный API режим (требует аутентификацию)
 export API_KEY="your-generated-key-here"
 export PUBLIC_BASE_URL="https://your-domain.com/video-api"
 
-# Internal Docker mode (no authentication)
-# Don't set API_KEY - PUBLIC_BASE_URL will be ignored
+# Внутренний Docker режим (без аутентификации)
+# Не устанавливаем API_KEY - PUBLIC_BASE_URL будет проигнорирован
 unset API_KEY
 ```
 
-**Usage with API Key:**
+**Использование с API Key:**
 ```bash
 curl -H "Authorization: Bearer your-api-key" \
   -X POST http://localhost:5001/process_video \
@@ -94,20 +94,20 @@ curl -H "Authorization: Bearer your-api-key" \
   -d '{"video_url": "...", "operations": [...]}'
 ```
 
-**Endpoint Protection:**
-- ✅ **Always public**: `/health`, `/task_status/{task_id}`, `/download/{task_id}/...`
-- 🔒 **Protected when API_KEY set**: `/process_video`, `/tasks`, `/fonts`
-- 🔐 **Task access**: `task_id` acts as temporary access token (UUID, 2h TTL)
+**Защита endpoints:**
+- ✅ **Всегда публичные**: `/health`, `/task_status/{task_id}`, `/download/{task_id}/...`
+- 🔒 **Защищены когда API_KEY задан**: `/process_video`, `/tasks`, `/fonts`
+- 🔐 **Доступ к задачам**: `task_id` является временным ключом доступа (UUID, TTL 2 часа)
 
 ---
 
-### Endpoints Overview
+### Обзор Endpoints
 
 - `GET /health` — состояние сервиса (версии, `storage_mode`, доступность Redis) **[без авторизации]**
-- `GET /fonts` — список системных и кастомных шрифтов **[требует API key]**
-- `POST /process_video` — запуск pipeline (sync/async; `operations`, опционально `webhook_url`) **[требует API key]**
+- `GET /fonts` — список системных и кастомных шрифтов **[требует API key если задан]**
+- `POST /process_video` — запуск pipeline (sync/async; `operations`, опционально `webhook_url`) **[требует API key если задан]**
 - `GET /task_status/{task_id}` — статус задачи (`queued`/`processing`/`completed`/`error`) **[без авторизации]**
-- `GET /tasks` — последние задачи (для отладки) **[требует API key]**
+- `GET /tasks` — последние задачи (для отладки) **[требует API key если задан]**
 - `GET /download/{task_id}/output/{filename}` — скачать готовый файл **[без авторизации]**
 - `GET /download/{task_id}/metadata.json` — метаданные результата **[без авторизации]**
 
@@ -146,8 +146,7 @@ curl http://localhost:5001/fonts
     "system_fonts": [
       {"name": "DejaVu Sans", "family": "sans-serif"},
       {"name": "DejaVu Sans Bold", "family": "sans-serif"},
-      {"name": "Roboto", "family": "sans-serif"},
-      ...
+      {"name": "Roboto", "family": "sans-serif"}
     ],
     "custom_fonts": []
   }
@@ -213,7 +212,7 @@ curl -X POST http://localhost:5001/process_video \
 
 ---
 
-### Response Format (Формат ответа)
+### Формат ответа
 
 **Унифицированный формат** - все операции возвращают одинаковую структуру:
 
@@ -244,13 +243,17 @@ curl -X POST http://localhost:5001/process_video \
 - `is_chunked` - `true` если файлы разбиты на чанки (для Whisper API)
 - `total_files` - общее количество файлов
 
-### Error Responses (Ошибки)
+### Ошибки
 
 Все ошибки возвращаются с HTTP-кодом, полем `status: "error"` и сообщением в `error`.
 
 - 400 Bad Request (валидация):
   ```json
   { "status": "error", "error": "video_url is required" }
+  ```
+- 401 Unauthorized (неверный API key):
+  ```json
+  { "status": "error", "error": "Invalid or missing API key" }
   ```
 - 404 Not Found (статус задачи):
   ```json
@@ -260,31 +263,14 @@ curl -X POST http://localhost:5001/process_video \
   ```json
   { "status": "error", "error": "Invalid file path" }
   ```
-- 404 Not Found (файл не найден при скачивании):
-  ```json
-  { "status": "error", "error": "File not found" }
-  ```
 - 500 Internal Server Error (ошибка выполнения):
   ```json
   { "status": "error", "error": "FFmpeg error: ..." }
   ```
 
-В вебхуках при ошибке событие остаётся `event: "task_failed"`, а статус — `status: "error"`.
-
-**Для chunked файлов** (extract_audio с разбиением):
-```json
-{
-  "output_files": [
-    {"filename": "audio_chunk_000.mp3", "chunk": "1:7", ...},
-    {"filename": "audio_chunk_001.mp3", "chunk": "2:7", ...}
-  ],
-  "is_chunked": true
-}
-```
-
 ---
 
-### Execution Modes
+### Режимы выполнения
 
 #### Sync (синхронный)
 
@@ -294,7 +280,7 @@ curl -X POST http://localhost:5001/process_video \
 }
 ```
 
-**Response (сразу):**
+**Response (сразу после завершения):**
 ```json
 {
   "task_id": "abc123",
@@ -375,7 +361,7 @@ curl http://localhost:5001/task_status/abc123
 }
 ```
 
-**Webhook Payload (success):**
+**Webhook Payload (успех):**
 ```json
 {
   "task_id": "abc123",
@@ -403,7 +389,7 @@ curl http://localhost:5001/task_status/abc123
 }
 ```
 
-**Webhook Payload (error):**
+**Webhook Payload (ошибка):**
 ```json
 {
   "task_id": "abc123",
@@ -420,7 +406,7 @@ curl http://localhost:5001/task_status/abc123
 
 ---
 
-### Status Lifecycle
+### Жизненный цикл статусов
 
 Статусы задач и переходы:
 
@@ -443,9 +429,9 @@ curl http://localhost:5001/task_status/abc123
 
 ---
 
-## 📖 Examples
+## 📖 Примеры
 
-### Example 1: Shorts с автоматической нарезкой (start_time/end_time)
+### Пример 1: Shorts с автоматической нарезкой (start_time/end_time)
 
 ```json
 {
@@ -476,264 +462,7 @@ curl http://localhost:5001/task_status/abc123
 }
 ```
 
-**Примечание:** `start_time` и `end_time` могут быть числами (секунды) или строками (`"00:01:30"`). При указании обоих параметров будет вырезан фрагмент автоматически.
-
-**Формат полей:**
-- `title` — объект с полем `text` и настройками шрифта
-- `subtitles` — объект с полем `items` (массив субтитров) и настройками шрифта
-
-### Example 2: Простая конверсия в Shorts (без нарезки)
-
-```json
-{
-  "video_url": "https://example.com/landscape.mp4",
-  "execution": "sync",
-  "operations": [
-    {
-      "type": "to_shorts",
-      "letterbox_config": {
-        "width": 1080,
-        "height": 1920,
-        "color": "black"
-      }
-    }
-  ]
-}
-```
-
-### Example 3: Shorts с заголовком и субтитрами
-
-```json
-{
-  "video_url": "https://example.com/video.mp4",
-  "execution": "async",
-  "operations": [
-    {
-      "type": "to_shorts",
-      "letterbox_config": {"width": 1080, "height": 1920, "color": "#1a1a1a"},
-      "title": {
-        "text": "Amazing Content",
-        "font": "DejaVu Sans Bold",
-        "fontsize": 80,
-        "fontcolor": "yellow",
-        "box": true,
-        "boxcolor": "black@0.5"
-      },
-      "subtitles": {
-        "items": [
-          {"text": "Welcome to our channel", "start": 0, "end": 3},
-          {"text": "Subscribe for more", "start": 3, "end": 6}
-        ],
-        "font": "Roboto",
-        "fontsize": 64,
-        "fontcolor": "white"
-      }
-    }
-  ],
-  "webhook_url": "https://n8n.example.com/webhook/completed"
-}
-```
-
-### Example 4: Нарезка видео
-
-```json
-{
-  "video_url": "https://example.com/long-video.mp4",
-  "execution": "sync",
-  "operations": [
-    {
-      "type": "cut",
-      "start_time": "00:01:30",
-      "end_time": "00:02:00"
-    }
-  ]
-}
-```
-
-### Example 5: Pipeline - несколько операций
-
-```json
-{
-  "video_url": "https://example.com/video.mp4",
-  "execution": "async",
-  "operations": [
-    {
-      "type": "cut",
-      "start_time": "00:00:10",
-      "end_time": "00:01:00"
-    },
-    {
-      "type": "to_shorts",
-      "letterbox_config": {"width": 1080, "height": 1920},
-      "title": {"text": "Episode 1", "fontsize": 70}
-    }
-  ]
-}
-```
-
-### Example 6: Извлечение аудио (sync режим)
-
-```bash
-curl -X POST http://localhost:5001/process_video \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video_url": "https://example.com/video.mp4",
-    "execution": "sync",
-    "operations": [
-      {
-        "type": "extract_audio",
-        "format": "mp3",
-        "bitrate": "192k"
-      }
-    ]
-  }'
-```
-
-**Response (sync - возвращается сразу после завершения):**
-```json
-{
-  "task_id": "abc123-def456",
-  "status": "completed",
-  "output_files": [
-    {
-      "filename": "audio_20251112_194523.mp3",
-      "file_size": 5048576,
-      "file_size_mb": 4.8,
-      "download_url": "http://localhost:5001/download/abc123-def456/output/audio_20251112_194523.mp3",
-      "download_path": "/download/abc123-def456/output/audio_20251112_194523.mp3"
-    }
-  ],
-  "total_files": 1,
-  "is_chunked": false,
-  "metadata_url": "http://localhost:5001/download/abc123-def456/metadata.json",
-  "note": "Files will auto-delete after 2 hours.",
-  "completed_at": "2025-11-12T19:45:23"
-}
-```
-
-### Example 7: Извлечение аудио (async режим с webhook)
-
-```json
-{
-  "video_url": "https://example.com/video.mp4",
-  "execution": "async",
-  "operations": [
-    {
-      "type": "extract_audio",
-      "format": "mp3",
-      "bitrate": "320k"
-    }
-  ],
-  "webhook_url": "https://n8n.example.com/webhook/audio-ready"
-}
-```
-
-**Response (async - возвращается сразу):**
-```json
-{
-  "task_id": "abc123-def456",
-  "status": "processing",
-  "message": "Task created and processing in background",
-  "check_status_url": "/task_status/abc123-def456"
-}
-```
-
-**Проверка статуса задачи:**
-```bash
-curl http://localhost:5001/task_status/abc123-def456
-```
-
-**Response (когда готово):**
-```json
-{
-  "task_id": "abc123-def456",
-  "status": "completed",
-  "progress": 100,
-  "output_files": [
-    {
-      "filename": "audio_20251112_194523.mp3",
-      "file_size": 5048576,
-      "file_size_mb": 4.8,
-      "download_url": "http://video-processor:5001/download/abc123-def456/output/audio_20251112_194523.mp3",
-      "download_path": "/download/abc123-def456/output/audio_20251112_194523.mp3"
-    }
-  ],
-  "total_files": 1,
-  "total_size": 5048576,
-  "is_chunked": false,
-  "metadata_url": "http://video-processor:5001/download/abc123-def456/metadata.json",
-  "completed_at": "2025-11-12T19:45:23"
-}
-```
-
-**Webhook payload (отправляется автоматически при завершении):**
-```json
-{
-  "task_id": "abc123-def456",
-  "event": "task_completed",
-  "status": "completed",
-  "output_files": [
-    {
-      "filename": "audio_20251112_194523.mp3",
-      "file_size": 5048576,
-      "file_size_mb": 4.8,
-      "download_url": "http://video-processor:5001/download/abc123-def456/output/audio_20251112_194523.mp3",
-      "download_path": "/download/abc123-def456/output/audio_20251112_194523.mp3"
-    }
-  ],
-  "total_files": 1,
-  "total_size": 5048576,
-  "total_size_mb": 4.8,
-  "is_chunked": false,
-  "metadata_url": "http://video-processor:5001/download/abc123-def456/metadata.json",
-  "file_ttl_seconds": 7200,
-  "file_ttl_human": "2 hours",
-  "operations_executed": 1,
-  "completed_at": "2025-11-12T19:45:23"
-}
-```
-
-### Example 8: Нарезка видео + извлечение аудио (pipeline)
-
-```json
-{
-  "video_url": "https://example.com/long-video.mp4",
-  "execution": "async",
-  "operations": [
-    {
-      "type": "cut",
-      "start_time": "00:01:30",
-      "end_time": "00:02:30"
-    },
-    {
-      "type": "extract_audio",
-      "format": "mp3",
-      "bitrate": "192k"
-    }
-  ],
-  "webhook_url": "https://n8n.example.com/webhook/audio-extracted"
-}
-```
-
-**Поддерживаемые форматы аудио:**
-- `mp3` (codec: libmp3lame) - универсальный формат
-- `aac` (codec: aac) - для Apple устройств
-
-**Параметры extract_audio:**
-- `format` (опционально): `mp3` (default) или `aac`
-- `bitrate` (опционально): `128k`, `192k` (default), `256k`, `320k`
-- `chunk_duration_minutes` (опционально): Длительность чанка в минутах для разбиения больших файлов
-- `max_chunk_size_mb` (опционально): Максимальный размер чанка в МБ (default: 24 для Whisper API)
-- `optimize_for_whisper` (опционально): `true` - оптимизация для Whisper API (16kHz, mono, 64k bitrate)
-
-Примечание: При включённом разбиении (через `chunk_duration_minutes` или `max_chunk_size_mb`) каждый объект в `output_files` дополнительно содержит только одно поле:
-- `chunk`: компактный индекс чанка в формате `i:n` (например, `"1:7"`)
-
-### Example 9: Извлечение аудио с автоматическим chunking для Whisper API
-
-**Проблема:** Whisper API не принимает файлы больше 25 МБ.
-
-**Решение:** Автоматическое разбиение на чанки < 24 МБ.
+### Пример 2: Извлечение аудио с chunking для Whisper API
 
 ```json
 {
@@ -751,16 +480,7 @@ curl http://localhost:5001/task_status/abc123-def456
 }
 ```
 
-**Response (async):**
-```json
-{
-  "task_id": "xyz123",
-  "status": "processing",
-  "check_status_url": "/task_status/xyz123"
-}
-```
-
-**Webhook payload (когда готово):**
+**Response:**
 ```json
 {
   "task_id": "xyz123",
@@ -768,124 +488,53 @@ curl http://localhost:5001/task_status/abc123-def456
   "status": "completed",
   "output_files": [
     {
-      "filename": "audio_20251112_194523_chunk000.mp3",
+      "filename": "audio_chunk000.mp3",
       "file_size": 24641536,
       "file_size_mb": 23.5,
       "chunk": "1:3",
-      "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk000.mp3",
-      "download_path": "/download/xyz123/output/audio_20251112_194523_chunk000.mp3"
+      "download_url": "http://video-processor:5001/download/xyz123/output/audio_chunk000.mp3"
     },
     {
-      "filename": "audio_20251112_194523_chunk001.mp3",
+      "filename": "audio_chunk001.mp3",
       "file_size": 24330240,
       "file_size_mb": 23.2,
       "chunk": "2:3",
-      "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk001.mp3",
-      "download_path": "/download/xyz123/output/audio_20251112_194523_chunk001.mp3"
+      "download_url": "http://video-processor:5001/download/xyz123/output/audio_chunk001.mp3"
     },
     {
-      "filename": "audio_20251112_194523_chunk002.mp3",
+      "filename": "audio_chunk002.mp3",
       "file_size": 18980864,
       "file_size_mb": 18.1,
       "chunk": "3:3",
-      "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk002.mp3",
-      "download_path": "/download/xyz123/output/audio_20251112_194523_chunk002.mp3"
+      "download_url": "http://video-processor:5001/download/xyz123/output/audio_chunk002.mp3"
     }
   ],
   "total_files": 3,
-  "total_size": 67952640,
-  "total_size_mb": 64.8,
   "is_chunked": true,
-  "metadata_url": "http://video-processor:5001/download/xyz123/metadata.json",
-  "file_ttl_seconds": 7200,
-  "file_ttl_human": "2 hours",
-  "operations_executed": 1,
   "completed_at": "2025-11-12T19:45:23"
 }
 ```
 
-**Файлы доступны по следующим URL:**
-```
-/download/xyz123/output/audio_20251112_194523_chunk000.mp3  (23.5 MB, 0:00 - 15:30)
-/download/xyz123/output/audio_20251112_194523_chunk001.mp3  (23.2 MB, 15:30 - 31:00)
-/download/xyz123/output/audio_20251112_194523_chunk002.mp3  (18.1 MB, 31:00 - 45:00)
-/download/xyz123/metadata.json  (метаданные всех файлов)
-```
-
-**Как скачать все чанки:**
-```bash
-# Все чанки доступны по паттерну
-curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk000.mp3 -o chunk000.mp3
-curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk001.mp3 -o chunk001.mp3
-curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk002.mp3 -o chunk002.mp3
-```
-
-**Поля чанков в ответах:**
-- `chunk`: индекс текущего чанка и общее число в формате `i:n`
-
-### Example 10: Ручное задание длительности чанков
-
-```json
-{
-  "video_url": "https://example.com/video.mp4",
-  "execution": "sync",
-  "operations": [
-    {
-      "type": "extract_audio",
-      "format": "mp3",
-      "chunk_duration_minutes": 10,
-      "optimize_for_whisper": true
-    }
-  ]
-}
-```
-
-Создаст чанки по 10 минут каждый, оптимизированные для Whisper API (16kHz, mono, 64k bitrate).
-
-**Response (sync):**
-```json
-{
-  "task_id": "def456-ghi789",
-  "output_files": [
-    {
-      "filename": "audio_20251112_200100_chunk000.mp3",
-      "file_size": 24117248,
-      "file_size_mb": 23.0,
-      "chunk": "1:6",
-      "download_url": "http://localhost:5001/download/def456-ghi789/output/audio_20251112_200100_chunk000.mp3",
-      "download_path": "/download/def456-ghi789/output/audio_20251112_200100_chunk000.mp3"
-    },
-    {
-      "filename": "audio_20251112_200100_chunk001.mp3",
-      "file_size": 24379392,
-      "file_size_mb": 23.25,
-      "chunk": "2:6",
-      "download_url": "http://localhost:5001/download/def456-ghi789/output/audio_20251112_200100_chunk001.mp3",
-      "download_path": "/download/def456-ghi789/output/audio_20251112_200100_chunk001.mp3"
-    }
-  ],
-  "total_files": 6,
-  "metadata_url": "http://localhost:5001/download/def456-ghi789/metadata.json",
-  "operations_executed": 1,
-  "completed_at": "2025-11-12T20:01:25"
-}
-```
-
-Подсказка: для парсинга `chunk` разделите строку по `:` → `i` и `n`.
+**Параметры extract_audio:**
+- `format`: `mp3` (default) или `aac`
+- `bitrate`: `128k`, `192k` (default), `256k`, `320k`
+- `chunk_duration_minutes`: Длительность чанка в минутах
+- `max_chunk_size_mb`: Макс. размер чанка в МБ (default: 24)
+- `optimize_for_whisper`: `true` - оптимизация для Whisper API (16kHz, mono, 64k bitrate)
 
 ---
 
-## 🔧 Configuration
+## 🔧 Конфигурация
 
-### Environment Variables
+### Переменные окружения
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `API_KEY` | `None` | Bearer token for authentication. If set, enables Public API mode with protected endpoints. If not set, runs in Internal mode without authentication. |
-| `PUBLIC_BASE_URL` | `None` | External base URL for download links (e.g., `https://domain.com/api`). Only used when `API_KEY` is set. Ignored in Internal mode. |
-| `WORKERS` | `1` | Number of gunicorn workers (use 2+ with Redis for multi-worker mode) |
-| `REDIS_HOST` | `redis` | Redis hostname for multi-worker task storage |
-| `REDIS_PORT` | `6379` | Redis port |
+| Переменная | По умолчанию | Описание |
+|------------|--------------|----------|
+| `API_KEY` | `None` | Bearer token для аутентификации. Если задан, включает публичный API режим с защищенными endpoints. Если не задан, работает во внутреннем режиме без аутентификации. |
+| `PUBLIC_BASE_URL` | `None` | Внешний базовый URL для download ссылок (например, `https://domain.com/api`). Используется только когда `API_KEY` задан. Игнорируется во внутреннем режиме. |
+| `WORKERS` | `1` | Количество gunicorn workers (используйте 2+ с Redis для multi-worker режима) |
+| `REDIS_HOST` | `redis` | Redis hostname для multi-worker хранилища задач |
+| `REDIS_PORT` | `6379` | Redis порт |
 | `REDIS_DB` | `0` | Redis database number |
 
 ### Docker Volumes
@@ -907,7 +556,7 @@ volumes:
 
 ---
 
-## 📝 File Retention
+## 📝 Хранение файлов
 
 - **Task directories**: Автоматически удаляются через **2 часа** после создания
 - **Input/Temp files**: Удаляются сразу после завершения обработки
@@ -916,17 +565,19 @@ volumes:
 
 ---
 
-## 🛠 Development
-
-## 💡 Client Integration Tips
+## 💡 Советы по интеграции
 
 - `output_files`: всегда массив. Даже при одном файле используйте итерацию.
 - `is_chunked`: определяйте пакетную обработку по этому флагу и/или наличию `chunk`.
 - `chunk` формат: строка `"i:n"`, где `i` — 1-базовый индекс, `n` — общее число частей.
-- Ссылки скачивания: используйте `download_url` для публичного доступа и `download_path` для внутренних вызовов через API-шлюз.
+- Ссылки скачивания: используйте `download_url` для публичного доступа и `download_path` для внутренних вызовов.
 - Метаданные: `metadata_url` содержит полный снимок результата — удобно для кэширования.
 - Вебхуки: обрабатывайте оба события — `task_completed` и `task_failed`.
 - TTL: файлы хранятся 2 часа; скачайте/переложите в постоянное хранилище сразу после `completed`.
+
+---
+
+## 🛠 Разработка
 
 ### Local Build
 
@@ -937,24 +588,24 @@ docker build -t video-processor-api:local .
 docker run -d -p 5001:5001 video-processor-api:local
 ```
 
-### Testing
+### Тестирование
 
 ```bash
 # Health check
 curl http://localhost:5001/health
 
-# List fonts
+# Список шрифтов
 curl http://localhost:5001/fonts
 
-# Test simple mode
+# Тестовый запрос
 curl -X POST http://localhost:5001/process_video \
   -H "Content-Type: application/json" \
-  -d '{"video_url": "https://example.com/video.mp4", "mode": "simple", "operations": [{"type": "to_shorts"}]}'
+  -d '{"video_url": "https://example.com/video.mp4", "operations": [{"type": "to_shorts"}]}'
 ```
 
 ---
 
-## 📄 License
+## 📄 Лицензия
 
 MIT License - см. [LICENSE](LICENSE) для подробностей.
 
@@ -966,8 +617,7 @@ Pull requests приветствуются! Для больших изменен
 
 ---
 
-## 📧 Contact
+## 📧 Контакты
 
 - GitHub: [@alexbic](https://github.com/alexbic)
 - Issues: [GitHub Issues](https://github.com/alexbic/video-processor-api/issues)
-
