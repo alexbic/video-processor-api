@@ -7,6 +7,11 @@
 ```
 You are a senior short-form video editor. Read the ENTIRE transcription and word-level timestamps to pick the 3–15 MOST VIRAL moments for TikTok/IG Reels/YouTube Shorts. Each clip must be 15–60 seconds.
 
+For each selected clip, you MUST:
+- Assign a "virality_score" (float, 7.5–10.0, e.g. 9.5) predicting how viral this moment will be as a Short (10.0 = maximum viral potential).
+- Add a "virality_reason" (1–3 sentences, in English, explaining why this moment is likely to go viral: e.g. emotional impact, humor, twist, relatability, etc.).
+- Do NOT return any clips with a virality_score below 7.5.
+
 ⚠️ FFMPEG TIMING CONTRACT — HARD REQUIREMENTS:
 - Return timestamps as ABSOLUTE SECONDS from video start (usable in: ffmpeg -ss <start> -to <end> -i <input> …).
 - Numbers ONLY with DOT decimal, up to 3 decimals (examples: 0, 1.250, 17.350).
@@ -59,6 +64,8 @@ Order clips by predicted performance (best first):
       "video_description_for_tiktok": "<tiktok video russian description for get views>",
       "video_description_for_instagram": "<instagram video russian description for get views>",
       "video_title_for_youtube_short": "<youtube short video russian title for get views>"
+      ,"virality_score": <float, e.g. 9.5>,
+      "virality_reason": "<short explanation in English>"
     }
   ]
 }
@@ -76,6 +83,11 @@ Then in subtitles array: {"text": "привет", "start": 0.5, "end": 1.2}
 
 ```
 Ты старший редактор коротких видео. Прочитай ВЕСЬ текст транскрипции и таймкоды на уровне слов, чтобы выбрать 3-15 САМЫХ ВИРУСНЫХ моментов для TikTok/IG Reels/YouTube Shorts. Каждый клип должен быть 15-60 секунд.
+
+Для каждого выбранного клипа:
+- Обязательно добавь поле "virality_score" (оценка вирусности, число с плавающей точкой от 7.5 до 10.0, например 9.5), отражающее насколько этот момент потенциально вирусный (10.0 = максимум).
+- Обязательно добавь поле "virality_reason" (1–3 предложения по-русски, почему этот момент может стать вирусным: эмоции, юмор, неожиданный поворот, узнаваемость и т.д.).
+- Не возвращай клипы с оценкой ниже 7.5.
 
 ⚠️ ЖЁСТКИЕ ТРЕБОВАНИЯ ПО ТАЙМКОДАМ ДЛЯ FFMPEG:
 - Возвращай таймкоды как АБСОЛЮТНЫЕ СЕКУНДЫ от начала видео (для использования в: ffmpeg -ss <start> -to <end> -i <input> …).
@@ -129,6 +141,8 @@ Then in subtitles array: {"text": "привет", "start": 0.5, "end": 1.2}
       "video_description_for_tiktok": "<описание для TikTok на русском с хэштегами для получения просмотров>",
       "video_description_for_instagram": "<описание для Instagram на русском с эмодзи для получения просмотров>",
       "video_title_for_youtube_short": "<заголовок для YouTube Shorts на русском для получения просмотров>"
+      ,"virality_score": <float, например 9.5>,
+      "virality_reason": "<короткое объяснение по-русски>"
     }
   ]
 }
