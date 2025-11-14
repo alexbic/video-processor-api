@@ -148,6 +148,10 @@ n8n tip: if you have a nested object available only via string, you can send it 
 ```
 The server will convert `metadata` from a JSON string to an object before validation and saving.
 
+Immediate echo:
+- Sync mode: `client_meta` is included in the final response.
+- Async mode: `client_meta` is included immediately in the 202 response (along with `task_id` and `check_status_url`).
+
 ---
 
 ### Endpoints Overview

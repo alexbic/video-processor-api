@@ -146,6 +146,10 @@ curl -H "Authorization: Bearer your-api-key" \
 ```
 Перед валидацией поле `metadata` будет распознано как объект и сохранено в таком виде.
 
+Мгновенный возврат метаданных:
+- В sync режиме `client_meta` присутствует в финальном ответе.
+- В async режиме `client_meta` возвращается сразу в ответе 202 (вместе с `task_id` и `check_status_url`).
+
 ---
 
 ### Обзор Endpoints

@@ -1208,7 +1208,8 @@ def process_video():
                 "task_id": task_id,
                 "status": "processing",
                 "message": "Task created and processing in background",
-                "check_status_url": f"/task_status/{task_id}"
+                "check_status_url": f"/task_status/{task_id}",
+                "client_meta": client_meta
             }), 202
 
         else:
