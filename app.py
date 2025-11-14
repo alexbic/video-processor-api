@@ -242,6 +242,77 @@ else:
 
 logger.info(f"=" * 60)
 
+# ============================================
+# CLIENT META VALIDATION LIMITS
+# ============================================
+
+# Ограничения для client_meta, чтобы избежать перегрузки сервиса и инъекций
+MAX_CLIENT_META_BYTES = int(os.getenv('MAX_CLIENT_META_BYTES', 16 * 1024))  # 16 KB по умолчанию
+MAX_CLIENT_META_DEPTH = int(os.getenv('MAX_CLIENT_META_DEPTH', 5))
+MAX_CLIENT_META_KEYS = int(os.getenv('MAX_CLIENT_META_KEYS', 200))
+MAX_CLIENT_META_STRING_LENGTH = int(os.getenv('MAX_CLIENT_META_STRING_LENGTH', 1000))
+MAX_CLIENT_META_LIST_LENGTH = int(os.getenv('MAX_CLIENT_META_LIST_LENGTH', 200))
+
+ALLOWED_JSON_PRIMITIVES = (str, int, float, bool, type(None))
+
+
+def _validate_meta_structure(node, depth=0, counters=None):
+    if counters is None:
+        counters = {'keys': 0}
+    if depth > MAX_CLIENT_META_DEPTH:
+        return False, f"client_meta depth exceeds {MAX_CLIENT_META_DEPTH}"
+
+    if isinstance(node, dict):
+        counters['keys'] += len(node)
+        if counters['keys'] > MAX_CLIENT_META_KEYS:
+            return False, f"client_meta total keys exceed {MAX_CLIENT_META_KEYS}"
+        for k, v in node.items():
+            if not isinstance(k, str):
+                return False, "client_meta keys must be strings"
+            if len(k) > MAX_CLIENT_META_STRING_LENGTH:
+                return False, f"client_meta key too long (> {MAX_CLIENT_META_STRING_LENGTH})"
+            ok, err = _validate_meta_structure(v, depth + 1, counters)
+            if not ok:
+                return ok, err
+        return True, None
+
+    if isinstance(node, list):
+        if len(node) > MAX_CLIENT_META_LIST_LENGTH:
+            return False, f"client_meta list too long (> {MAX_CLIENT_META_LIST_LENGTH})"
+        for item in node:
+            ok, err = _validate_meta_structure(item, depth + 1, counters)
+            if not ok:
+                return ok, err
+        return True, None
+
+    if isinstance(node, ALLOWED_JSON_PRIMITIVES):
+        if isinstance(node, str) and len(node) > MAX_CLIENT_META_STRING_LENGTH:
+            return False, f"client_meta string too long (> {MAX_CLIENT_META_STRING_LENGTH})"
+        return True, None
+
+    return False, "client_meta contains unsupported value type"
+
+
+def validate_client_meta(client_meta):
+    if client_meta is None:
+        return True, None
+    if not isinstance(client_meta, dict):
+        return False, "client_meta must be a JSON object"
+
+    ok, err = _validate_meta_structure(client_meta)
+    if not ok:
+        return False, err
+
+    try:
+        # ensure_ascii=False чтобы считать реальные байты UTF-8
+        meta_bytes = json.dumps(client_meta, ensure_ascii=False).encode('utf-8')
+        if len(meta_bytes) > MAX_CLIENT_META_BYTES:
+            return False, f"client_meta exceeds {MAX_CLIENT_META_BYTES} bytes"
+    except Exception as e:
+        return False, f"client_meta serialization error: {e}"
+
+    return True, None
+
 # Очистка старых файлов (старше 2 часов)
 def cleanup_old_files():
     """Удаляет задачи старше 2 часов"""
@@ -900,6 +971,10 @@ def get_task_status(task_id):
             "created_at": task.get('created_at')
         }
 
+        # Возвращаем клиентские метаданные независимо от статуса, если они есть в задаче
+        if task.get('client_meta') is not None:
+            response['client_meta'] = task.get('client_meta')
+
         if task['status'] == 'completed':
             # Единообразный формат: всегда массив output_files
             output_files = task.get('output_files', [])
@@ -982,6 +1057,19 @@ def process_video():
         execution = data.get('execution', 'sync')  # sync или async
         operations = data.get('operations', [])
         webhook_url = data.get('webhook_url', os.getenv('WEBHOOK_URL'))
+        # Произвольные метаданные клиента для сквозного возврата в ответах/вебхуках
+        client_meta = data.get('client_meta')
+        if client_meta is None and 'meta' in data:
+            # Поддержка алиаса 'meta' для совместимости
+            client_meta = data.get('meta')
+
+        # Валидация client_meta с ограничениями
+        ok, err = validate_client_meta(client_meta)
+        if not ok:
+            return jsonify({
+                "status": "error",
+                "error": f"Invalid client_meta: {err}"
+            }), 400
 
         if not video_url:
             return jsonify({"status": "error", "error": "video_url is required"}), 400
@@ -1031,6 +1119,7 @@ def process_video():
                 'video_url': video_url,
                 'operations': operations,
                 'webhook_url': webhook_url,
+                'client_meta': client_meta,
                 'created_at': datetime.now().isoformat()
             }
             save_task(task_id, task_data)
@@ -1059,14 +1148,14 @@ def process_video():
             # Создаем директории для задачи
             create_task_dirs(task_id)
             
-            return process_video_pipeline_sync(task_id, video_url, operations, webhook_url)
+            return process_video_pipeline_sync(task_id, video_url, operations, webhook_url, client_meta)
 
     except Exception as e:
         logger.error(f"Process video error: {e}")
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
-def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, webhook_url: str = None) -> dict:
+def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, webhook_url: str = None, client_meta: dict | None = None) -> dict:
     """Синхронное выполнение pipeline операций"""
     import requests
 
@@ -1187,6 +1276,8 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         "total_files": len(files_info),
         "completed_at": datetime.now().isoformat()
     }
+    if client_meta is not None:
+        metadata["client_meta"] = client_meta
     save_task_metadata(task_id, metadata)
 
     # Отправляем webhook если указан
@@ -1205,12 +1296,14 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             "metadata_url": build_absolute_url(f"/download/{task_id}/metadata.json"),
             "completed_at": metadata["completed_at"]
         }
+        if client_meta is not None:
+            webhook_payload["client_meta"] = client_meta
         send_webhook(webhook_url, webhook_payload)
 
     # Определяем chunked
     is_chunked = any(f.get('chunk') for f in files_info)
 
-    return jsonify({
+    response_body = {
         "task_id": task_id,
         "status": "completed",
         "video_url": video_url,
@@ -1220,7 +1313,10 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         "metadata_url": build_absolute_url(f"/download/{task_id}/metadata.json"),
         "note": "Files will auto-delete after 2 hours.",
         "completed_at": metadata["completed_at"]
-    })
+    }
+    if client_meta is not None:
+        response_body["client_meta"] = client_meta
+    return jsonify(response_body)
 
 
 def process_video_pipeline_background(task_id: str, video_url: str, operations: list, webhook_url: str = None):
@@ -1356,6 +1452,10 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 output_files_info.append(entry)
 
         # Сохраняем метаданные
+        # Попробуем получить client_meta из сохраненной задачи
+        task_snapshot = get_task(task_id) or {}
+        client_meta = task_snapshot.get('client_meta')
+
         metadata = {
             'task_id': task_id,
             'status': 'completed',
@@ -1370,6 +1470,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             'ttl_seconds': 7200,
             'ttl_human': '2 hours'
         }
+        if client_meta is not None:
+            metadata['client_meta'] = client_meta
         save_task_metadata(task_id, metadata)
 
         # Обновляем задачу
@@ -1408,6 +1510,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 'operations_executed': total_ops,
                 'completed_at': datetime.now().isoformat()
             }
+            if client_meta is not None:
+                webhook_payload['client_meta'] = client_meta
             send_webhook(webhook_url, webhook_payload)
 
     except Exception as e:

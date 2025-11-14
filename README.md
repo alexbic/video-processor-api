@@ -101,6 +101,43 @@ curl -H "Authorization: Bearer your-api-key" \
 
 ---
 
+### Client Metadata (Pass-through)
+
+Добавьте в запрос поле `client_meta` (любой JSON-объект), и он будет:
+- сохранён в `metadata.json` задачи,
+- включён в ответы `/process_video` (sync), `/task_status/{task_id}` (async),
+- отправлен в payload вебхуков (`task_completed`/`task_failed`).
+
+Это удобно для заголовков/подписей под разные соцсети, ID кампании, trace-id и т.д.
+
+Пример запроса c `client_meta`:
+```json
+{
+  "video_url": "https://example.com/video.mp4",
+  "execution": "async",
+  "operations": [{"type": "to_shorts", "crop_mode": "letterbox"}],
+  "client_meta": {
+    "titles": {
+      "tiktok": "Крутой ролик про AI",
+      "youtube": "Amazing AI Demo",
+      "instagram": "AI в действии"
+    },
+    "campaign_id": "cmp-2025-11-13"
+  }
+}
+```
+В ответах поле будет доступно как `client_meta` без изменений.
+
+Limits (to protect the service):
+- Max size: `16 KB` (UTF‑8 JSON)
+- Max depth: `5` levels
+- Max total keys: `200`
+- Max list length: `200`
+- Max string length: `1000` chars
+- Allowed types: objects, arrays, strings, numbers, booleans, null
+
+---
+
 ### Endpoints Overview
 
 - `GET /health` — состояние сервиса (версии, `storage_mode`, доступность Redis) **[без авторизации]**
@@ -923,6 +960,7 @@ volumes:
 - `output_files`: всегда массив. Даже при одном файле используйте итерацию.
 - `is_chunked`: определяйте пакетную обработку по этому флагу и/или наличию `chunk`.
 - `chunk` формат: строка `"i:n"`, где `i` — 1-базовый индекс, `n` — общее число частей.
+- `client_meta`: передайте произвольный JSON в запросе — он вернётся как есть в ответах, вебхуке и `metadata.json`.
 - Ссылки скачивания: используйте `download_url` для публичного доступа и `download_path` для внутренних вызовов через API-шлюз.
 - Метаданные: `metadata_url` содержит полный снимок результата — удобно для кэширования.
 - Вебхуки: обрабатывайте оба события — `task_completed` и `task_failed`.
