@@ -829,9 +829,8 @@ def list_fonts():
         return jsonify({"error": str(e)}), 500
 
 @app.route('/download/<path:file_path>', methods=['GET'])
-@require_api_key
 def download_file(file_path):
-    """Скачать файл из задачи
+    """Скачать файл из задачи (не требует авторизации - доступ по task_id)
     
     Поддерживаемые форматы:
     - /download/{task_id}/output/{filename}
@@ -858,9 +857,8 @@ def download_file(file_path):
 # ============================================
 
 @app.route('/task_status/<task_id>', methods=['GET'])
-@require_api_key
 def get_task_status(task_id):
-    """Получить статус задачи"""
+    """Получить статус задачи (не требует авторизации - task_id уникален)"""
     try:
         task = get_task(task_id)
 

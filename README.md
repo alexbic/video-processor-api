@@ -72,8 +72,9 @@ curl -H "Authorization: Bearer your-api-key" \
 
 **Примечания:**
 - Если `API_KEY` не задан — API работает без авторизации
-- `/health` endpoint всегда доступен без авторизации
-- Все остальные endpoints требуют Bearer token, если `API_KEY` установлен
+- Без авторизации доступны: `/health`, `/task_status/{task_id}`, `/download/{task_id}/...`
+- Авторизация требуется для: `/process_video`, `/tasks`, `/fonts`
+- Task_id сам по себе является временным ключом доступа (UUID, TTL 2 часа)
 
 ---
 
@@ -82,10 +83,10 @@ curl -H "Authorization: Bearer your-api-key" \
 - `GET /health` — состояние сервиса (версии, `storage_mode`, доступность Redis) **[без авторизации]**
 - `GET /fonts` — список системных и кастомных шрифтов **[требует API key]**
 - `POST /process_video` — запуск pipeline (sync/async; `operations`, опционально `webhook_url`) **[требует API key]**
-- `GET /task_status/{task_id}` — статус задачи (`queued`/`processing`/`completed`/`error`) **[требует API key]**
+- `GET /task_status/{task_id}` — статус задачи (`queued`/`processing`/`completed`/`error`) **[без авторизации]**
 - `GET /tasks` — последние задачи (для отладки) **[требует API key]**
-- `GET /download/{task_id}/output/{filename}` — скачать готовый файл **[требует API key]**
-- `GET /download/{task_id}/metadata.json` — метаданные результата **[требует API key]**
+- `GET /download/{task_id}/output/{filename}` — скачать готовый файл **[без авторизации]**
+- `GET /download/{task_id}/metadata.json` — метаданные результата **[без авторизации]**
 
 ### Health Check
 
