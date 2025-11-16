@@ -13,24 +13,24 @@
 
 ## ✨ Features
 
-- 🎬 **Pipeline Processing** - цепочка операций над видео (letterbox → title → subtitles)
-- 📦 **Letterbox Mode** - горизонтальное видео в вертикальный формат (1080x1920) с размытым фоном
-- 📝 **Динамические субтитры** - с поддержкой кастомных шрифтов, цветов, позиций
-- 🎨 **Текстовые оверлеи** - заголовки с fade-эффектами
-- ✂️ **Нарезка видео** - по таймкодам с конвертацией в Shorts
-- 🎵 **Извлечение аудио** - из видеофайлов
-- 📡 **Webhooks** - уведомления о завершении обработки с retry-логикой
-- ⚡ **Async Processing** - фоновая обработка с отслеживанием статуса
-- 🔠 **Custom Fonts** - поддержка загрузки своих шрифтов (.ttf/.otf)
-- 🐳 **Redis Support** - multi-worker режим для высоких нагрузок
-- 🛡️ **Input Validation** - автоматическая проверка медиа-файлов перед обработкой
-- 🔗 **Full URLs** - абсолютные ссылки во всех ответах для n8n/внешних интеграций
+- 🎬 **Pipeline Processing** - chain multiple operations (letterbox → title → subtitles)
+- 📦 **Letterbox Mode** - convert horizontal videos to vertical format (1080x1920) with blurred background
+- 📝 **Dynamic Subtitles** - with custom fonts, colors, and positioning
+- 🎨 **Text Overlays** - titles with fade effects
+- ✂️ **Video Cutting** - by timecodes with Shorts conversion
+- 🎵 **Audio Extraction** - from video files
+- 📡 **Webhooks** - completion notifications with retry logic
+- ⚡ **Async Processing** - background processing with status tracking
+- 🔠 **Custom Fonts** - support for uploading custom fonts (.ttf/.otf)
+- 🐳 **Redis Support** - multi-worker mode for high loads
+- 🛡️ **Input Validation** - automatic media file validation before processing
+- 🔗 **Full URLs** - absolute links in all responses for n8n/external integrations
 
 ---
 
 ## 🚀 Quick Start
 
-### Single Worker (без Redis)
+### Single Worker (without Redis)
 
 ```bash
 docker pull alexbic/video-processor-api:latest
@@ -40,17 +40,17 @@ docker run -d -p 5001:5001 \
   alexbic/video-processor-api:latest
 ```
 
-### Multi-Worker с Redis (рекомендуется для production)
+### Multi-Worker with Redis (recommended for production)
 
-См. [docker-compose.redis-example.yml](docker-compose.redis-example.yml) для полной конфигурации.
+See [docker-compose.redis-example.yml](docker-compose.redis-example.yml) for full configuration.
 
 ```bash
 docker-compose up -d redis video-processor
 ```
 
-API автоматически определяет доступность Redis:
-- **С Redis**: Multi-worker mode (2+ workers)
-- **Без Redis**: Single-worker mode (fallback)
+API automatically detects Redis availability:
+- **With Redis**: Multi-worker mode (2+ workers)
+- **Without Redis**: Single-worker mode (fallback)
 
 ---
 
@@ -106,14 +106,14 @@ curl -H "Authorization: Bearer your-api-key" \
 
 ### Client Metadata (Pass-through)
 
-Добавьте в запрос поле `client_meta` (любой JSON-объект), и он будет:
-- сохранён в `metadata.json` задачи,
-- включён в ответы `/process_video` (sync), `/task_status/{task_id}` (async),
-- отправлен в payload вебхуков (`task_completed`/`task_failed`).
+Add a `client_meta` field (any JSON object) to your request, and it will be:
+- saved in the task's `metadata.json`,
+- included in `/process_video` (sync) and `/task_status/{task_id}` (async) responses,
+- sent in webhook payloads (`task_completed`/`task_failed`).
 
-Это удобно для заголовков/подписей под разные соцсети, ID кампании, trace-id и т.д.
+This is useful for titles/captions for different social networks, campaign IDs, trace-ids, etc.
 
-Пример запроса c `client_meta`:
+Example request with `client_meta`:
 ```json
 {
   "video_url": "https://example.com/video.mp4",
@@ -121,15 +121,15 @@ curl -H "Authorization: Bearer your-api-key" \
   "operations": [{"type": "make_short", "crop_mode": "letterbox"}],
   "client_meta": {
     "titles": {
-      "tiktok": "Крутой ролик про AI",
+      "tiktok": "Cool AI Video",
       "youtube": "Amazing AI Demo",
-      "instagram": "AI в действии"
+      "instagram": "AI in Action"
     },
     "campaign_id": "cmp-2025-11-13"
   }
 }
 ```
-В ответах поле будет доступно как `client_meta` без изменений.
+In responses, the field will be available as `client_meta` unchanged.
 
 Limits (to protect the service):
 - Max size: `16 KB` (UTF‑8 JSON)
@@ -159,13 +159,13 @@ Immediate echo:
 
 ### Endpoints Overview
 
-- `GET /health` — состояние сервиса (версии, `storage_mode`, доступность Redis) **[без авторизации]**
-- `GET /fonts` — список системных и кастомных шрифтов **[требует API key]**
-- `POST /process_video` — запуск pipeline (sync/async; `operations`, опционально `webhook_url`) **[требует API key]**
-- `GET /task_status/{task_id}` — статус задачи (`queued`/`processing`/`completed`/`error`) **[без авторизации]**
-- `GET /tasks` — последние задачи (для отладки) **[требует API key]**
-- `GET /download/{task_id}/{filename}` — скачать готовый файл **[без авторизации]**
-- `GET /download/{task_id}/metadata.json` — метаданные результата **[без авторизации]**
+- `GET /health` — service status (versions, `storage_mode`, Redis availability) **[no authorization]**
+- `GET /fonts` — list of system and custom fonts **[requires API key]**
+- `POST /process_video` — start pipeline (sync/async; `operations`, optionally `webhook_url`) **[requires API key]**
+- `GET /task_status/{task_id}` — task status (`queued`/`processing`/`completed`/`error`) **[no authorization]**
+- `GET /tasks` — recent tasks (for debugging) **[requires API key]**
+- `GET /download/{task_id}/{filename}` — download completed file **[no authorization]**
+- `GET /download/{task_id}/metadata.json` — result metadata **[no authorization]**
 
 ### Health Check
 
@@ -187,7 +187,7 @@ curl http://localhost:5001/health
 
 ---
 
-### Доступные шрифты
+### Available Fonts
 
 ```bash
 curl http://localhost:5001/fonts
@@ -210,20 +210,20 @@ curl http://localhost:5001/fonts
 }
 ```
 
-**Кастомные шрифты:**
-1. Поместите .ttf/.otf файлы в `/opt/n8n-docker/volumes/video_processor/fonts/`
-2. Перезапустите контейнер
-3. Используйте через `"font": "YourFontName"`
+**Custom Fonts:**
+1. Place .ttf/.otf files in `/opt/n8n-docker/volumes/video_processor/fonts/`
+2. Restart the container
+3. Use via `"font": "YourFontName"`
 
-См. [FONTS.md](FONTS.md) для подробностей.
+See [FONTS.md](FONTS.md) for details.
 
 ---
 
-### Обработка видео
+### Video Processing
 
 `POST /process_video`
 
-Используйте готовые операции для обработки видео:
+Use ready-made operations for video processing:
 
 ```bash
 curl -X POST http://localhost:5001/process_video \
@@ -262,16 +262,16 @@ curl -X POST http://localhost:5001/process_video \
   }'
 ```
 
-**Доступные операции:**
-- `cut` - нарезка видео по таймкодам
-- `to_shorts` - конверсия в Shorts формат (letterbox + title + subtitles); поддерживает `start_time`/`end_time` для автоматической нарезки
-- `extract_audio` - извлечение аудиодорожки
+**Available operations:**
+- `cut_video` - cut video by timecodes
+- `make_short` - convert to Shorts format (letterbox + title + subtitles); supports `start_time`/`end_time` for automatic cutting
+- `extract_audio` - extract audio track
 
 ---
 
-### Response Format (Формат ответа)
+### Response Format
 
-**Унифицированный формат** - все операции возвращают одинаковую структуру:
+**Unified format** - all operations return the same structure:
 
 ```json
 {
@@ -294,40 +294,40 @@ curl -X POST http://localhost:5001/process_video \
 }
 ```
 
-**Ключевые поля:**
-- `video_url` - исходный URL видео, с которым работали
-- `output_files` - **всегда массив** (даже если 1 файл)
-- `is_chunked` - `true` если файлы разбиты на чанки (для Whisper API)
-- `total_files` - общее количество файлов
+**Key fields:**
+- `video_url` - original video URL that was processed
+- `output_files` - **always an array** (even if 1 file)
+- `is_chunked` - `true` if files are split into chunks (for Whisper API)
+- `total_files` - total number of files
 
-### Error Responses (Ошибки)
+### Error Responses
 
-Все ошибки возвращаются с HTTP-кодом, полем `status: "error"` и сообщением в `error`.
+All errors are returned with an HTTP code, `status: "error"` field and message in `error`.
 
-- 400 Bad Request (валидация):
+- 400 Bad Request (validation):
   ```json
   { "status": "error", "error": "video_url is required" }
   ```
-- 404 Not Found (статус задачи):
+- 404 Not Found (task status):
   ```json
   { "status": "error", "error": "Task not found" }
   ```
-- 403 Forbidden (скачивание файла вне task-директории):
+- 403 Forbidden (downloading file outside task directory):
   ```json
   { "status": "error", "error": "Invalid file path" }
   ```
-- 404 Not Found (файл не найден при скачивании):
+- 404 Not Found (file not found during download):
   ```json
   { "status": "error", "error": "File not found" }
   ```
-- 500 Internal Server Error (ошибка выполнения):
+- 500 Internal Server Error (execution error):
   ```json
   { "status": "error", "error": "FFmpeg error: ..." }
   ```
 
-В вебхуках при ошибке событие остаётся `event: "task_failed"`, а статус — `status: "error"`.
+In webhooks on error, event remains `event: "task_failed"`, and status is `status: "error"`.
 
-**Для chunked файлов** (extract_audio с разбиением):
+**For chunked files** (extract_audio with splitting):
 ```json
 {
   "output_files": [
@@ -342,7 +342,7 @@ curl -X POST http://localhost:5001/process_video \
 
 ### Execution Modes
 
-#### Sync (синхронный)
+#### Sync (synchronous)
 
 ```json
 {
@@ -350,7 +350,7 @@ curl -X POST http://localhost:5001/process_video \
 }
 ```
 
-**Response (сразу):**
+**Response (immediately):**
 ```json
 {
   "task_id": "abc123",
@@ -373,7 +373,7 @@ curl -X POST http://localhost:5001/process_video \
 }
 ```
 
-#### Async (асинхронный)
+#### Async (asynchronous)
 
 ```json
 {
@@ -381,7 +381,7 @@ curl -X POST http://localhost:5001/process_video \
 }
 ```
 
-**Response (сразу):**
+**Response (immediately):**
 ```json
 {
   "task_id": "abc123",
@@ -390,7 +390,7 @@ curl -X POST http://localhost:5001/process_video \
 }
 ```
 
-**Проверка статуса:**
+**Check status:**
 ```bash
 curl http://localhost:5001/task_status/abc123
 ```
@@ -423,7 +423,7 @@ curl http://localhost:5001/task_status/abc123
 
 ### Webhooks
 
-Добавьте `webhook_url` для получения уведомлений:
+Add `webhook_url` to receive notifications:
 
 ```json
 {
@@ -470,32 +470,32 @@ curl http://localhost:5001/task_status/abc123
 }
 ```
 
-**Retry логика:**
-- 3 попытки отправки
+**Retry logic:**
+- 3 send attempts
 - Exponential backoff: 1s, 2s, 4s
 
 ---
 
 ### Status Lifecycle
 
-Статусы задач и переходы:
+Task statuses and transitions:
 
-- `queued` → задача создана и поставлена в очередь (async)
-- `processing` → выполняются операции (`progress` 5–95%)
-- `completed` → готово; доступны `output_files`, `is_chunked`, `metadata_url`, `video_url`
-- `error` → ошибка выполнения; `error` — описание, `failed_at` — время
+- `queued` → task created and queued (async)
+- `processing` → operations executing (`progress` 5–95%)
+- `completed` → finished; `output_files`, `is_chunked`, `metadata_url`, `video_url` available
+- `error` → execution error; `error` — description, `failed_at` — timestamp
 
-Ключевые поля статуса:
-- `task_id`: идентификатор задачи
+Key status fields:
+- `task_id`: task identifier
 - `status`: `queued` | `processing` | `completed` | `error`
-- `progress`: 0–100 (для async)
-- `created_at` / `completed_at` / `failed_at`: временные метки
-- `output_files`: всегда массив; при чанкинге содержит `chunk: "i:n"`
-- `is_chunked`: `true` если в `output_files` есть поле `chunk`
+- `progress`: 0–100 (for async)
+- `created_at` / `completed_at` / `failed_at`: timestamps
+- `output_files`: always an array; when chunked contains `chunk: "i:n"`
+- `is_chunked`: `true` if `output_files` has `chunk` field
 
-Рекомендации по поллингу:
-- Опрос `GET /task_status/{task_id}` каждые 2–3 секунды
-- Останавливать опрос при `status` в {`completed`, `error`}
+Polling recommendations:
+- Poll `GET /task_status/{task_id}` every 2–3 seconds
+- Stop polling when `status` is {`completed`, `error`}
 
 ---
 
@@ -543,7 +543,7 @@ Response:
 
 ## 📖 Examples
 
-### Example 1: Shorts с автоматической нарезкой (start_time/end_time)
+### Example 1: Shorts with automatic cutting (start_time/end_time)
 
 ```json
 {
@@ -556,14 +556,14 @@ Response:
       "end_time": 70.0,
       "crop_mode": "letterbox",
       "title": {
-        "text": "Мой первый Shorts",
+        "text": "My First Shorts",
         "font": "DejaVu Sans Bold",
         "fontsize": 70,
         "fontcolor": "white"
       },
       "subtitles": {
         "items": [
-          {"text": "Первый субтитр", "start": 0, "end": 3}
+          {"text": "First subtitle", "start": 0, "end": 3}
         ],
         "font": "Roboto",
         "fontsize": 64,
@@ -574,13 +574,13 @@ Response:
 }
 ```
 
-**Примечание:** `start_time` и `end_time` могут быть числами (секунды) или строками (`"00:01:30"`). При указании обоих параметров будет вырезан фрагмент автоматически.
+**Note:** `start_time` and `end_time` can be numbers (seconds) or strings (`"00:01:30"`). When both parameters are specified, the fragment will be cut automatically.
 
-**Формат полей:**
-- `title` — объект с полем `text` и настройками шрифта
-- `subtitles` — объект с полем `items` (массив субтитров) и настройками шрифта
+**Field format:**
+- `title` — object with `text` field and font settings
+- `subtitles` — object with `items` field (array of subtitles) and font settings
 
-### Example 2: Простая конверсия в Shorts (без нарезки)
+### Example 2: Simple Shorts conversion (without cutting)
 
 ```json
 {
@@ -599,7 +599,7 @@ Response:
 }
 ```
 
-### Example 3: Shorts с заголовком и субтитрами
+### Example 3: Shorts with title and subtitles
 
 ```json
 {
@@ -632,7 +632,7 @@ Response:
 }
 ```
 
-### Example 4: Нарезка видео
+### Example 4: Video cutting
 
 ```json
 {
@@ -648,7 +648,7 @@ Response:
 }
 ```
 
-### Example 5: Pipeline - несколько операций
+### Example 5: Pipeline - multiple operations
 
 ```json
 {
@@ -669,7 +669,7 @@ Response:
 }
 ```
 
-### Example 6: Извлечение аудио (sync режим)
+### Example 6: Audio extraction (sync mode)
 
 ```bash
 curl -X POST http://localhost:5001/process_video \
@@ -687,7 +687,7 @@ curl -X POST http://localhost:5001/process_video \
   }'
 ```
 
-**Response (sync - возвращается сразу после завершения):**
+**Response (sync - returned immediately after completion):**
 ```json
 {
   "task_id": "abc123-def456",
@@ -709,7 +709,7 @@ curl -X POST http://localhost:5001/process_video \
 }
 ```
 
-### Example 7: Извлечение аудио (async режим с webhook)
+### Example 7: Audio extraction (async mode with webhook)
 
 ```json
 {
@@ -726,7 +726,7 @@ curl -X POST http://localhost:5001/process_video \
 }
 ```
 
-**Response (async - возвращается сразу):**
+**Response (async - returned immediately):**
 ```json
 {
   "task_id": "abc123-def456",
@@ -736,14 +736,14 @@ curl -X POST http://localhost:5001/process_video \
 }
 ```
 
-**Note (v1.1.0):** `check_status_url` теперь всегда полный URL (включая схему и хост), готовый для использования в n8n и других системах.
+**Note (v1.1.0):** `check_status_url` is now always a full URL (including scheme and host), ready for use in n8n and other systems.
 
-**Проверка статуса задачи:**
+**Check task status:**
 ```bash
 curl http://localhost:5001/task_status/abc123-def456
 ```
 
-**Response (когда готово):**
+**Response (when ready):**
 ```json
 {
   "task_id": "abc123-def456",
@@ -766,7 +766,7 @@ curl http://localhost:5001/task_status/abc123-def456
 }
 ```
 
-**Webhook payload (отправляется автоматически при завершении):**
+**Webhook payload (sent automatically on completion):**
 ```json
 {
   "task_id": "abc123-def456",
@@ -793,7 +793,7 @@ curl http://localhost:5001/task_status/abc123-def456
 }
 ```
 
-### Example 8: Нарезка видео + извлечение аудио (pipeline)
+### Example 8: Video cutting + audio extraction (pipeline)
 
 ```json
 {
@@ -815,25 +815,25 @@ curl http://localhost:5001/task_status/abc123-def456
 }
 ```
 
-**Поддерживаемые форматы аудио:**
-- `mp3` (codec: libmp3lame) - универсальный формат
-- `aac` (codec: aac) - для Apple устройств
+**Supported audio formats:**
+- `mp3` (codec: libmp3lame) - universal format
+- `aac` (codec: aac) - for Apple devices
 
-**Параметры extract_audio:**
-- `format` (опционально): `mp3` (default) или `aac`
-- `bitrate` (опционально): `128k`, `192k` (default), `256k`, `320k`
-- `chunk_duration_minutes` (опционально): Длительность чанка в минутах для разбиения больших файлов
-- `max_chunk_size_mb` (опционально): Максимальный размер чанка в МБ (default: 24 для Whisper API)
-- `optimize_for_whisper` (опционально): `true` - оптимизация для Whisper API (16kHz, mono, 64k bitrate)
+**extract_audio parameters:**
+- `format` (optional): `mp3` (default) or `aac`
+- `bitrate` (optional): `128k`, `192k` (default), `256k`, `320k`
+- `chunk_duration_minutes` (optional): Chunk duration in minutes for splitting large files
+- `max_chunk_size_mb` (optional): Maximum chunk size in MB (default: 24 for Whisper API)
+- `optimize_for_whisper` (optional): `true` - optimization for Whisper API (16kHz, mono, 64k bitrate)
 
-Примечание: При включённом разбиении (через `chunk_duration_minutes` или `max_chunk_size_mb`) каждый объект в `output_files` дополнительно содержит только одно поле:
-- `chunk`: компактный индекс чанка в формате `i:n` (например, `"1:7"`)
+Note: When splitting is enabled (via `chunk_duration_minutes` or `max_chunk_size_mb`), each object in `output_files` additionally contains only one field:
+- `chunk`: compact chunk index in `i:n` format (e.g., `"1:7"`)
 
-### Example 9: Извлечение аудио с автоматическим chunking для Whisper API
+### Example 9: Audio extraction with automatic chunking for Whisper API
 
-**Проблема:** Whisper API не принимает файлы больше 25 МБ.
+**Problem:** Whisper API doesn't accept files larger than 25 MB.
 
-**Решение:** Автоматическое разбиение на чанки < 24 МБ.
+**Solution:** Automatic splitting into chunks < 24 MB.
 
 ```json
 {
@@ -860,7 +860,7 @@ curl http://localhost:5001/task_status/abc123-def456
 }
 ```
 
-**Webhook payload (когда готово):**
+**Webhook payload (when ready):**
 ```json
 {
   "task_id": "xyz123",
@@ -904,26 +904,26 @@ curl http://localhost:5001/task_status/abc123-def456
 }
 ```
 
-**Файлы доступны по следующим URL:**
+**Files available at the following URLs:**
 ```
 /download/xyz123/audio_20251112_194523_chunk000.mp3  (23.5 MB, 0:00 - 15:30)
 /download/xyz123/audio_20251112_194523_chunk001.mp3  (23.2 MB, 15:30 - 31:00)
 /download/xyz123/audio_20251112_194523_chunk002.mp3  (18.1 MB, 31:00 - 45:00)
-/download/xyz123/metadata.json  (метаданные всех файлов)
+/download/xyz123/metadata.json  (metadata for all files)
 ```
 
-**Как скачать все чанки:**
+**How to download all chunks:**
 ```bash
-# Все чанки доступны по паттерну
+# All chunks available by pattern
 curl http://localhost:5001/download/xyz123/audio_20251112_194523_chunk000.mp3 -o chunk000.mp3
 curl http://localhost:5001/download/xyz123/audio_20251112_194523_chunk001.mp3 -o chunk001.mp3
 curl http://localhost:5001/download/xyz123/audio_20251112_194523_chunk002.mp3 -o chunk002.mp3
 ```
 
-**Поля чанков в ответах:**
-- `chunk`: индекс текущего чанка и общее число в формате `i:n`
+**Chunk fields in responses:**
+- `chunk`: current chunk index and total count in `i:n` format
 
-### Example 10: Ручное задание длительности чанков
+### Example 10: Manual chunk duration setting
 
 ```json
 {
@@ -940,7 +940,7 @@ curl http://localhost:5001/download/xyz123/audio_20251112_194523_chunk002.mp3 -o
 }
 ```
 
-Создаст чанки по 10 минут каждый, оптимизированные для Whisper API (16kHz, mono, 64k bitrate).
+Will create chunks of 10 minutes each, optimized for Whisper API (16kHz, mono, 64k bitrate).
 
 **Response (sync):**
 ```json
@@ -971,7 +971,7 @@ curl http://localhost:5001/download/xyz123/audio_20251112_194523_chunk002.mp3 -o
 }
 ```
 
-Подсказка: для парсинга `chunk` разделите строку по `:` → `i` и `n`.
+Hint: to parse `chunk`, split the string by `:` → `i` and `n`.
 
 ---
 
@@ -994,29 +994,29 @@ curl http://localhost:5001/download/xyz123/audio_20251112_194523_chunk002.mp3 -o
 ```yaml
 volumes:
   - /path/to/tasks:/app/tasks          # Task-based storage (files + metadata.json)
-  - /path/to/fonts:/app/fonts/custom   # Кастомные шрифты
+  - /path/to/fonts:/app/fonts/custom   # Custom fonts
 ```
 
-**Структура task-директории:**
+**Task directory structure:**
 ```
 /app/tasks/{task_id}/
-  ├── input_*.mp4       # Входные файлы (удаляются после обработки)
-  ├── temp_*.mp4        # Промежуточные файлы (удаляются после обработки)
-  ├── short_*.mp4       # Готовые Shorts видео (TTL: 2 часа)
-  ├── video_*.mp4       # Готовые нарезанные видео (TTL: 2 часа)
-  ├── audio_*.mp3       # Извлечённые аудиодорожки (TTL: 2 часа)
-  └── metadata.json    # Метаданные всех файлов
+  ├── input_*.mp4       # Input files (deleted after processing)
+  ├── temp_*.mp4        # Temporary files (deleted after processing)
+  ├── short_*.mp4       # Completed Shorts videos (TTL: 2 hours)
+  ├── video_*.mp4       # Completed cut videos (TTL: 2 hours)
+  ├── audio_*.mp3       # Extracted audio tracks (TTL: 2 hours)
+  └── metadata.json    # Metadata for all files
 ```
 
 ---
 
 ## 📝 File Retention
 
-- **Task directories**: Автоматически удаляются через **2 часа** после создания
-- **Input/Temp files**: Файлы с префиксами `input_*` и `temp_*` удаляются сразу после завершения обработки
-- **Output files**: Файлы с префиксами `short_*`, `video_*`, `audio_*` хранятся 2 часа в `/app/tasks/{task_id}/`
-- **Redis Tasks**: TTL = 24 часа
-- **Metadata.json**: Хранится 2 часа и используется как fallback для `/task_status` когда задачи нет в Redis/memory **(v1.1.0)**
+- **Task directories**: Automatically deleted after **2 hours** from creation
+- **Input/Temp files**: Files with `input_*` and `temp_*` prefixes are deleted immediately after processing completion
+- **Output files**: Files with `short_*`, `video_*`, `audio_*` prefixes are stored for 2 hours in `/app/tasks/{task_id}/`
+- **Redis Tasks**: TTL = 24 hours
+- **Metadata.json**: Stored for 2 hours and used as fallback for `/task_status` when task is not in Redis/memory **(v1.1.0)**
 
 ---
 
@@ -1024,17 +1024,17 @@ volumes:
 
 ## 💡 Client Integration Tips
 
-- `output_files`: всегда массив. Даже при одном файле используйте итерацию.
-- `is_chunked`: определяйте пакетную обработку по этому флагу и/или наличию `chunk`.
-- `chunk` формат: строка `"i:n"`, где `i` — 1-базовый индекс, `n` — общее число частей.
-- `client_meta`: передайте произвольный JSON в запросе — он вернётся как есть в ответах, вебхуке и `metadata.json`.
-- Ссылки скачивания: используйте `download_url` для публичного доступа и `download_path` для внутренних вызовов через API-шлюз.
-- Метаданные: `metadata_url` содержит полный снимок результата — удобно для кэширования.
-- Вебхуки: обрабатывайте оба события — `task_completed` и `task_failed`.
-- TTL: файлы хранятся 2 часа; скачайте/переложите в постоянное хранилище сразу после `completed`.
-- **Входные URL** **(v1.1.0)**: Передавайте прямые ссылки на медиа-файлы, не на HTML-страницы. API автоматически проверяет Content-Type и отклоняет некорректные файлы с понятными ошибками.
-- **Полные URL** **(v1.1.0)**: Все URL в ответах (`check_status_url`, `download_url`, `metadata_url`) теперь абсолютные, готовые для использования в n8n и внешних системах.
-- **404 защита** **(v1.1.0)**: Endpoint `/task_status` использует filesystem fallback — даже если задача отсутствует в Redis/memory, статус будет прочитан из `metadata.json`.
+- `output_files`: always an array. Even for a single file, use iteration.
+- `is_chunked`: determine batch processing by this flag and/or presence of `chunk`.
+- `chunk` format: string `"i:n"`, where `i` — 1-based index, `n` — total number of parts.
+- `client_meta`: pass arbitrary JSON in request — it will be returned as-is in responses, webhooks, and `metadata.json`.
+- Download links: use `download_url` for public access and `download_path` for internal calls via API gateway.
+- Metadata: `metadata_url` contains full result snapshot — convenient for caching.
+- Webhooks: handle both events — `task_completed` and `task_failed`.
+- TTL: files are stored for 2 hours; download/move to permanent storage immediately after `completed`.
+- **Input URLs** **(v1.1.0)**: Pass direct links to media files, not to HTML pages. API automatically checks Content-Type and rejects invalid files with clear errors.
+- **Full URLs** **(v1.1.0)**: All URLs in responses (`check_status_url`, `download_url`, `metadata_url`) are now absolute, ready for use in n8n and external systems.
+- **404 protection** **(v1.1.0)**: Endpoint `/task_status` uses filesystem fallback — even if task is absent in Redis/memory, status will be read from `metadata.json`.
 
 ### Local Build
 
@@ -1064,13 +1064,13 @@ curl -X POST http://localhost:5001/process_video \
 
 ## 📄 License
 
-MIT License - см. [LICENSE](LICENSE) для подробностей.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
 ## 🤝 Contributing
 
-Pull requests приветствуются! Для больших изменений сначала откройте issue.
+Pull requests are welcome! For major changes, please open an issue first.
 
 ---
 
