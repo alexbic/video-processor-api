@@ -12,6 +12,10 @@ from functools import wraps
 
 app = Flask(__name__)
 
+# Отключаем автоматическую сортировку ключей JSON (сохраняем порядок вставки)
+# Flask 3.0+ требует явного указания в json provider
+app.json.sort_keys = False
+
 # ============================================
 # API KEY AUTHENTICATION
 # ============================================
@@ -91,6 +95,17 @@ def build_absolute_url(path: str) -> str:
     except Exception:
         pass
     return path
+
+def build_absolute_url_background(path: str) -> str:
+    """Build absolute URL in background context (no request available).
+
+    Falls back to internal service URL if PUBLIC_BASE_URL not set.
+    """
+    if API_KEY_ENABLED and PUBLIC_BASE_URL:
+        return _join_url(PUBLIC_BASE_URL, path)
+    # Fallback: internal Docker network or localhost
+    internal_base = os.getenv('INTERNAL_BASE_URL', 'http://video-processor:5001')
+    return _join_url(internal_base, path)
 
 # ============================================
 # TASK STORAGE - Redis (multi-worker) or In-Memory (single-worker)
@@ -356,6 +371,116 @@ def validate_client_meta(client_meta):
         return False, f"client_meta serialization error: {e}"
 
     return True, None
+
+# ============================================
+# INPUT DOWNLOAD + VALIDATION
+# ============================================
+
+def download_media_with_validation(url: str, dest_path: str, timeout: int = 300) -> tuple[bool, str]:
+    """Скачивает контент по URL в dest_path с базовой валидацией медиа.
+
+    Отсеивает очевидно не‑медийные ответы (HTML, JSON и т.п.),
+    проверяет заголовки и сигнатуру первых байт. Записывает во временный .part
+    с последующим атомарным переименованием в итоговый файл.
+
+    Возвращает (ok, message). В случае ok=False файл не создаётся.
+    """
+    import requests
+
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (compatible; VideoProcessor/1.0; +https://alexbic.net)'
+        }
+        with requests.get(url, stream=True, timeout=timeout, headers=headers) as r:
+            try:
+                r.raise_for_status()
+            except Exception as e:
+                return False, f"Download failed: HTTP {r.status_code} — {e}"
+
+            ctype = (r.headers.get('Content-Type') or '').lower()
+            clength = int(r.headers.get('Content-Length') or 0)
+
+            # Быстрый отсев по типу контента
+            if ctype.startswith('text/') or 'html' in ctype or 'json' in ctype:
+                # Прочитаем небольшой буфер и посмотрим на содержимое
+                head = r.raw.read(4096, decode_content=True)
+                text_head = head.decode('utf-8', errors='ignore')
+                if '<html' in text_head.lower() or 'doctype html' in text_head.lower():
+                    return False, "URL returned HTML page, not media. Pass a direct media file URL."
+                if 'error' in text_head.lower() and 'youtube' in text_head.lower():
+                    return False, "Upstream returned an error page, likely not a direct media URL."
+                # Вернём каретку, чтобы не потерять байты
+                r.raw.seek(0)
+
+            # Минимальный разумный размер (100KB) — отсечём совсем мусор
+            min_reasonable = 100 * 1024
+
+            # Запишем во временный файл и одновременно соберём первые килобайты для сигнатуры
+            first_chunk = b''
+            total = 0
+
+            tmp_path = dest_path + '.part'
+            with open(tmp_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=64 * 1024):
+                    if not chunk:
+                        continue
+                    if not first_chunk:
+                        first_chunk = chunk[:4096]
+                    f.write(chunk)
+                    total += len(chunk)
+
+            # Если заголовок заявлял маленький размер или реально скачали слишком мало
+            if clength and clength < min_reasonable:
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                return False, f"Downloaded file too small ({clength} bytes). Likely not media."
+
+            if total < min_reasonable:
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                return False, f"Downloaded file too small ({total} bytes). Likely not media."
+
+            # Базовая сигнатурная проверка: MP4/WebM/MKV/MPEG-TS
+            sig = first_chunk[:64]
+            sig_l = sig.lower()
+            looks_html = b'<html' in sig_l or b'doctype html' in sig_l
+            looks_mp4 = b'ftyp' in sig  # MP4 контейнер
+            looks_webm = sig.startswith(b"\x1A\x45\xDF\xA3")  # EBML (Matroska/WebM)
+            looks_ts = sig.startswith(b"\x47")  # MPEG-TS (грубая эвристика)
+
+            if looks_html:
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                return False, "Downloaded HTML, not media. Provide a direct media URL (file stream)."
+
+            # Если тип неизвестен — всё ещё допускаем, если заявлен video/* или audio/*
+            type_ok = (ctype.startswith('video/') or ctype.startswith('audio/') or 'octet-stream' in ctype)
+            if not (looks_mp4 or looks_webm or looks_ts or type_ok):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                return False, "File does not look like media (unknown signature and content-type)."
+
+            # Перемещаем во final
+            os.replace(tmp_path, dest_path)
+            os.chmod(dest_path, 0o644)
+            return True, f"Downloaded {total} bytes"
+
+    except Exception as e:
+        # Уберём .part если остался
+        try:
+            if os.path.exists(dest_path + '.part'):
+                os.remove(dest_path + '.part')
+        except Exception:
+            pass
+        return False, f"Download error: {e}"
 
 # Очистка старых файлов (старше 2 часов)
 def cleanup_old_files():
@@ -1005,32 +1130,61 @@ def get_task_status(task_id):
     try:
         task = get_task(task_id)
 
+        # Fallback: если записи в хранилище нет — попробуем метаданные с диска
         if not task:
+            metadata = load_task_metadata(task_id)
+            if metadata and metadata.get('status') == 'completed':
+                # Пересоберём абсолютные ссылки
+                output_files = metadata.get('output_files', [])
+                for f in output_files:
+                    dp = f.get('download_path')
+                    if dp:
+                        f['download_url'] = build_absolute_url(dp)
+
+                # Ответ в желаемом порядке, client_meta внизу
+                resp = {
+                    'task_id': task_id,
+                    'status': 'completed',
+                    'progress': 100,
+                    'created_at': metadata.get('created_at'),
+                    'video_url': metadata.get('video_url'),
+                    'output_files': output_files,
+                    'total_files': metadata.get('total_files', len(output_files)),
+                    'total_size': metadata.get('total_size'),
+                    'is_chunked': any(f.get('chunk') for f in output_files) if output_files else False,
+                    'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json"),
+                    'completed_at': metadata.get('completed_at')
+                }
+                if metadata.get('client_meta') is not None:
+                    resp['client_meta'] = metadata.get('client_meta')
+                return jsonify(resp)
+
+            # Если директория задачи существует — считаем, что в процессе
+            if os.path.isdir(get_task_dir(task_id)):
+                resp = {
+                    'task_id': task_id,
+                    'status': 'processing',
+                    'progress': 50
+                }
+                return jsonify(resp)
+
             return jsonify({"status": "error", "error": "Task not found"}), 404
 
+        # Базовый ответ (без client_meta; добавим в конце)
         response = {
-            "task_id": task_id,
-            "status": task['status'],
-            "progress": task.get('progress', 0),
-            "created_at": task.get('created_at')
+            'task_id': task_id,
+            'status': task['status'],
+            'progress': task.get('progress', 0),
+            'created_at': task.get('created_at')
         }
 
-        # Возвращаем клиентские метаданные независимо от статуса, если они есть в задаче
-        if task.get('client_meta') is not None:
-            response['client_meta'] = task.get('client_meta')
-
         if task['status'] == 'completed':
-            # Единообразный формат: всегда массив output_files
             output_files = task.get('output_files', [])
-            # Пересобираем абсолютные ссылки под текущий хост/публичный URL
             for f in output_files:
                 dp = f.get('download_path')
                 if dp:
                     f['download_url'] = build_absolute_url(dp)
-            
-            # Определяем chunked по наличию поля 'chunk' в метаданных
             is_chunked = any(f.get('chunk') for f in output_files) if output_files else False
-            
             response.update({
                 'video_url': task.get('video_url'),
                 'output_files': output_files,
@@ -1046,6 +1200,10 @@ def get_task_status(task_id):
                 'failed_at': task.get('failed_at')
             })
 
+        # Добавляем client_meta в самом конце
+        if task.get('client_meta') is not None:
+            response['client_meta'] = task.get('client_meta')
+
         return jsonify(response)
 
     except Exception as e:
@@ -1058,9 +1216,23 @@ def list_all_tasks():
     """Получить список всех задач"""
     try:
         recent_tasks = list_tasks()
+        # Перестроим задачи так, чтобы client_meta оказался внизу (если есть)
+        normalized = []
+        for t in recent_tasks:
+            if not isinstance(t, dict):
+                normalized.append(t)
+                continue
+            cm = t.pop('client_meta', None)
+            ordered = {
+                k: t[k] for k in t.keys()
+            }
+            if cm is not None:
+                ordered['client_meta'] = cm
+            normalized.append(ordered)
+
         return jsonify({
-            "total": len(recent_tasks),
-            "tasks": recent_tasks,
+            "total": len(normalized),
+            "tasks": normalized,
             "storage_mode": STORAGE_MODE
         })
     except Exception as e:
@@ -1204,13 +1376,15 @@ def process_video():
 
             logger.info(f"Task {task_id}: Created with {len(operations)} operations")
 
-            return jsonify({
+            resp = {
                 "task_id": task_id,
                 "status": "processing",
                 "message": "Task created and processing in background",
-                "check_status_url": f"/task_status/{task_id}",
-                "client_meta": client_meta
-            }), 202
+                "check_status_url": build_absolute_url(f"/task_status/{task_id}")
+            }
+            if client_meta is not None:
+                resp["client_meta"] = client_meta
+            return jsonify(resp), 202
 
         else:
             # Синхронный режим
@@ -1228,16 +1402,19 @@ def process_video():
 
 def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, webhook_url: str = None, client_meta: dict | None = None) -> dict:
     """Синхронное выполнение pipeline операций"""
-    import requests
 
-    # Скачиваем исходное видео в input/
+    # Скачиваем исходное видео в input/ с валидацией
     input_filename = f"{uuid.uuid4()}.mp4"
     input_path = os.path.join(get_task_input_dir(task_id), input_filename)
 
-    response = requests.get(video_url, stream=True)
-    with open(input_path, 'wb') as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
+    ok, msg = download_media_with_validation(video_url, input_path)
+    if not ok:
+        logger.error(f"Task {task_id}: download validation failed — {msg}")
+        return jsonify({
+            "status": "error",
+            "error": msg,
+            "task_id": task_id
+        }), 400
 
     current_input = input_path
     output_files = []  # Список всех созданных output файлов
@@ -1347,6 +1524,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         "total_files": len(files_info),
         "completed_at": datetime.now().isoformat()
     }
+    # client_meta в самом конце
     if client_meta is not None:
         metadata["client_meta"] = client_meta
     save_task_metadata(task_id, metadata)
@@ -1364,7 +1542,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             "output_files": files_info,
             "total_files": len(files_info),
             "is_chunked": is_chunked,
-            "metadata_url": build_absolute_url(f"/download/{task_id}/metadata.json"),
+            "metadata_url": build_absolute_url_background(f"/download/{task_id}/metadata.json"),
             "completed_at": metadata["completed_at"]
         }
         if client_meta is not None:
@@ -1385,6 +1563,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         "note": "Files will auto-delete after 2 hours.",
         "completed_at": metadata["completed_at"]
     }
+    # client_meta в самом конце
     if client_meta is not None:
         response_body["client_meta"] = client_meta
     return jsonify(response_body)
@@ -1392,7 +1571,6 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
 def process_video_pipeline_background(task_id: str, video_url: str, operations: list, webhook_url: str = None):
     """Фоновое выполнение pipeline операций с использованием task-based архитектуры"""
-    import requests
 
     try:
         # Создаем директории для задачи
@@ -1405,10 +1583,9 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         input_path = os.path.join(get_task_input_dir(task_id), input_filename)
 
         logger.info(f"Task {task_id}: Downloading video from {video_url}")
-        response = requests.get(video_url, stream=True, timeout=300)
-        with open(input_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
+        ok, msg = download_media_with_validation(video_url, input_path)
+        if not ok:
+            raise Exception(msg)
 
         update_task(task_id, {'progress': 20})
 
@@ -1516,7 +1693,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                     'file_size': file_size,
                     'file_size_mb': round(file_size / (1024 * 1024), 2),
                     'download_path': f"/download/{task_id}/output/{filename}",
-                    'download_url': build_absolute_url(f"/download/{task_id}/output/{filename}")
+                    'download_url': build_absolute_url_background(f"/download/{task_id}/output/{filename}")
                 }
                 if filename in chunk_map:
                     entry.update(chunk_map[filename])
@@ -1541,6 +1718,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             'ttl_seconds': 7200,
             'ttl_human': '2 hours'
         }
+        # client_meta в самом конце
         if client_meta is not None:
             metadata['client_meta'] = client_meta
         save_task_metadata(task_id, metadata)
@@ -1553,7 +1731,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             'output_files': output_files_info,
             'total_files': len(output_files_info),
             'total_size': total_size,
-            'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json"),
+            'metadata_url': build_absolute_url_background(f"/download/{task_id}/metadata.json"),
             'operations_executed': total_ops,
             'completed_at': datetime.now().isoformat()
         })
@@ -1575,12 +1753,13 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 'total_size': total_size,
                 'total_size_mb': round(total_size / (1024 * 1024), 2),
                 'is_chunked': is_chunked,
-                'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json"),
+                'metadata_url': build_absolute_url_background(f"/download/{task_id}/metadata.json"),
                 'file_ttl_seconds': 7200,
                 'file_ttl_human': '2 hours',
                 'operations_executed': total_ops,
                 'completed_at': datetime.now().isoformat()
             }
+            # client_meta в самом конце
             if client_meta is not None:
                 webhook_payload['client_meta'] = client_meta
             send_webhook(webhook_url, webhook_payload)
