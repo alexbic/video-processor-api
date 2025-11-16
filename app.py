@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify, send_file
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 import logging
 import threading
@@ -179,6 +179,13 @@ def list_tasks() -> list:
 TASKS_DIR = "/app/tasks"
 os.makedirs(TASKS_DIR, exist_ok=True)
 
+# Recovery настройки
+RECOVERY_ENABLED = os.getenv('RECOVERY_ENABLED', 'true').lower() in ('true', '1', 'yes')
+RECOVERY_INTERVAL_MINUTES = int(os.getenv('RECOVERY_INTERVAL_MINUTES', '0'))  # 0 = только при старте
+MAX_TASK_RETRIES = int(os.getenv('MAX_TASK_RETRIES', '3'))
+RETRY_DELAY_SECONDS = int(os.getenv('RETRY_DELAY_SECONDS', '60'))
+TASK_TTL_HOURS = int(os.getenv('TASK_TTL_HOURS', '2'))  # Время жизни задачи
+
 # Вспомогательные функции для работы с задачами
 def get_task_dir(task_id: str) -> str:
     """Получить директорию задачи (все файлы хранятся здесь)"""
@@ -253,6 +260,19 @@ def log_startup_info():
             logger.info(f"Workers (gunicorn): {workers_env}")
     except Exception:
         pass
+    
+    # Recovery настройки
+    if RECOVERY_ENABLED:
+        logger.info(f"Recovery: ENABLED")
+        logger.info(f"  - Task TTL: {TASK_TTL_HOURS}h")
+        logger.info(f"  - Max retries: {MAX_TASK_RETRIES}")
+        logger.info(f"  - Retry delay: {RETRY_DELAY_SECONDS}s")
+        if RECOVERY_INTERVAL_MINUTES > 0:
+            logger.info(f"  - Interval: {RECOVERY_INTERVAL_MINUTES} min (periodic)")
+        else:
+            logger.info(f"  - Interval: startup only")
+    else:
+        logger.info("Recovery: DISABLED")
 
     logger.info("=" * 60)
 
@@ -263,6 +283,20 @@ def _log_startup_once():
         fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         os.close(fd)
         log_startup_info()
+        
+        # Запускаем recovery при старте (в фоновом потоке с задержкой)
+        def delayed_recovery():
+            import time
+            time.sleep(5)  # Даем серверу запуститься
+            recover_stuck_tasks()
+            
+            # Если настроена периодичность - запускаем планировщик
+            if RECOVERY_INTERVAL_MINUTES > 0:
+                schedule_recovery()
+        
+        recovery_thread = threading.Thread(target=delayed_recovery, daemon=True)
+        recovery_thread.start()
+        
     except FileExistsError:
         # Уже логировали в этом контейнере — пропускаем
         pass
@@ -586,6 +620,20 @@ class VideoOperation:
             if param not in params:
                 return False, f"Missing required parameter: {param}"
         return True, ""
+    
+    def validate_input_file(self, input_path: str) -> tuple[bool, str]:
+        """Валидация входного файла перед FFmpeg операцией"""
+        if not os.path.exists(input_path):
+            return False, f"Input file not found: {input_path}"
+        
+        file_size = os.path.getsize(input_path)
+        if file_size == 0:
+            return False, f"Input file is empty: {input_path}"
+        
+        if file_size < 1024:  # < 1KB
+            return False, f"Input file too small ({file_size} bytes): {input_path}"
+        
+        return True, ""
 
     def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
         """
@@ -600,17 +648,22 @@ class VideoOperation:
         raise NotImplementedError()
 
 
-class CutOperation(VideoOperation):
+class CutVideoOperation(VideoOperation):
     """Операция нарезки видео"""
     def __init__(self):
         super().__init__(
-            name="cut",
+            name="cut_video",
             required_params=["start_time", "end_time"],
             optional_params={}
         )
 
     def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
         """Нарезка видео"""
+        # Валидация входного файла
+        valid, msg = self.validate_input_file(input_path)
+        if not valid:
+            return False, msg
+        
         start_time = params['start_time']
         end_time = params['end_time']
 
@@ -631,11 +684,11 @@ class CutOperation(VideoOperation):
         return True, "Cut operation completed"
 
 
-class ToShortsOperation(VideoOperation):
+class MakeShortOperation(VideoOperation):
     """Операция конвертации в Shorts формат"""
     def __init__(self):
         super().__init__(
-            name="to_shorts",
+            name="make_short",
             required_params=[],
             optional_params={
                 'start_time': None,
@@ -649,6 +702,11 @@ class ToShortsOperation(VideoOperation):
 
     def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
         """Конвертация в Shorts формат (1080x1920)"""
+        # Валидация входного файла
+        valid, msg = self.validate_input_file(input_path)
+        if not valid:
+            return False, msg
+        
         # Применяем значения по умолчанию
         crop_mode = params.get('crop_mode', 'center')
         start_time = params.get('start_time')
@@ -897,6 +955,11 @@ class ExtractAudioOperation(VideoOperation):
 
     def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str, str]:
         """Извлечение аудио из видео с опциональным chunking для Whisper API"""
+        # Валидация входного файла
+        valid, msg = self.validate_input_file(input_path)
+        if not valid:
+            return False, msg, input_path
+        
         audio_format = params.get('format', 'mp3')
         bitrate = params.get('bitrate', '192k')
         chunk_duration_minutes = params.get('chunk_duration_minutes')
@@ -1035,8 +1098,8 @@ class ExtractAudioOperation(VideoOperation):
 
 # Регистрация всех операций
 OPERATIONS_REGISTRY = {
-    'cut': CutOperation(),
-    'to_shorts': ToShortsOperation(),
+    'cut_video': CutVideoOperation(),
+    'make_short': MakeShortOperation(),
     'extract_audio': ExtractAudioOperation(),
 }
 
@@ -1368,6 +1431,7 @@ def process_video():
             # Создаем директории для задачи
             create_task_dirs(task_id)
             
+            now = datetime.now()
             task_data = {
                 'task_id': task_id,
                 'status': 'queued',
@@ -1376,7 +1440,10 @@ def process_video():
                 'operations': operations,
                 'webhook_url': webhook_url,
                 'client_meta': client_meta,
-                'created_at': datetime.now().isoformat()
+                'created_at': now.isoformat(),
+                'expires_at': (now + timedelta(hours=TASK_TTL_HOURS)).isoformat(),
+                'retry_count': 0,
+                'last_retry_at': None
             }
             save_task(task_id, task_data)
 
@@ -1443,9 +1510,9 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             # Последняя операция - финальный файл с семантическим префиксом
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             # Определяем префикс в зависимости от типа операции
-            if op_type == 'to_shorts':
+            if op_type == 'make_short':
                 prefix = 'short'
-            elif op_type == 'cut':
+            elif op_type == 'cut_video':
                 prefix = 'video'
             elif op_type == 'extract_audio':
                 prefix = 'audio'  # хотя extract_audio сам формирует имя
@@ -1546,6 +1613,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             files_info.append(entry)
 
     # Сохраняем metadata
+    now = datetime.now()
     metadata = {
         "task_id": task_id,
         "status": "completed",
@@ -1553,7 +1621,10 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         "operations": operations,
         "output_files": files_info,
         "total_files": len(files_info),
-        "completed_at": datetime.now().isoformat()
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(hours=TASK_TTL_HOURS)).isoformat(),
+        "completed_at": now.isoformat(),
+        "retry_count": 0
     }
     # client_meta в самом конце
     if client_meta is not None:
@@ -1744,8 +1815,10 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             'total_files': len(output_files_info),
             'total_size': total_size,
             'total_size_mb': round(total_size / (1024 * 1024), 2),
-            'created_at': datetime.now().isoformat(),
-            'completed_at': datetime.now().isoformat(),
+                'created_at': task_snapshot.get('created_at', datetime.now().isoformat()),
+                'expires_at': task_snapshot.get('expires_at', (datetime.now() + timedelta(hours=TASK_TTL_HOURS)).isoformat()),
+                'completed_at': datetime.now().isoformat(),
+                'retry_count': task_snapshot.get('retry_count', 0),
             'ttl_seconds': 7200,
             'ttl_human': '2 hours'
         }
@@ -1814,6 +1887,176 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             }
             send_webhook(webhook_url, error_payload)
 
+
+def recover_stuck_tasks():
+    """Сканирует задачи и перезапускает зависшие (recovery механизм)"""
+    if not RECOVERY_ENABLED:
+        logger.info("Recovery disabled (RECOVERY_ENABLED=false)")
+        return
+    
+    logger.info("=" * 60)
+    logger.info("Starting task recovery scan...")
+    current_time = datetime.now()
+    recovered = 0
+    failed = 0
+    expired = 0
+    
+    try:
+        for task_id in os.listdir(TASKS_DIR):
+            task_dir = get_task_dir(task_id)
+            metadata_path = os.path.join(task_dir, "metadata.json")
+            
+            if not os.path.exists(metadata_path):
+                # Пустая директория без метаданных - удаляем
+                try:
+                    if os.path.isdir(task_dir):
+                        import shutil
+                        shutil.rmtree(task_dir, ignore_errors=True)
+                        logger.info(f"Removed empty task directory: {task_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove empty dir {task_id}: {e}")
+                continue
+                
+            try:
+                metadata = load_task_metadata(task_id)
+                if not metadata:
+                    continue
+                
+                status = metadata.get('status')
+                
+                # Проверяем только processing задачи
+                if status not in ('processing', 'queued'):
+                    continue
+                
+                # Проверяем истек ли TTL
+                expires_at_str = metadata.get('expires_at')
+                if not expires_at_str:
+                    # Старая задача без expires_at - добавляем на основе created_at
+                    created_at = datetime.fromisoformat(metadata.get('created_at', current_time.isoformat()))
+                    expires_at = created_at + timedelta(hours=TASK_TTL_HOURS)
+                else:
+                    expires_at = datetime.fromisoformat(expires_at_str)
+                
+                # Если задача истекла → failed
+                if current_time > expires_at:
+                    metadata['status'] = 'failed'
+                    metadata['error'] = f'Task expired (TTL {TASK_TTL_HOURS}h exceeded)'
+                    metadata['failed_at'] = current_time.isoformat()
+                    save_task_metadata(task_id, metadata)
+                    update_task(task_id, {
+                        'status': 'failed',
+                        'error': metadata['error'],
+                        'failed_at': metadata['failed_at']
+                    })
+                    logger.warning(f"Task {task_id}: Expired (TTL exceeded)")
+                    expired += 1
+                    continue
+                
+                # Проверяем есть ли уже output файлы (префиксы: short_, video_, audio_)
+                files = os.listdir(task_dir)
+                has_output = any(f.startswith(('short_', 'video_', 'audio_')) for f in files)
+                
+                if has_output:
+                    # Результат есть, но статус не обновлен
+                    # Такое могло случиться если упали после обработки но до сохранения metadata
+                    logger.info(f"Task {task_id}: Has output but status={status}, skipping recovery")
+                    continue
+                
+                # Проверяем количество попыток
+                retry_count = metadata.get('retry_count', 0)
+                
+                if retry_count >= MAX_TASK_RETRIES:
+                    # Слишком много попыток
+                    metadata['status'] = 'failed'
+                    metadata['error'] = f'Max retries exceeded ({retry_count}/{MAX_TASK_RETRIES})'
+                    metadata['failed_at'] = current_time.isoformat()
+                    save_task_metadata(task_id, metadata)
+                    update_task(task_id, {
+                        'status': 'failed',
+                        'error': metadata['error'],
+                        'failed_at': metadata['failed_at']
+                    })
+                    logger.warning(f"Task {task_id}: Max retries exceeded ({retry_count})")
+                    failed += 1
+                    continue
+                
+                # Удаляем временные файлы перед retry
+                for filename in files:
+                    if filename.startswith('temp_'):
+                        try:
+                            os.remove(os.path.join(task_dir, filename))
+                            logger.info(f"Task {task_id}: Deleted temp file: {filename}")
+                        except Exception as e:
+                            logger.warning(f"Task {task_id}: Failed to delete {filename}: {e}")
+                
+                # Проверяем есть ли входной файл и валиден ли он
+                has_valid_input = False
+                input_file = None
+                for filename in files:
+                    if filename.startswith('input_'):
+                        input_path = os.path.join(task_dir, filename)
+                        if os.path.exists(input_path) and os.path.getsize(input_path) > 1024:  # > 1KB
+                            has_valid_input = True
+                            input_file = input_path
+                            logger.info(f"Task {task_id}: Found valid input file: {filename}")
+                            break
+                
+                # Перезапускаем задачу
+                logger.info(f"Task {task_id}: Recovering (retry {retry_count + 1}/{MAX_TASK_RETRIES})")
+                metadata['retry_count'] = retry_count + 1
+                metadata['last_retry_at'] = current_time.isoformat()
+                metadata['status'] = 'processing'
+                save_task_metadata(task_id, metadata)
+                
+                # Обновляем статус в хранилище
+                update_task(task_id, {
+                    'status': 'processing',
+                    'retry_count': retry_count + 1,
+                    'last_retry_at': metadata['last_retry_at']
+                })
+                
+                # Запускаем обработку в фоне
+                # Если входной файл есть и валиден - не перезагружаем
+                # Иначе process_video_pipeline_background сам загрузит
+                video_url = metadata.get('video_url')
+                operations = metadata.get('operations', [])
+                webhook_url = metadata.get('webhook_url')
+                
+                if not has_valid_input:
+                    logger.info(f"Task {task_id}: No valid input file, will re-download")
+                
+                thread = threading.Thread(
+                    target=process_video_pipeline_background,
+                    args=(task_id, video_url, operations, webhook_url),
+                    daemon=True
+                )
+                thread.start()
+                
+                recovered += 1
+                
+                # Добавляем задержку между попытками
+                if RETRY_DELAY_SECONDS > 0:
+                    import time
+                    time.sleep(RETRY_DELAY_SECONDS)
+                
+            except Exception as e:
+                logger.error(f"Task {task_id}: Recovery error - {e}")
+                failed += 1
+                
+    except Exception as e:
+        logger.error(f"Recovery scan error: {e}")
+    
+    logger.info(f"Recovery scan complete: recovered={recovered}, expired={expired}, failed={failed}")
+    logger.info("=" * 60)
+
+def schedule_recovery():
+    """Запускает recovery периодически если RECOVERY_INTERVAL_MINUTES > 0"""
+    if RECOVERY_INTERVAL_MINUTES > 0:
+        import time
+        logger.info(f"Recovery scheduler started (interval: {RECOVERY_INTERVAL_MINUTES} min)")
+        while True:
+            time.sleep(RECOVERY_INTERVAL_MINUTES * 60)
+            recover_stuck_tasks()
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=False)
