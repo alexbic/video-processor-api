@@ -743,6 +743,7 @@ class MakeShortOperation(VideoOperation):
             'text_align': title_raw.get('text_align', 'center'),
             'box': title_raw.get('box', False),
             'boxcolor': title_raw.get('boxcolor', 'black@0.5'),
+            'boxborderw': title_raw.get('boxborderw', 10),
             'x': title_raw.get('x', 'center'),
             'y': title_raw.get('y', 150),
             'start_time': title_raw.get('start_time', 0.5),
@@ -762,6 +763,9 @@ class MakeShortOperation(VideoOperation):
             'bordercolor': subtitles_raw.get('bordercolor', 'black'),
             'borderw': subtitles_raw.get('borderw', 3),
             'text_align': subtitles_raw.get('text_align', 'center'),
+            'box': subtitles_raw.get('box', False),
+            'boxcolor': subtitles_raw.get('boxcolor', 'black@0.5'),
+            'boxborderw': subtitles_raw.get('boxborderw', 10),
             'y': subtitles_raw.get('y', 'h-200')
         }
 
@@ -841,6 +845,13 @@ class MakeShortOperation(VideoOperation):
                 f"alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
             ])
 
+            # Добавляем box (плашку) если включено
+            if title_config.get('box'):
+                drawtext_params.append(f"box=1")
+                drawtext_params.append(f"boxcolor={title_config['boxcolor']}")
+                if 'boxborderw' in title_config:
+                    drawtext_params.append(f"boxborderw={title_config['boxborderw']}")
+
             video_filter += f",drawtext={':'.join(drawtext_params)}"
 
         # Динамические субтитры
@@ -898,6 +909,13 @@ class MakeShortOperation(VideoOperation):
                         f"y={subtitle_config['y']}",
                         f"enable='between(t\\,{sub_start}\\,{sub_end})'"
                     ])
+
+                    # Добавляем box (плашку) для субтитров если включено
+                    if subtitle_config.get('box'):
+                        sub_drawtext_params.append(f"box=1")
+                        sub_drawtext_params.append(f"boxcolor={subtitle_config['boxcolor']}")
+                        if subtitle_config.get('boxborderw'):
+                            sub_drawtext_params.append(f"boxborderw={subtitle_config['boxborderw']}")
 
                     video_filter += f",drawtext={':'.join(sub_drawtext_params)}"
 
