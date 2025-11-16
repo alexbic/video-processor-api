@@ -5,6 +5,7 @@
 [![Docker Hub](https://img.shields.io/docker/v/alexbic/video-processor-api?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/alexbic/video-processor-api)
 [![GitHub](https://img.shields.io/badge/GitHub-alexbic/video--processor--api-blue?logo=github)](https://github.com/alexbic/video-processor-api)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue)](RELEASE_NOTES_v1.1.0.md)
 
 **English** | [Русский](README.ru.md)
 
@@ -22,6 +23,8 @@
 - ⚡ **Async Processing** - фоновая обработка с отслеживанием статуса
 - 🔠 **Custom Fonts** - поддержка загрузки своих шрифтов (.ttf/.otf)
 - 🐳 **Redis Support** - multi-worker режим для высоких нагрузок
+- 🛡️ **Input Validation** - автоматическая проверка медиа-файлов перед обработкой
+- 🔗 **Full URLs** - абсолютные ссылки во всех ответах для n8n/внешних интеграций
 
 ---
 
@@ -687,9 +690,11 @@ curl -X POST http://localhost:5001/process_video \
   "task_id": "abc123-def456",
   "status": "processing",
   "message": "Task created and processing in background",
-  "check_status_url": "/task_status/abc123-def456"
+  "check_status_url": "http://video-processor:5001/task_status/abc123-def456"
 }
 ```
+
+**Note (v1.1.0):** `check_status_url` теперь всегда полный URL (включая схему и хост), готовый для использования в n8n и других системах.
 
 **Проверка статуса задачи:**
 ```bash
@@ -936,6 +941,7 @@ curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk002
 |----------|---------|-------------|
 | `API_KEY` | `None` | Bearer token for authentication. If set, enables Public API mode with protected endpoints. If not set, runs in Internal mode without authentication. |
 | `PUBLIC_BASE_URL` | `None` | External base URL for download links (e.g., `https://domain.com/api`). Only used when `API_KEY` is set. Ignored in Internal mode. |
+| `INTERNAL_BASE_URL` | `http://video-processor:5001` | Internal Docker network URL for background tasks. Used when generating URLs in webhooks/metadata without request context. **New in v1.1.0** |
 | `WORKERS` | `1` | Number of gunicorn workers (use 2+ with Redis for multi-worker mode) |
 | `REDIS_HOST` | `redis` | Redis hostname for multi-worker task storage |
 | `REDIS_PORT` | `6379` | Redis port |
@@ -966,6 +972,7 @@ volumes:
 - **Input/Temp files**: Удаляются сразу после завершения обработки
 - **Output files**: Хранятся 2 часа в `/app/tasks/{task_id}/output/`
 - **Redis Tasks**: TTL = 24 часа
+- **Metadata.json**: Хранится 2 часа и используется как fallback для `/task_status` когда задачи нет в Redis/memory **(v1.1.0)**
 
 ---
 
@@ -981,6 +988,9 @@ volumes:
 - Метаданные: `metadata_url` содержит полный снимок результата — удобно для кэширования.
 - Вебхуки: обрабатывайте оба события — `task_completed` и `task_failed`.
 - TTL: файлы хранятся 2 часа; скачайте/переложите в постоянное хранилище сразу после `completed`.
+- **Входные URL** **(v1.1.0)**: Передавайте прямые ссылки на медиа-файлы, не на HTML-страницы. API автоматически проверяет Content-Type и отклоняет некорректные файлы с понятными ошибками.
+- **Полные URL** **(v1.1.0)**: Все URL в ответах (`check_status_url`, `download_url`, `metadata_url`) теперь абсолютные, готовые для использования в n8n и внешних системах.
+- **404 защита** **(v1.1.0)**: Endpoint `/task_status` использует filesystem fallback — даже если задача отсутствует в Redis/memory, статус будет прочитан из `metadata.json`.
 
 ### Local Build
 
