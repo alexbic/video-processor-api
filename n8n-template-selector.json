@@ -1,0 +1,85 @@
+{
+  "name": "Video Template Selector",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "start-node",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const templates = [\n  {\n    name: \"Classic White\",\n    title: {fontsize: 72, fontcolor: \"black\", bordercolor: \"white\", borderw: 8, box: 1, boxcolor: \"white@0.85\", boxborderw: 20, y: 250},\n    sub: {fontsize: 68, fontcolor: \"black\", bordercolor: \"white\", borderw: 10, y: \"h-350\"}\n  },\n  {\n    name: \"Yellow Energy\",\n    title: {fontsize: 80, fontcolor: \"black\", bordercolor: \"yellow\", borderw: 4, box: 1, boxcolor: \"yellow@0.95\", boxborderw: 30, y: 220},\n    sub: {fontsize: 64, fontcolor: \"#FFFF00\", bordercolor: \"#FFD700\", borderw: 12, y: \"h-320\"}\n  },\n  {\n    name: \"Neon Green\",\n    title: {fontsize: 76, fontcolor: \"white\", bordercolor: \"#00FF00\", borderw: 6, box: 1, boxcolor: \"black@0.80\", boxborderw: 25, y: 240},\n    sub: {fontsize: 66, fontcolor: \"#00FF00\", bordercolor: \"#006400\", borderw: 14, y: \"h-340\"}\n  },\n  {\n    name: \"Red Alert\",\n    title: {fontsize: 78, fontcolor: \"white\", bordercolor: \"red\", borderw: 5, box: 1, boxcolor: \"red@0.90\", boxborderw: 28, y: 230},\n    sub: {fontsize: 70, fontcolor: \"#FF6B6B\", bordercolor: \"#8B0000\", borderw: 10, y: \"h-330\"}\n  },\n  {\n    name: \"Blue Premium\",\n    title: {fontsize: 74, fontcolor: \"white\", bordercolor: \"#00BFFF\", borderw: 6, box: 1, boxcolor: \"#0066CC@0.88\", boxborderw: 26, y: 235},\n    sub: {fontsize: 67, fontcolor: \"#87CEEB\", bordercolor: \"#00008B\", borderw: 11, y: \"h-345\"}\n  }\n];\n\nconst tpl = templates[Math.floor(Math.random() * templates.length)];\nconst data = $input.first().json;\n\nreturn {\n  json: {\n    video_url: data.source_video_url,\n    execution: \"async\",\n    operations: [{\n      type: \"make_short\",\n      start_time: data.start,\n      end_time: data.end,\n      crop_mode: \"letterbox\",\n      letterbox_config: {blur_radius: 20},\n      title: {\n        text: data.title,\n        font: \"DejaVu Sans Bold\",\n        fontsize: tpl.title.fontsize,\n        fontcolor: tpl.title.fontcolor,\n        bordercolor: tpl.title.bordercolor,\n        borderw: tpl.title.borderw,\n        box: tpl.title.box,\n        boxcolor: tpl.title.boxcolor,\n        boxborderw: tpl.title.boxborderw,\n        x: \"center\",\n        y: tpl.title.y,\n        start_time: 0.0,\n        duration: 5,\n        fade_in: 0.3,\n        fade_out: 0.5\n      },\n      subtitles: {\n        items: data.subtitles,\n        font: \"Roboto\",\n        fontsize: tpl.sub.fontsize,\n        fontcolor: tpl.sub.fontcolor,\n        bordercolor: tpl.sub.bordercolor,\n        borderw: tpl.sub.borderw,\n        box: 0,\n        y: tpl.sub.y\n      },\n      generate_thumbnail: true,\n      thumbnail_timestamp: 0.5\n    }],\n    client_meta: data.client_meta || {},\n    _template_style: tpl.name\n  }\n};"
+      },
+      "id": "code-node",
+      "name": "Random Template Selector",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://video-processor:5001/process_video",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        },
+        "jsonBody": "={{ $json }}"
+      },
+      "id": "http-node",
+      "name": "Video Processor API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [
+          {
+            "node": "Random Template Selector",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Random Template Selector": {
+      "main": [
+        [
+          {
+            "node": "Video Processor API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
