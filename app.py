@@ -181,26 +181,16 @@ os.makedirs(TASKS_DIR, exist_ok=True)
 
 # Вспомогательные функции для работы с задачами
 def get_task_dir(task_id: str) -> str:
-    """Получить директорию задачи"""
+    """Получить директорию задачи (все файлы хранятся здесь)"""
     return os.path.join(TASKS_DIR, task_id)
 
-def get_task_input_dir(task_id: str) -> str:
-    """Получить директорию для входных файлов задачи"""
-    return os.path.join(TASKS_DIR, task_id, "input")
-
-def get_task_temp_dir(task_id: str) -> str:
-    """Получить директорию для временных файлов задачи"""
-    return os.path.join(TASKS_DIR, task_id, "temp")
-
 def get_task_output_dir(task_id: str) -> str:
-    """Получить директорию для выходных файлов задачи"""
-    return os.path.join(TASKS_DIR, task_id, "output")
+    """Получить директорию для выходных файлов задачи (совпадает с task_dir)"""
+    return get_task_dir(task_id)
 
 def create_task_dirs(task_id: str):
-    """Создать структуру директорий для задачи"""
-    os.makedirs(get_task_input_dir(task_id), exist_ok=True)
-    os.makedirs(get_task_temp_dir(task_id), exist_ok=True)
-    os.makedirs(get_task_output_dir(task_id), exist_ok=True)
+    """Создать директорию для задачи"""
+    os.makedirs(get_task_dir(task_id), exist_ok=True)
 
 def save_task_metadata(task_id: str, metadata: dict):
     """Сохранить metadata.json для задачи"""
@@ -523,12 +513,10 @@ def cleanup_old_files():
             if not os.path.isdir(task_path):
                 continue
             
-            # Проверяем время модификации папки output
-            output_dir = get_task_output_dir(task_id)
-            if os.path.exists(output_dir):
-                if current_time - os.path.getmtime(output_dir) > 7200:  # 2 часа
-                    shutil.rmtree(task_path)
-                    logger.info(f"Cleaned up old task: {task_id}")
+            # Проверяем время создания директории задачи
+            if current_time - os.path.getctime(task_path) > 7200:  # 2 часа
+                shutil.rmtree(task_path, ignore_errors=True)
+                logger.info(f"Cleaned up old task: {task_id}")
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
 
@@ -1431,7 +1419,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
     # Скачиваем исходное видео в input/ с валидацией
     input_filename = f"{uuid.uuid4()}.mp4"
-    input_path = os.path.join(get_task_input_dir(task_id), input_filename)
+    input_path = os.path.join(get_task_dir(task_id), f"input_{input_filename}")
 
     ok, msg = download_media_with_validation(video_url, input_path)
     if not ok:
@@ -1452,12 +1440,23 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
         # Генерируем временный выходной файл
         if idx == len(operations) - 1:
-            # Последняя операция - финальный файл в output/
-            output_filename = f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
-            output_path = os.path.join(get_task_output_dir(task_id), output_filename)
+            # Последняя операция - финальный файл с семантическим префиксом
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            # Определяем префикс в зависимости от типа операции
+            if op_type == 'to_shorts':
+                prefix = 'short'
+            elif op_type == 'cut':
+                prefix = 'video'
+            elif op_type == 'extract_audio':
+                prefix = 'audio'  # хотя extract_audio сам формирует имя
+            else:
+                prefix = 'processed'
+            
+            output_filename = f"{prefix}_{timestamp}.mp4"
+            output_path = os.path.join(get_task_dir(task_id), output_filename)
         else:
-            # Промежуточный файл в temp/
-            output_path = os.path.join(get_task_temp_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
+            # Промежуточный файл
+            output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
         logger.info(f"Task {task_id}: Executing operation {idx+1}/{len(operations)}: {op_type}")
 
@@ -1495,12 +1494,18 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
     # Удаляем временные файлы
     import shutil
-    input_dir = get_task_input_dir(task_id)
-    temp_dir = get_task_temp_dir(task_id)
-    if os.path.exists(input_dir):
-        shutil.rmtree(input_dir)
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
+    task_dir = get_task_dir(task_id)
+    
+    # Удаляем входные и временные файлы по префиксу
+    if os.path.exists(task_dir):
+        for filename in os.listdir(task_dir):
+            if filename.startswith('input_') or filename.startswith('temp_'):
+                file_path = os.path.join(task_dir, filename)
+                try:
+                    os.remove(file_path)
+                    logger.info(f"Task {task_id}: Deleted temporary file: {filename}")
+                except Exception as e:
+                    logger.warning(f"Task {task_id}: Failed to delete {filename}: {e}")
 
     # Собираем информацию о всех output файлах
     files_info = []
@@ -1527,7 +1532,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             os.chmod(file_path, 0o644)
             file_size = os.path.getsize(file_path)
             filename = os.path.basename(file_path)
-            download_path = f"/download/{task_id}/output/{filename}"
+            download_path = f"/download/{task_id}/{filename}"
             
             entry = {
                 "filename": filename,
@@ -1604,9 +1609,9 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         
         update_task(task_id, {'status': 'processing', 'progress': 5})
 
-        # Скачиваем исходное видео в input директорию
+        # Скачиваем исходное видео
         input_filename = f"{uuid.uuid4()}.mp4"
-        input_path = os.path.join(get_task_input_dir(task_id), input_filename)
+        input_path = os.path.join(get_task_dir(task_id), f"input_{input_filename}")
 
         logger.info(f"Task {task_id}: Downloading video from {video_url}")
         ok, msg = download_media_with_validation(video_url, input_path)
@@ -1630,12 +1635,12 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
             # Генерируем выходной файл
             if idx == total_ops - 1:
-                # Последняя операция - в output директорию
+                # Последняя операция
                 output_filename = f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id[:8]}.mp4"
-                output_path = os.path.join(get_task_output_dir(task_id), output_filename)
+                output_path = os.path.join(get_task_dir(task_id), f"output_{output_filename}")
             else:
-                # Промежуточный файл - в temp директорию
-                output_path = os.path.join(get_task_temp_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
+                # Промежуточный файл
+                output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
             logger.info(f"Task {task_id}: Executing operation {idx+1}/{total_ops}: {op_type}")
 
@@ -1718,8 +1723,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                     'filename': filename,
                     'file_size': file_size,
                     'file_size_mb': round(file_size / (1024 * 1024), 2),
-                    'download_path': f"/download/{task_id}/output/{filename}",
-                    'download_url': build_absolute_url_background(f"/download/{task_id}/output/{filename}")
+                    'download_path': f"/download/{task_id}/{filename}",
+                    'download_url': build_absolute_url_background(f"/download/{task_id}/{filename}")
                 }
                 if filename in chunk_map:
                     entry.update(chunk_map[filename])
