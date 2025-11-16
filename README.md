@@ -17,6 +17,7 @@
 - 📦 **Letterbox Mode** - convert horizontal videos to vertical format (1080x1920) with blurred background
 - 📝 **Dynamic Subtitles** - with custom fonts, colors, and positioning
 - 🎨 **Text Overlays** - titles with fade effects
+- 🖼️ **Auto Thumbnails** - automatic thumbnail generation from Shorts videos
 - ✂️ **Video Cutting** - by timecodes with Shorts conversion
 - 🎵 **Audio Extraction** - from video files
 - 📡 **Webhooks** - completion notifications with retry logic
@@ -255,7 +256,9 @@ curl -X POST http://localhost:5001/process_video \
           "font": "Roboto",
           "fontsize": 64,
           "fontcolor": "yellow"
-        }
+        },
+        "generate_thumbnail": true,
+        "thumbnail_timestamp": 0.5
       }
     ],
     "webhook_url": "https://n8n.example.com/webhook/video-completed"
@@ -264,8 +267,17 @@ curl -X POST http://localhost:5001/process_video \
 
 **Available operations:**
 - `cut_video` - cut video by timecodes
-- `make_short` - convert to Shorts format (letterbox + title + subtitles); supports `start_time`/`end_time` for automatic cutting
+- `make_short` - convert to Shorts format (letterbox + title + subtitles); supports `start_time`/`end_time` for automatic cutting; auto-generates thumbnails
 - `extract_audio` - extract audio track
+
+**Thumbnail Generation:**
+The `make_short` operation automatically generates a thumbnail (JPEG image) from the rendered video:
+- **Default**: `generate_thumbnail: true` (enabled by default)
+- **Timestamp**: `thumbnail_timestamp: 0.5` (extracts frame at 0.5 seconds)
+- **Quality**: High quality JPEG (q:v 2)
+- **Resolution**: Same as video (1080x1920 for Shorts)
+- **Use case**: Perfect for YouTube/TikTok custom thumbnails, showing the title overlay
+- **Disable**: Set `generate_thumbnail: false` to skip thumbnail creation
 
 ---
 
@@ -280,14 +292,21 @@ curl -X POST http://localhost:5001/process_video \
   "video_url": "https://example.com/video.mp4",
   "output_files": [
     {
-      "filename": "output.mp4",
+      "filename": "short_20251116_210049.mp4",
       "file_size": 16040960,
       "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output.mp4",
-      "download_path": "/download/abc123/output.mp4"
+      "download_url": "http://video-processor:5001/download/abc123/short_20251116_210049.mp4",
+      "download_path": "/download/abc123/short_20251116_210049.mp4"
+    },
+    {
+      "filename": "short_20251116_210049_thumbnail.jpg",
+      "file_size": 211762,
+      "file_size_mb": 0.2,
+      "download_url": "http://video-processor:5001/download/abc123/short_20251116_210049_thumbnail.jpg",
+      "download_path": "/download/abc123/short_20251116_210049_thumbnail.jpg"
     }
   ],
-  "total_files": 1,
+  "total_files": 2,
   "is_chunked": false,
   "metadata_url": "/download/abc123/metadata.json",
   "completed_at": "2025-01-08T10:05:23"

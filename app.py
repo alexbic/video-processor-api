@@ -698,7 +698,9 @@ class MakeShortOperation(VideoOperation):
                 'crop_mode': 'center',
                 'letterbox_config': {},
                 'title': {},
-                'subtitles': {}
+                'subtitles': {},
+                'generate_thumbnail': True,  # Автоматическая генерация превью
+                'thumbnail_timestamp': 0.5   # Время для извлечения превью (секунды)
             }
         )
 
@@ -937,7 +939,36 @@ class MakeShortOperation(VideoOperation):
         if result.returncode != 0:
             return False, f"FFmpeg error: {result.stderr}"
 
-        return True, "Converted to Shorts format (1080x1920)"
+        # Генерация превью если включено
+        thumbnail_path = None
+        if params.get('generate_thumbnail', True):
+            thumbnail_timestamp = params.get('thumbnail_timestamp', 0.5)
+            thumbnail_path = output_path.replace('.mp4', '_thumbnail.jpg')
+
+            thumbnail_cmd = [
+                'ffmpeg',
+                '-ss', str(thumbnail_timestamp),
+                '-i', output_path,
+                '-vframes', '1',
+                '-q:v', '2',  # Высокое качество JPEG (2-5 диапазон)
+                '-y',
+                thumbnail_path
+            ]
+
+            thumbnail_result = subprocess.run(thumbnail_cmd, capture_output=True, text=True)
+            if thumbnail_result.returncode == 0 and os.path.exists(thumbnail_path):
+                logger.info(f"Generated thumbnail: {os.path.basename(thumbnail_path)} at {thumbnail_timestamp}s")
+            else:
+                logger.warning(f"Failed to generate thumbnail: {thumbnail_result.stderr}")
+                thumbnail_path = None
+
+        # Возвращаем список файлов (видео + превью если создано)
+        output_list = [output_path]
+        if thumbnail_path and os.path.exists(thumbnail_path):
+            output_list.append(thumbnail_path)
+            return True, f"Converted to Shorts format (1080x1920) with thumbnail", output_list
+        else:
+            return True, "Converted to Shorts format (1080x1920)", output_list
 
 
 class ExtractAudioOperation(VideoOperation):
