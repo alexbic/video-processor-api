@@ -1,0 +1,142 @@
+{
+  "instructions": "Инструкция по использованию в n8n",
+  "workflow": [
+    {
+      "step": 1,
+      "node_type": "Set Node",
+      "node_name": "Load Templates",
+      "description": "Создайте 5 Set Node с разными конфигурациями",
+      "note": "Каждый Set Node должен устанавливать поле 'template_config' с полной конфигурацией"
+    },
+    {
+      "step": 2,
+      "node_type": "Code Node",
+      "node_name": "Random Selector",
+      "code": "см. n8n-random-template-selector.js"
+    },
+    {
+      "step": 3,
+      "node_type": "HTTP Request",
+      "node_name": "Video Processor API",
+      "method": "POST",
+      "url": "http://video-processor:5001/process_video",
+      "body": "{{ $json.request_body }}"
+    }
+  ],
+  "templates": [
+    {
+      "set_node_name": "Template 1: Classic White",
+      "fields_to_set": {
+        "template_name": "Classic White",
+        "title_font": "DejaVu Sans Bold",
+        "title_fontsize": 72,
+        "title_fontcolor": "black",
+        "title_bordercolor": "white",
+        "title_borderw": 8,
+        "title_box": 1,
+        "title_boxcolor": "white@0.85",
+        "title_boxborderw": 20,
+        "title_y": 250,
+        "subtitle_font": "Roboto",
+        "subtitle_fontsize": 68,
+        "subtitle_fontcolor": "black",
+        "subtitle_bordercolor": "white",
+        "subtitle_borderw": 10,
+        "subtitle_box": 0,
+        "subtitle_y": "h-350"
+      }
+    },
+    {
+      "set_node_name": "Template 2: Bright Yellow",
+      "fields_to_set": {
+        "template_name": "Bright Yellow Energy",
+        "title_font": "DejaVu Sans Bold",
+        "title_fontsize": 80,
+        "title_fontcolor": "black",
+        "title_bordercolor": "yellow",
+        "title_borderw": 4,
+        "title_box": 1,
+        "title_boxcolor": "yellow@0.95",
+        "title_boxborderw": 30,
+        "title_y": 220,
+        "subtitle_font": "Roboto",
+        "subtitle_fontsize": 64,
+        "subtitle_fontcolor": "#FFFF00",
+        "subtitle_bordercolor": "#FFD700",
+        "subtitle_borderw": 12,
+        "subtitle_box": 0,
+        "subtitle_y": "h-320"
+      }
+    },
+    {
+      "set_node_name": "Template 3: Neon Green",
+      "fields_to_set": {
+        "template_name": "Neon Green Cyber",
+        "title_font": "DejaVu Sans Bold",
+        "title_fontsize": 76,
+        "title_fontcolor": "white",
+        "title_bordercolor": "#00FF00",
+        "title_borderw": 6,
+        "title_box": 1,
+        "title_boxcolor": "black@0.80",
+        "title_boxborderw": 25,
+        "title_y": 240,
+        "subtitle_font": "Roboto",
+        "subtitle_fontsize": 66,
+        "subtitle_fontcolor": "#00FF00",
+        "subtitle_bordercolor": "#006400",
+        "subtitle_borderw": 14,
+        "subtitle_box": 0,
+        "subtitle_y": "h-340"
+      }
+    },
+    {
+      "set_node_name": "Template 4: Red Alert",
+      "fields_to_set": {
+        "template_name": "Red Alert Bold",
+        "title_font": "DejaVu Sans Bold",
+        "title_fontsize": 78,
+        "title_fontcolor": "white",
+        "title_bordercolor": "red",
+        "title_borderw": 5,
+        "title_box": 1,
+        "title_boxcolor": "red@0.90",
+        "title_boxborderw": 28,
+        "title_y": 230,
+        "subtitle_font": "Roboto",
+        "subtitle_fontsize": 70,
+        "subtitle_fontcolor": "#FF6B6B",
+        "subtitle_bordercolor": "#8B0000",
+        "subtitle_borderw": 10,
+        "subtitle_box": 0,
+        "subtitle_y": "h-330"
+      }
+    },
+    {
+      "set_node_name": "Template 5: Cool Blue",
+      "fields_to_set": {
+        "template_name": "Cool Blue Premium",
+        "title_font": "DejaVu Sans Bold",
+        "title_fontsize": 74,
+        "title_fontcolor": "white",
+        "title_bordercolor": "#00BFFF",
+        "title_borderw": 6,
+        "title_box": 1,
+        "title_boxcolor": "#0066CC@0.88",
+        "title_boxborderw": 26,
+        "title_y": 235,
+        "subtitle_font": "Roboto",
+        "subtitle_fontsize": 67,
+        "subtitle_fontcolor": "#87CEEB",
+        "subtitle_bordercolor": "#00008B",
+        "subtitle_borderw": 11,
+        "subtitle_box": 0,
+        "subtitle_y": "h-345"
+      }
+    }
+  ],
+  "alternative_approach": {
+    "description": "Упрощённый подход: один Code Node с выбором шаблона",
+    "code_node_example": "Смотрите файл: n8n-random-template-selector.js"
+  }
+}
