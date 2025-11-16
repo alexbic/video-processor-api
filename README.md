@@ -5,7 +5,7 @@
 [![Docker Hub](https://img.shields.io/docker/v/alexbic/video-processor-api?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/alexbic/video-processor-api)
 [![GitHub](https://img.shields.io/badge/GitHub-alexbic/video--processor--api-blue?logo=github)](https://github.com/alexbic/video-processor-api)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue)](RELEASE_NOTES_v1.1.0.md)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue)](RELEASE_NOTES_v1.2.0.md)
 
 **English** | [Русский](README.ru.md)
 
@@ -505,19 +505,25 @@ Polling recommendations:
 
 | Variable | Default | Description |
 | - | - | - |
+| **Authentication & URLs** |||
 | `API_KEY` | — | Enables public mode (Bearer required). When unset, internal mode (no auth). |
 | `PUBLIC_BASE_URL` | — | External base for absolute URLs (https://host/app). Used only if `API_KEY` is set. |
 | `INTERNAL_BASE_URL` | `http://video-processor:5001` | Base for background URL generation (webhooks, logs). |
+| **Worker Configuration** |||
 | `WORKERS` | `1` | Gunicorn workers. Use `>=2` only with Redis. |
+| **Redis Configuration** |||
 | `REDIS_HOST` | `redis` | Redis host for multi-worker task store. |
 | `REDIS_PORT` | `6379` | Redis port. |
 | `REDIS_DB` | `0` | Redis DB index. |
+| **Task Management** |||
+| `TASK_TTL_HOURS` | `2` | TTL for task files in /app/tasks. |
+| **Recovery System** |||
 | `RECOVERY_ENABLED` | `true` | Auto recovery scan at startup (and optionally periodic). |
 | `RECOVERY_INTERVAL_MINUTES` | `0` | Periodic recovery scan interval. `0` = only on startup. |
 | `MAX_TASK_RETRIES` | `3` | Max retries for stuck tasks before failing. |
 | `RETRY_DELAY_SECONDS` | `60` | Delay between recovery retries. |
-| `TASK_TTL_HOURS` | `2` | TTL for task files in /app/tasks. |
 | `RECOVERY_PUBLIC_ENABLED` | `false` | Enable public manual recovery endpoint `/recover/{task_id}`. |
+| **Client Metadata Limits** |||
 | `ALLOW_NESTED_JSON_IN_META` | `true` | Try to parse nested JSON strings in `client_meta`. |
 | `MAX_CLIENT_META_BYTES` | `16384` | Size limit for `client_meta` (bytes). |
 | `MAX_CLIENT_META_DEPTH` | `5` | Max nesting for `client_meta`. |
@@ -1017,6 +1023,161 @@ volumes:
 - **Output files**: Files with `short_*`, `video_*`, `audio_*` prefixes are stored for 2 hours in `/app/tasks/{task_id}/`
 - **Redis Tasks**: TTL = 24 hours
 - **Metadata.json**: Stored for 2 hours and used as fallback for `/task_status` when task is not in Redis/memory **(v1.1.0)**
+
+---
+
+## 🔍 Troubleshooting
+
+### Common Issues
+
+#### 1. FFmpeg errors with input files
+
+**Problem:** `Invalid data found when processing input` or `moov atom not found`
+
+**Solutions:**
+- Ensure `video_url` points directly to a media file, not an HTML page
+- API validates Content-Type automatically (rejects `text/html`, `application/json`)
+- Minimum file size: 100 KB
+- Supported formats: MP4, WebM, MPEG-TS
+
+#### 2. Redis connection issues
+
+**Problem:** `Could not connect to Redis`
+
+**Solutions:**
+- Check `REDIS_HOST` and `REDIS_PORT` environment variables
+- Verify Redis container is running: `docker ps | grep redis`
+- API automatically falls back to memory mode if Redis is unavailable
+- For multi-worker mode (2+ workers), Redis is required
+
+#### 3. Files not found after completion
+
+**Problem:** `404 File not found` when downloading
+
+**Solutions:**
+- Files auto-delete after 2 hours (configurable via `TASK_TTL_HOURS`)
+- Check task status first: `GET /task_status/{task_id}`
+- Download immediately after `status: "completed"`
+- Use `metadata.json` for file inventory
+
+#### 4. Webhook not received
+
+**Problem:** Webhook payload not arriving
+
+**Solutions:**
+- Check webhook URL is accessible from container
+- API retries 3 times with exponential backoff (1s, 2s, 4s)
+- Check container logs: `docker logs video-processor`
+- Verify webhook endpoint accepts POST requests
+
+#### 5. Task stuck in "processing" state
+
+**Problem:** Task never completes or fails
+
+**Solutions:**
+- Check recovery settings: `RECOVERY_ENABLED=true` (default)
+- Manual recovery: `GET /recover/{task_id}` (requires `RECOVERY_PUBLIC_ENABLED=true`)
+- Check container logs for FFmpeg errors
+- Verify video file is accessible and valid
+
+#### 6. Authentication errors
+
+**Problem:** `401 Unauthorized` or `Invalid API key`
+
+**Solutions:**
+- If `API_KEY` is set, all protected endpoints require `Authorization: Bearer <key>`
+- Protected endpoints: `/process_video`, `/tasks`, `/fonts`
+- Public endpoints (no auth): `/health`, `/task_status`, `/download`
+- If using internal Docker mode, unset `API_KEY` entirely
+
+#### 7. Download URLs not working externally
+
+**Problem:** URLs work internally but not from external systems
+
+**Solutions:**
+- Set `PUBLIC_BASE_URL` to your external domain (e.g., `https://domain.com/api`)
+- Requires `API_KEY` to be set (public mode)
+- Without `API_KEY`, `PUBLIC_BASE_URL` is ignored (internal mode)
+- Verify reverse proxy/CDN configuration
+
+#### 8. Custom fonts not recognized
+
+**Problem:** Font not found or default font used
+
+**Solutions:**
+- Mount fonts directory: `-v /path/to/fonts:/app/fonts/custom`
+- Restart container after adding fonts
+- Use exact font name: `GET /fonts` to list available fonts
+- Supported formats: .ttf, .otf
+- See [FONTS.md](FONTS.md) for detailed guide
+
+#### 9. Client metadata validation errors
+
+**Problem:** `client_meta validation failed` or `client_meta too large`
+
+**Solutions:**
+- Max size: 16 KB (JSON UTF-8)
+- Max depth: 5 levels
+- Max keys: 200 total
+- Max string length: 1000 characters
+- Max list length: 200 items
+- Use flat structure when possible
+
+#### 10. Task status returns 404
+
+**Problem:** `Task not found` for valid task_id
+
+**Solutions:**
+- Redis tasks expire after 24 hours
+- API uses filesystem fallback (reads `metadata.json`)
+- Task directories deleted after 2 hours (files + metadata)
+- Check `/app/tasks/{task_id}/` directory exists
+
+### Logging
+
+**View container logs:**
+```bash
+# Real-time logs
+docker logs -f video-processor
+
+# Last 100 lines
+docker logs --tail 100 video-processor
+
+# Logs with timestamps
+docker logs -t video-processor
+```
+
+**Common log patterns:**
+- `[INFO] Task {task_id} created` - Task started
+- `[INFO] Task {task_id} completed` - Task finished successfully
+- `[ERROR] FFmpeg error:` - Video processing error
+- `[WARNING] Webhook failed:` - Webhook delivery issue
+- `[INFO] Recovery started` - Automatic recovery triggered
+
+### Health Check
+
+**Verify service status:**
+```bash
+curl http://localhost:5001/health
+```
+
+**Healthy response:**
+```json
+{
+  "status": "healthy",
+  "service": "video-processor-api",
+  "storage_mode": "redis",
+  "redis_available": true,
+  "api_key_enabled": true,
+  "timestamp": "2025-11-16T10:00:00"
+}
+```
+
+**What to check:**
+- `status` should be `"healthy"`
+- `storage_mode`: `"redis"` (preferred) or `"memory"` (fallback)
+- `redis_available`: `true` for multi-worker support
+- `api_key_enabled`: matches your configuration
 
 ---
 
