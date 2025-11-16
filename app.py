@@ -221,41 +221,64 @@ def load_task_metadata(task_id: str) -> dict:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Log storage mode on startup
-logger.info(f"=" * 60)
-logger.info(f"Video Processor API starting...")
-logger.info(f"Storage mode: {STORAGE_MODE}")
-if STORAGE_MODE == "redis":
-    logger.info(f"Redis: {REDIS_HOST}:{REDIS_PORT} (db={REDIS_DB})")
-    logger.info(f"Multi-worker support: ENABLED")
-else:
-    logger.info(f"Redis: Not available")
-    logger.info(f"Multi-worker support: DISABLED (use --workers 1)")
-
-# Log API access mode
-if API_KEY_ENABLED:
-    # Публичный режим (API_KEY задан)
-    if PUBLIC_BASE_URL:
-        logger.info(f"Mode: PUBLIC API with external URLs")
-        logger.info(f"Base URL: {PUBLIC_BASE_URL}")
-        logger.info(f"Authentication: ENABLED (Bearer token required)")
+def log_startup_info():
+    """Выводит информацию о конфигурации сервиса при старте."""
+    logger.info("=" * 60)
+    logger.info("Video Processor API starting...")
+    logger.info(f"Storage mode: {STORAGE_MODE}")
+    if STORAGE_MODE == "redis":
+        logger.info(f"Redis: {REDIS_HOST}:{REDIS_PORT} (db={REDIS_DB})")
+        logger.info("Multi-worker support: ENABLED")
     else:
-        logger.info(f"Mode: PUBLIC API with internal URLs")
-        logger.info(f"Authentication: ENABLED (Bearer token required)")
-else:
-    # Внутренний режим (API_KEY не задан)
-    logger.info(f"Mode: INTERNAL (Docker network)")
-    if PUBLIC_BASE_URL:
-        logger.warning(f"=" * 60)
-        logger.warning(f"WARNING: PUBLIC_BASE_URL is set but API_KEY is not!")
-        logger.warning(f"PUBLIC_BASE_URL will be IGNORED: {PUBLIC_BASE_URL}")
-        logger.warning(f"To activate public mode with external URLs:")
-        logger.warning(f"  1. Generate API key: openssl rand -hex 32")
-        logger.warning(f"  2. Set API_KEY environment variable")
-        logger.warning(f"=" * 60)
-    logger.info(f"Authentication: DISABLED (internal network)")
+        logger.info("Redis: Not available")
+        logger.info("Multi-worker support: DISABLED (use --workers 1)")
 
-logger.info(f"=" * 60)
+    # Log API access mode
+    if API_KEY_ENABLED:
+        # Публичный режим (API_KEY задан)
+        if PUBLIC_BASE_URL:
+            logger.info("Mode: PUBLIC API with external URLs")
+            logger.info(f"Base URL: {PUBLIC_BASE_URL}")
+            logger.info("Authentication: ENABLED (Bearer token required)")
+        else:
+            logger.info("Mode: PUBLIC API with internal URLs")
+            logger.info("Authentication: ENABLED (Bearer token required)")
+    else:
+        # Внутренний режим (API_KEY не задан)
+        logger.info("Mode: INTERNAL (Docker network)")
+        if PUBLIC_BASE_URL:
+            logger.warning("=" * 60)
+            logger.warning("WARNING: PUBLIC_BASE_URL is set but API_KEY is not!")
+            logger.warning(f"PUBLIC_BASE_URL will be IGNORED: {PUBLIC_BASE_URL}")
+            logger.warning("To activate public mode with external URLs:")
+            logger.warning("  1. Generate API key: openssl rand -hex 32")
+            logger.warning("  2. Set API_KEY environment variable")
+            logger.warning("=" * 60)
+        logger.info("Authentication: DISABLED (internal network)")
+
+    # Отобразим число воркеров если задано
+    try:
+        workers_env = os.getenv('WORKERS')
+        if workers_env:
+            logger.info(f"Workers (gunicorn): {workers_env}")
+    except Exception:
+        pass
+
+    logger.info("=" * 60)
+
+def _log_startup_once():
+    """Логируем старт приложения один раз на контейнер (атомарный маркер в /tmp)."""
+    marker = "/tmp/video_processor_api_start_logged"
+    try:
+        fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        os.close(fd)
+        log_startup_info()
+    except FileExistsError:
+        # Уже логировали в этом контейнере — пропускаем
+        pass
+    except Exception:
+        # На всякий случай логируем, если не удалось создать маркер
+        log_startup_info()
 
 # ============================================
 # CLIENT META VALIDATION LIMITS
@@ -371,6 +394,9 @@ def validate_client_meta(client_meta):
         return False, f"client_meta serialization error: {e}"
 
     return True, None
+
+# Вызов логирования после определения всех констант — выводим один раз на контейнер
+_log_startup_once()
 
 # ============================================
 # INPUT DOWNLOAD + VALIDATION
