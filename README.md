@@ -118,7 +118,7 @@ curl -H "Authorization: Bearer your-api-key" \
 {
   "video_url": "https://example.com/video.mp4",
   "execution": "async",
-  "operations": [{"type": "to_shorts", "crop_mode": "letterbox"}],
+  "operations": [{"type": "make_short", "crop_mode": "letterbox"}],
   "client_meta": {
     "titles": {
       "tiktok": "Крутой ролик про AI",
@@ -164,7 +164,7 @@ Immediate echo:
 - `POST /process_video` — запуск pipeline (sync/async; `operations`, опционально `webhook_url`) **[требует API key]**
 - `GET /task_status/{task_id}` — статус задачи (`queued`/`processing`/`completed`/`error`) **[без авторизации]**
 - `GET /tasks` — последние задачи (для отладки) **[требует API key]**
-- `GET /download/{task_id}/output/{filename}` — скачать готовый файл **[без авторизации]**
+- `GET /download/{task_id}/{filename}` — скачать готовый файл **[без авторизации]**
 - `GET /download/{task_id}/metadata.json` — метаданные результата **[без авторизации]**
 
 ### Health Check
@@ -233,7 +233,7 @@ curl -X POST http://localhost:5001/process_video \
     "execution": "sync",
     "operations": [
       {
-        "type": "to_shorts",
+        "type": "make_short",
         "letterbox_config": {
           "width": 1080,
           "height": 1920,
@@ -283,8 +283,8 @@ curl -X POST http://localhost:5001/process_video \
       "filename": "output.mp4",
       "file_size": 16040960,
       "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output/output.mp4",
-      "download_path": "/download/abc123/output/output.mp4"
+      "download_url": "http://video-processor:5001/download/abc123/output.mp4",
+      "download_path": "/download/abc123/output.mp4"
     }
   ],
   "total_files": 1,
@@ -361,8 +361,8 @@ curl -X POST http://localhost:5001/process_video \
       "filename": "output_20250108_100523.mp4",
       "file_size": 16040960,
       "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output/output_20250108_100523.mp4",
-      "download_path": "/download/abc123/output/output_20250108_100523.mp4"
+      "download_url": "http://video-processor:5001/download/abc123/output_20250108_100523.mp4",
+      "download_path": "/download/abc123/output_20250108_100523.mp4"
     }
   ],
   "total_files": 1,
@@ -407,8 +407,8 @@ curl http://localhost:5001/task_status/abc123
       "filename": "output.mp4",
       "file_size": 16040960,
       "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output/output.mp4",
-      "download_path": "/download/abc123/output/output.mp4"
+      "download_url": "http://video-processor:5001/download/abc123/output.mp4",
+      "download_path": "/download/abc123/output.mp4"
     }
   ],
   "total_files": 1,
@@ -443,8 +443,8 @@ curl http://localhost:5001/task_status/abc123
       "filename": "output.mp4",
       "file_size": 16040960,
       "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output/output.mp4",
-      "download_path": "/download/abc123/output/output.mp4"
+      "download_url": "http://video-processor:5001/download/abc123/output.mp4",
+      "download_path": "/download/abc123/output.mp4"
     }
   ],
   "total_files": 1,
@@ -499,6 +499,48 @@ curl http://localhost:5001/task_status/abc123
 
 ---
 
+## ⚙️ Configuration
+
+### Environment Variables
+
+| Variable | Default | Description |
+| - | - | - |
+| `API_KEY` | — | Enables public mode (Bearer required). When unset, internal mode (no auth). |
+| `PUBLIC_BASE_URL` | — | External base for absolute URLs (https://host/app). Used only if `API_KEY` is set. |
+| `INTERNAL_BASE_URL` | `http://video-processor:5001` | Base for background URL generation (webhooks, logs). |
+| `WORKERS` | `1` | Gunicorn workers. Use `>=2` only with Redis. |
+| `REDIS_HOST` | `redis` | Redis host for multi-worker task store. |
+| `REDIS_PORT` | `6379` | Redis port. |
+| `REDIS_DB` | `0` | Redis DB index. |
+| `RECOVERY_ENABLED` | `true` | Auto recovery scan at startup (and optionally periodic). |
+| `RECOVERY_INTERVAL_MINUTES` | `0` | Periodic recovery scan interval. `0` = only on startup. |
+| `MAX_TASK_RETRIES` | `3` | Max retries for stuck tasks before failing. |
+| `RETRY_DELAY_SECONDS` | `60` | Delay between recovery retries. |
+| `TASK_TTL_HOURS` | `2` | TTL for task files in /app/tasks. |
+| `RECOVERY_PUBLIC_ENABLED` | `false` | Enable public manual recovery endpoint `/recover/{task_id}`. |
+| `ALLOW_NESTED_JSON_IN_META` | `true` | Try to parse nested JSON strings in `client_meta`. |
+| `MAX_CLIENT_META_BYTES` | `16384` | Size limit for `client_meta` (bytes). |
+| `MAX_CLIENT_META_DEPTH` | `5` | Max nesting for `client_meta`. |
+| `MAX_CLIENT_META_KEYS` | `200` | Max keys in `client_meta` object. |
+| `MAX_CLIENT_META_STRING_LENGTH` | `1000` | Max length of string values. |
+| `MAX_CLIENT_META_LIST_LENGTH` | `200` | Max list length. |
+
+Notes:
+- With `API_KEY` set + `PUBLIC_BASE_URL` defined → service exposes absolute URLs and requires Bearer token.
+- Without `API_KEY` → internal mode suitable for Docker network usage (no auth).
+- `check_status_url` is always absolute in async responses.
+
+### Manual Recovery (optional)
+
+- Endpoint: `GET/POST /recover/{task_id}`
+- Enable via `RECOVERY_PUBLIC_ENABLED=true` (use only in trusted network)
+- Optional query: `force=1` to ignore expired TTL
+
+Response:
+```json
+{ "task_id": "...", "ok": true, "message": "Recovery started", "status": "processing", "retry_count": 1 }
+```
+
 ## 📖 Examples
 
 ### Example 1: Shorts с автоматической нарезкой (start_time/end_time)
@@ -509,7 +551,7 @@ curl http://localhost:5001/task_status/abc123
   "execution": "sync",
   "operations": [
     {
-      "type": "to_shorts",
+      "type": "make_short",
       "start_time": 10.5,
       "end_time": 70.0,
       "crop_mode": "letterbox",
@@ -546,7 +588,7 @@ curl http://localhost:5001/task_status/abc123
   "execution": "sync",
   "operations": [
     {
-      "type": "to_shorts",
+      "type": "make_short",
       "letterbox_config": {
         "width": 1080,
         "height": 1920,
@@ -565,7 +607,7 @@ curl http://localhost:5001/task_status/abc123
   "execution": "async",
   "operations": [
     {
-      "type": "to_shorts",
+      "type": "make_short",
       "letterbox_config": {"width": 1080, "height": 1920, "color": "#1a1a1a"},
       "title": {
         "text": "Amazing Content",
@@ -598,7 +640,7 @@ curl http://localhost:5001/task_status/abc123
   "execution": "sync",
   "operations": [
     {
-      "type": "cut",
+      "type": "cut_video",
       "start_time": "00:01:30",
       "end_time": "00:02:00"
     }
@@ -614,12 +656,12 @@ curl http://localhost:5001/task_status/abc123
   "execution": "async",
   "operations": [
     {
-      "type": "cut",
+      "type": "cut_video",
       "start_time": "00:00:10",
       "end_time": "00:01:00"
     },
     {
-      "type": "to_shorts",
+      "type": "make_short",
       "letterbox_config": {"width": 1080, "height": 1920},
       "title": {"text": "Episode 1", "fontsize": 70}
     }
@@ -655,8 +697,8 @@ curl -X POST http://localhost:5001/process_video \
       "filename": "audio_20251112_194523.mp3",
       "file_size": 5048576,
       "file_size_mb": 4.8,
-      "download_url": "http://localhost:5001/download/abc123-def456/output/audio_20251112_194523.mp3",
-      "download_path": "/download/abc123-def456/output/audio_20251112_194523.mp3"
+      "download_url": "http://localhost:5001/download/abc123-def456/audio_20251112_194523.mp3",
+      "download_path": "/download/abc123-def456/audio_20251112_194523.mp3"
     }
   ],
   "total_files": 1,
@@ -712,8 +754,8 @@ curl http://localhost:5001/task_status/abc123-def456
       "filename": "audio_20251112_194523.mp3",
       "file_size": 5048576,
       "file_size_mb": 4.8,
-      "download_url": "http://video-processor:5001/download/abc123-def456/output/audio_20251112_194523.mp3",
-      "download_path": "/download/abc123-def456/output/audio_20251112_194523.mp3"
+      "download_url": "http://video-processor:5001/download/abc123-def456/audio_20251112_194523.mp3",
+      "download_path": "/download/abc123-def456/audio_20251112_194523.mp3"
     }
   ],
   "total_files": 1,
@@ -735,8 +777,8 @@ curl http://localhost:5001/task_status/abc123-def456
       "filename": "audio_20251112_194523.mp3",
       "file_size": 5048576,
       "file_size_mb": 4.8,
-      "download_url": "http://video-processor:5001/download/abc123-def456/output/audio_20251112_194523.mp3",
-      "download_path": "/download/abc123-def456/output/audio_20251112_194523.mp3"
+      "download_url": "http://video-processor:5001/download/abc123-def456/audio_20251112_194523.mp3",
+      "download_path": "/download/abc123-def456/audio_20251112_194523.mp3"
     }
   ],
   "total_files": 1,
@@ -759,7 +801,7 @@ curl http://localhost:5001/task_status/abc123-def456
   "execution": "async",
   "operations": [
     {
-      "type": "cut",
+      "type": "cut_video",
       "start_time": "00:01:30",
       "end_time": "00:02:30"
     },
@@ -830,24 +872,24 @@ curl http://localhost:5001/task_status/abc123-def456
       "file_size": 24641536,
       "file_size_mb": 23.5,
       "chunk": "1:3",
-      "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk000.mp3",
-      "download_path": "/download/xyz123/output/audio_20251112_194523_chunk000.mp3"
+      "download_url": "http://video-processor:5001/download/xyz123/audio_20251112_194523_chunk000.mp3",
+      "download_path": "/download/xyz123/audio_20251112_194523_chunk000.mp3"
     },
     {
       "filename": "audio_20251112_194523_chunk001.mp3",
       "file_size": 24330240,
       "file_size_mb": 23.2,
       "chunk": "2:3",
-      "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk001.mp3",
-      "download_path": "/download/xyz123/output/audio_20251112_194523_chunk001.mp3"
+      "download_url": "http://video-processor:5001/download/xyz123/audio_20251112_194523_chunk001.mp3",
+      "download_path": "/download/xyz123/audio_20251112_194523_chunk001.mp3"
     },
     {
       "filename": "audio_20251112_194523_chunk002.mp3",
       "file_size": 18980864,
       "file_size_mb": 18.1,
       "chunk": "3:3",
-      "download_url": "http://video-processor:5001/download/xyz123/output/audio_20251112_194523_chunk002.mp3",
-      "download_path": "/download/xyz123/output/audio_20251112_194523_chunk002.mp3"
+      "download_url": "http://video-processor:5001/download/xyz123/audio_20251112_194523_chunk002.mp3",
+      "download_path": "/download/xyz123/audio_20251112_194523_chunk002.mp3"
     }
   ],
   "total_files": 3,
@@ -864,18 +906,18 @@ curl http://localhost:5001/task_status/abc123-def456
 
 **Файлы доступны по следующим URL:**
 ```
-/download/xyz123/output/audio_20251112_194523_chunk000.mp3  (23.5 MB, 0:00 - 15:30)
-/download/xyz123/output/audio_20251112_194523_chunk001.mp3  (23.2 MB, 15:30 - 31:00)
-/download/xyz123/output/audio_20251112_194523_chunk002.mp3  (18.1 MB, 31:00 - 45:00)
+/download/xyz123/audio_20251112_194523_chunk000.mp3  (23.5 MB, 0:00 - 15:30)
+/download/xyz123/audio_20251112_194523_chunk001.mp3  (23.2 MB, 15:30 - 31:00)
+/download/xyz123/audio_20251112_194523_chunk002.mp3  (18.1 MB, 31:00 - 45:00)
 /download/xyz123/metadata.json  (метаданные всех файлов)
 ```
 
 **Как скачать все чанки:**
 ```bash
 # Все чанки доступны по паттерну
-curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk000.mp3 -o chunk000.mp3
-curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk001.mp3 -o chunk001.mp3
-curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk002.mp3 -o chunk002.mp3
+curl http://localhost:5001/download/xyz123/audio_20251112_194523_chunk000.mp3 -o chunk000.mp3
+curl http://localhost:5001/download/xyz123/audio_20251112_194523_chunk001.mp3 -o chunk001.mp3
+curl http://localhost:5001/download/xyz123/audio_20251112_194523_chunk002.mp3 -o chunk002.mp3
 ```
 
 **Поля чанков в ответах:**
@@ -910,16 +952,16 @@ curl http://localhost:5001/download/xyz123/output/audio_20251112_194523_chunk002
       "file_size": 24117248,
       "file_size_mb": 23.0,
       "chunk": "1:6",
-      "download_url": "http://localhost:5001/download/def456-ghi789/output/audio_20251112_200100_chunk000.mp3",
-      "download_path": "/download/def456-ghi789/output/audio_20251112_200100_chunk000.mp3"
+      "download_url": "http://localhost:5001/download/def456-ghi789/audio_20251112_200100_chunk000.mp3",
+      "download_path": "/download/def456-ghi789/audio_20251112_200100_chunk000.mp3"
     },
     {
       "filename": "audio_20251112_200100_chunk001.mp3",
       "file_size": 24379392,
       "file_size_mb": 23.25,
       "chunk": "2:6",
-      "download_url": "http://localhost:5001/download/def456-ghi789/output/audio_20251112_200100_chunk001.mp3",
-      "download_path": "/download/def456-ghi789/output/audio_20251112_200100_chunk001.mp3"
+      "download_url": "http://localhost:5001/download/def456-ghi789/audio_20251112_200100_chunk001.mp3",
+      "download_path": "/download/def456-ghi789/audio_20251112_200100_chunk001.mp3"
     }
   ],
   "total_files": 6,
@@ -1015,7 +1057,7 @@ curl http://localhost:5001/fonts
 # Test simple mode
 curl -X POST http://localhost:5001/process_video \
   -H "Content-Type: application/json" \
-  -d '{"video_url": "https://example.com/video.mp4", "mode": "simple", "operations": [{"type": "to_shorts"}]}'
+  -d '{"video_url": "https://example.com/video.mp4", "mode": "simple", "operations": [{"type": "make_short"}]}'
 ```
 
 ---

@@ -28,7 +28,7 @@ services:
     networks:
       - n8n_net
     volumes:
-      - /opt/n8n-docker/volumes/video_processor/tasks:/app/tasks  # Task-based storage (input/temp/output + metadata.json)
+      - /opt/n8n-docker/volumes/video_processor/tasks:/app/tasks  # Task-based storage (flat per-task dir + metadata.json)
       - /opt/n8n-docker/volumes/video_processor/fonts:/app/fonts/custom  # Custom fonts directory
     restart: unless-stopped
     environment:
@@ -56,11 +56,11 @@ services:
 # 2. maxmemory=256mb with LRU eviction (old tasks auto-deleted)
 # 3. Tasks have 24h TTL in Redis
 # 4. If Redis is unavailable, video-processor falls back to single-worker mode
-# 5. Task-based storage: Each task creates /app/tasks/{task_id}/ with input/, temp/, output/, metadata.json
+# 5. Task-based storage: Each task creates /app/tasks/{task_id}/ with files stored flat (input_*, temp_*, short_/video_/audio_*) and metadata.json
 # 6. Files auto-delete after 2 hours (cleanup runs on each request)
 # 7. Custom fonts: Place .ttf/.otf files in /opt/n8n-docker/volumes/video_processor/fonts/
 #    They will be available inside container at /app/fonts/custom/
-# 8. Download URLs format: /download/{task_id}/output/{filename} or /download/{task_id}/metadata.json
+# 8. Download URLs format: /download/{task_id}/{filename} or /download/{task_id}/metadata.json
 # 9. When serving behind a reverse proxy under a subpath, set PUBLIC_BASE_URL
 #    to your full external base, e.g. https://example.com/video-processor-api
 #    A trailing slash is optional; the app will normalize it.

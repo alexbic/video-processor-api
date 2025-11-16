@@ -116,7 +116,7 @@ curl -H "Authorization: Bearer your-api-key" \
 {
   "video_url": "https://example.com/video.mp4",
   "execution": "async",
-  "operations": [{"type": "to_shorts"}],
+  "operations": [{"type": "make_short"}],
   "client_meta": {
     "titles": {
       "tiktok": "Крутой ролик про AI",
@@ -164,7 +164,7 @@ curl -H "Authorization: Bearer your-api-key" \
 - `POST /process_video` — запуск pipeline (sync/async; `operations`, опционально `webhook_url`) **[требует API key если задан]**
 - `GET /task_status/{task_id}` — статус задачи (`queued`/`processing`/`completed`/`error`) **[без авторизации]**
 - `GET /tasks` — последние задачи (для отладки) **[требует API key если задан]**
-- `GET /download/{task_id}/output/{filename}` — скачать готовый файл **[без авторизации]**
+- `GET /download/{task_id}/{filename}` — скачать готовый файл **[без авторизации]**
 - `GET /download/{task_id}/metadata.json` — метаданные результата **[без авторизации]**
 
 ### Health Check
@@ -232,7 +232,7 @@ curl -X POST http://localhost:5001/process_video \
     "execution": "sync",
     "operations": [
       {
-        "type": "to_shorts",
+        "type": "make_short",
         "letterbox_config": {
           "width": 1080,
           "height": 1920,
@@ -262,8 +262,8 @@ curl -X POST http://localhost:5001/process_video \
 ```
 
 **Доступные операции:**
-- `cut` - нарезка видео по таймкодам
-- `to_shorts` - конверсия в Shorts формат (letterbox + title + subtitles); поддерживает `start_time`/`end_time` для автоматической нарезки
+- `cut_video` - нарезка видео по таймкодам
+- `make_short` - конверсия в Shorts формат (letterbox + title + subtitles); поддерживает `start_time`/`end_time` для автоматической нарезки
 - `extract_audio` - извлечение аудиодорожки
 
 ---
@@ -282,8 +282,8 @@ curl -X POST http://localhost:5001/process_video \
       "filename": "output.mp4",
       "file_size": 16040960,
       "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output/output.mp4",
-      "download_path": "/download/abc123/output/output.mp4"
+      "download_url": "http://video-processor:5001/download/abc123/output.mp4",
+      "download_path": "/download/abc123/output.mp4"
     }
   ],
   "total_files": 1,
@@ -347,8 +347,8 @@ curl -X POST http://localhost:5001/process_video \
       "filename": "output_20250108_100523.mp4",
       "file_size": 16040960,
       "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output/output_20250108_100523.mp4",
-      "download_path": "/download/abc123/output/output_20250108_100523.mp4"
+      "download_url": "http://video-processor:5001/download/abc123/output_20250108_100523.mp4",
+      "download_path": "/download/abc123/output_20250108_100523.mp4"
     }
   ],
   "total_files": 1,
@@ -393,8 +393,8 @@ curl http://localhost:5001/task_status/abc123
       "filename": "output.mp4",
       "file_size": 16040960,
       "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output/output.mp4",
-      "download_path": "/download/abc123/output/output.mp4"
+      "download_url": "http://video-processor:5001/download/abc123/output.mp4",
+      "download_path": "/download/abc123/output.mp4"
     }
   ],
   "total_files": 1,
@@ -429,8 +429,8 @@ curl http://localhost:5001/task_status/abc123
       "filename": "output.mp4",
       "file_size": 16040960,
       "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output/output.mp4",
-      "download_path": "/download/abc123/output/output.mp4"
+      "download_url": "http://video-processor:5001/download/abc123/output.mp4",
+      "download_path": "/download/abc123/output.mp4"
     }
   ],
   "total_files": 1,
@@ -495,7 +495,7 @@ curl http://localhost:5001/task_status/abc123
   "execution": "sync",
   "operations": [
     {
-      "type": "to_shorts",
+      "type": "make_short",
       "start_time": 10.5,
       "end_time": 70.0,
       "crop_mode": "letterbox",
@@ -548,21 +548,21 @@ curl http://localhost:5001/task_status/abc123
       "file_size": 24641536,
       "file_size_mb": 23.5,
       "chunk": "1:3",
-      "download_url": "http://video-processor:5001/download/xyz123/output/audio_chunk000.mp3"
+      "download_url": "http://video-processor:5001/download/xyz123/audio_chunk000.mp3"
     },
     {
       "filename": "audio_chunk001.mp3",
       "file_size": 24330240,
       "file_size_mb": 23.2,
       "chunk": "2:3",
-      "download_url": "http://video-processor:5001/download/xyz123/output/audio_chunk001.mp3"
+      "download_url": "http://video-processor:5001/download/xyz123/audio_chunk001.mp3"
     },
     {
       "filename": "audio_chunk002.mp3",
       "file_size": 18980864,
       "file_size_mb": 18.1,
       "chunk": "3:3",
-      "download_url": "http://video-processor:5001/download/xyz123/output/audio_chunk002.mp3"
+      "download_url": "http://video-processor:5001/download/xyz123/audio_chunk002.mp3"
     }
   ],
   "total_files": 3,
@@ -611,6 +611,19 @@ volumes:
   ├── video_*.mp4       # Готовые нарезанные видео (TTL: 2 часа)
   ├── audio_*.mp3       # Извлечённые аудиодорожки (TTL: 2 часа)
   └── metadata.json    # Метаданные всех файлов
+```
+
+---
+
+### Ручное восстановление (опционально)
+
+- Эндпоинт: `GET/POST /recover/{task_id}`
+- Включение: `RECOVERY_PUBLIC_ENABLED=true` (используйте только во внутренней сети/за прокси)
+- Параметр: `force=1` — игнорировать истёкший TTL
+
+Пример ответа:
+```json
+{ "task_id": "...", "ok": true, "message": "Recovery started", "status": "processing", "retry_count": 1 }
 ```
 
 ---
@@ -664,7 +677,7 @@ curl http://localhost:5001/fonts
 # Тестовый запрос
 curl -X POST http://localhost:5001/process_video \
   -H "Content-Type: application/json" \
-  -d '{"video_url": "https://example.com/video.mp4", "operations": [{"type": "to_shorts"}]}'
+  -d '{"video_url": "https://example.com/video.mp4", "operations": [{"type": "make_short"}]}'
 ```
 
 ---

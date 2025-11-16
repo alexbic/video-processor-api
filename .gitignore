@@ -34,6 +34,11 @@ env/
 *~
 .DS_Store
 
+# Local test mounts and compose overrides
+.tasks-test/
+docker-compose.*.test.yml
+*.local.yml
+
 # Application
 uploads/
 outputs/
@@ -51,3 +56,4 @@ outputs/
 # Environment variables
 .env
 .env.local
+ .env.*

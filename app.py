@@ -185,6 +185,7 @@ RECOVERY_INTERVAL_MINUTES = int(os.getenv('RECOVERY_INTERVAL_MINUTES', '0'))  # 
 MAX_TASK_RETRIES = int(os.getenv('MAX_TASK_RETRIES', '3'))
 RETRY_DELAY_SECONDS = int(os.getenv('RETRY_DELAY_SECONDS', '60'))
 TASK_TTL_HOURS = int(os.getenv('TASK_TTL_HOURS', '2'))  # Время жизни задачи
+RECOVERY_PUBLIC_ENABLED = os.getenv('RECOVERY_PUBLIC_ENABLED', 'false').lower() in ('true', '1', 'yes')
 
 # Вспомогательные функции для работы с задачами
 def get_task_dir(task_id: str) -> str:
@@ -271,6 +272,7 @@ def log_startup_info():
             logger.info(f"  - Interval: {RECOVERY_INTERVAL_MINUTES} min (periodic)")
         else:
             logger.info(f"  - Interval: startup only")
+        logger.info(f"  - Public recover endpoint: {'ENABLED' if RECOVERY_PUBLIC_ENABLED else 'DISABLED'}")
     else:
         logger.info("Recovery: DISABLED")
 
@@ -1176,9 +1178,9 @@ def list_fonts():
 @app.route('/download/<path:file_path>', methods=['GET'])
 def download_file(file_path):
     """Скачать файл из задачи (не требует авторизации - доступ по task_id)
-    
+
     Поддерживаемые форматы:
-    - /download/{task_id}/output/{filename}
+    - /download/{task_id}/{filename}
     - /download/{task_id}/metadata.json
     """
     try:
@@ -1446,6 +1448,25 @@ def process_video():
                 'last_retry_at': None
             }
             save_task(task_id, task_data)
+
+            # Сохраняем начальные метаданные на диск для механизма recovery
+            initial_metadata = {
+                'task_id': task_id,
+                'status': 'queued',
+                'video_url': video_url,
+                'operations': operations,
+                'operations_count': len(operations),
+                'output_files': [],
+                'total_files': 0,
+                'total_size': 0,
+                'total_size_mb': 0,
+                'created_at': task_data['created_at'],
+                'expires_at': task_data['expires_at'],
+                'retry_count': 0
+            }
+            if client_meta is not None:
+                initial_metadata['client_meta'] = client_meta
+            save_task_metadata(task_id, initial_metadata)
 
             # Запускаем фоновую обработку
             thread = threading.Thread(
@@ -2057,6 +2078,109 @@ def schedule_recovery():
         while True:
             time.sleep(RECOVERY_INTERVAL_MINUTES * 60)
             recover_stuck_tasks()
+
+
+# ============================================
+# РУЧНОЕ ВОССТАНОВЛЕНИЕ ПО task_id (публично, если включено)
+# ============================================
+
+def _recover_task_by_id(task_id: str, force: bool = False) -> tuple[bool, str, dict]:
+    """Пытается восстановить конкретную задачу по task_id.
+    Возвращает (ok, message, extra_info).
+    """
+    task_dir = get_task_dir(task_id)
+    if not os.path.isdir(task_dir):
+        return False, "Task directory not found", {}
+
+    metadata = load_task_metadata(task_id)
+    if not metadata:
+        return False, "metadata.json not found", {}
+
+    status = metadata.get('status')
+    if status == 'completed':
+        return True, "Task already completed", {"status": status}
+
+    # TTL check
+    try:
+        current_time = datetime.now()
+        expires_at = metadata.get('expires_at')
+        if expires_at:
+            exp_dt = datetime.fromisoformat(expires_at)
+            if current_time > exp_dt and not force:
+                return False, "Task expired (TTL exceeded). Use force=1 to override.", {"status": status}
+    except Exception:
+        pass
+
+    # Cleanup temp_ files
+    files = []
+    try:
+        files = os.listdir(task_dir)
+    except Exception:
+        files = []
+    for filename in files:
+        if filename.startswith('temp_'):
+            try:
+                os.remove(os.path.join(task_dir, filename))
+            except Exception:
+                pass
+
+    # Prepare retry counters
+    retry_count = int(metadata.get('retry_count', 0)) + 1
+    metadata['retry_count'] = retry_count
+    metadata['last_retry_at'] = datetime.now().isoformat()
+    metadata['status'] = 'processing'
+    save_task_metadata(task_id, metadata)
+
+    # Also reflect in task storage if present
+    update_task(task_id, {
+        'status': 'processing',
+        'retry_count': retry_count,
+        'last_retry_at': metadata['last_retry_at']
+    })
+
+    video_url = metadata.get('video_url')
+    operations = metadata.get('operations', [])
+    webhook_url = metadata.get('webhook_url')
+    if not video_url or not operations:
+        return False, "Missing video_url or operations in metadata.json", {}
+
+    # Fire background processing
+    thread = threading.Thread(
+        target=process_video_pipeline_background,
+        args=(task_id, video_url, operations, webhook_url),
+        daemon=True
+    )
+    thread.start()
+    return True, "Recovery started", {"status": 'processing', "retry_count": retry_count}
+
+
+@app.route('/recover/<task_id>', methods=['GET', 'POST'])
+def recover_task_endpoint(task_id):
+    """Ручное восстановление конкретной задачи по task_id.
+    По умолчанию доступ запрещён; включите RECOVERY_PUBLIC_ENABLED=true для публичного доступа без API-ключа.
+    Поддерживает параметр query: force=1 (игнорировать TTL-истечение).
+    """
+    try:
+        if not RECOVERY_PUBLIC_ENABLED and API_KEY_ENABLED:
+            # В публичном режиме без явного разрешения — блокируем
+            return jsonify({
+                'status': 'error',
+                'error': 'Public recovery endpoint is disabled'
+            }), 403
+
+        force = str(request.args.get('force', '0')).lower() in ('1', 'true', 'yes')
+        ok, msg, info = _recover_task_by_id(task_id, force=force)
+        code = 200 if ok else 400
+        resp = {
+            'task_id': task_id,
+            'ok': ok,
+            'message': msg,
+        }
+        resp.update(info)
+        return jsonify(resp), code
+    except Exception as e:
+        logger.error(f"Manual recover error for {task_id}: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=False)
