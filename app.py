@@ -1171,17 +1171,25 @@ def health_check():
 @require_api_key
 def list_fonts():
     """
-    Получить список доступных шрифтов
-    Возвращает системные шрифты + кастомные шрифты из /app/fonts/custom
+    Получить список доступных шрифтов (предустановленных)
+    Только встроенные шрифты. Кастомные шрифты - только в PRO версии.
     """
     try:
-        fonts = {
-            "system_fonts": [],
-            "custom_fonts": []
-        }
-
-        # Системные шрифты (встроенные в контейнер)
+        # Предустановленные шрифты (встроенные в контейнер)
+        # Включает игровые шрифты из gaming templates + системные шрифты
         system_fonts_list = [
+            # Игровые шрифты (из gaming templates v3)
+            {"name": "Russo One", "family": "display", "file": "/usr/share/fonts/truetype/custom/RussoOne-Regular.ttf"},
+            {"name": "Montserrat", "family": "sans-serif", "file": "/usr/share/fonts/truetype/montserrat/Montserrat-Regular.ttf"},
+            {"name": "Montserrat Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/montserrat/Montserrat-Bold.ttf"},
+            {"name": "PT Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/custom/PTSans-Regular.ttf"},
+            {"name": "PT Sans Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/custom/PTSans-Bold.ttf"},
+            {"name": "Oswald", "family": "condensed", "file": "/usr/share/fonts/truetype/custom/Oswald-Regular.ttf"},
+            {"name": "Oswald Bold", "family": "condensed", "file": "/usr/share/fonts/truetype/custom/Oswald-Bold.ttf"},
+            {"name": "Fixel Display", "family": "geometric", "file": "/usr/share/fonts/truetype/custom/FixelDisplay-Regular.ttf"},
+            {"name": "Fixel Text", "family": "geometric", "file": "/usr/share/fonts/truetype/custom/FixelText-Regular.ttf"},
+
+            # Системные шрифты
             {"name": "DejaVu Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"},
             {"name": "DejaVu Sans Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"},
             {"name": "DejaVu Serif", "family": "serif", "file": "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"},
@@ -1190,34 +1198,23 @@ def list_fonts():
             {"name": "Liberation Serif", "family": "serif", "file": "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"},
             {"name": "Liberation Mono", "family": "monospace", "file": "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf"},
             {"name": "Noto Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"},
-            {"name": "Roboto", "family": "sans-serif", "file": "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf"},
-            {"name": "Roboto Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/roboto/Roboto-Bold.ttf"},
+            {"name": "Roboto", "family": "sans-serif", "file": "/usr/share/fonts/truetype/roboto/unhinted/RobotoTTF/Roboto-Regular.ttf"},
+            {"name": "Roboto Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/roboto/unhinted/RobotoTTF/Roboto-Bold.ttf"},
             {"name": "Open Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf"},
             {"name": "Open Sans Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/open-sans/OpenSans-Bold.ttf"}
         ]
 
-        # Проверяем какие системные шрифты реально существуют
+        # Фильтруем только существующие шрифты
+        available_fonts = []
         for font in system_fonts_list:
             if os.path.exists(font["file"]):
-                fonts["system_fonts"].append(font)
-
-        # Кастомные шрифты из /app/fonts/custom
-        custom_fonts_dir = "/app/fonts/custom"
-        if os.path.exists(custom_fonts_dir):
-            for filename in os.listdir(custom_fonts_dir):
-                if filename.lower().endswith(('.ttf', '.otf')):
-                    font_path = os.path.join(custom_fonts_dir, filename)
-                    font_name = os.path.splitext(filename)[0].replace('-', ' ').replace('_', ' ')
-                    fonts["custom_fonts"].append({
-                        "name": font_name,
-                        "family": "custom",
-                        "file": font_path
-                    })
+                available_fonts.append(font)
 
         return jsonify({
             "status": "success",
-            "total_fonts": len(fonts["system_fonts"]) + len(fonts["custom_fonts"]),
-            "fonts": fonts
+            "total_fonts": len(available_fonts),
+            "fonts": available_fonts,
+            "note": "Custom fonts upload available in PRO version only"
         })
 
     except Exception as e:

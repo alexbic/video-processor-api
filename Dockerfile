@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     fonts-noto-ui-core \
     fonts-roboto \
     fonts-open-sans \
-    && fc-cache -fv \
+    fonts-montserrat \
     && rm -rf /var/lib/apt/lists/*
 
 # Создание рабочей директории
@@ -26,9 +26,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование приложения
 COPY app.py .
 
-# Создание директорий для загрузок, выходных файлов и кастомных шрифтов
-RUN mkdir -p /app/uploads /app/outputs /app/fonts/custom && \
-    chmod 755 /app/uploads /app/outputs /app/fonts /app/fonts/custom
+# Копирование кастомных шрифтов (Russo One, Fixel)
+COPY fonts/*.ttf /usr/share/fonts/truetype/custom/
+
+# Обновление кеша шрифтов
+RUN fc-cache -fv
+
+# Создание директорий для загрузок и выходных файлов
+RUN mkdir -p /app/uploads /app/outputs && \
+    chmod 755 /app/uploads /app/outputs
 
 # Открытие порта
 EXPOSE 5001
