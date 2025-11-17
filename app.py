@@ -228,6 +228,10 @@ def log_startup_info():
     """Выводит информацию о конфигурации сервиса при старте."""
     logger.info("=" * 60)
     logger.info("Video Processor API starting...")
+    try:
+        logger.info(f"Log level: {LOG_LEVEL} (effective: {logging.getLevelName(logger.getEffectiveLevel())})")
+    except Exception:
+        pass
     logger.info(f"Storage mode: {STORAGE_MODE}")
     if STORAGE_MODE == "redis":
         logger.info(f"Redis: {REDIS_HOST}:{REDIS_PORT} (db={REDIS_DB})")
