@@ -216,7 +216,12 @@ def load_task_metadata(task_id: str) -> dict:
     return None
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
+try:
+    _log_level = getattr(logging, LOG_LEVEL, logging.INFO)
+except Exception:
+    _log_level = logging.INFO
+logging.basicConfig(level=_log_level)
 logger = logging.getLogger(__name__)
 
 def log_startup_info():
