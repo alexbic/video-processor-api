@@ -12,26 +12,73 @@ For each selected clip, you MUST:
 - Add a "virality_reason" (1–3 sentences, in English, explaining why this moment is likely to go viral: e.g. emotional impact, humor, twist, relatability, etc.).
 - Do NOT return any clips with a virality_score below 7.5.
 
-CAPTION WRITING — RUSSIAN CAPTION PER CLIP:
-- For each clip, also write a Russian social caption in JSON field "caption" following these rules:
-  * Keep the total length around ~70 words including hashtags.
-  * Tone: spartan, classic Western style, but still fitting for Instagram/TikTok.
-  * First-person, conversational; every sentence must be > 5 words; university reading level.
-  * Use emojis sparingly.
-  * Hashtags: add 3–5 at the END only. Base them on the actual transcript and identifiable game elements.
-  * If a specific game can be identified from the transcript, include its hashtag (e.g. #HollowKnight #Silksong). If unclear, use neutral gaming tags (#gaming #геймплей #инди).
-  * Always include content-format hashtags like #shorts and #геймер.
-  * Do NOT invent game names — only use identifiable ones from the content.
+📝 PLATFORM-SPECIFIC CONTENT GENERATION:
+
+For each clip, create optimized content for three platforms: YouTube Shorts, TikTok, and Instagram Reels.
+Follow platform-specific requirements from the PLATFORM_CONTENT_GUIDE.md guidelines.
+
+🎬 YOUTUBE SHORTS:
+- **Title** (youtube_title):
+  * Length: 30-50 characters (max 100)
+  * Style: informative, SEO-optimized
+  * Keywords at the beginning (first 40 characters visible in interface)
+  * First-person, no clickbait
+  * MUST include #Shorts at the end
+  * Example (in Russian): "Как я победил босса за 30 секунд | Лайфхак #Shorts"
+
+- **Description** (youtube_description):
+  * Extended information with keywords
+  * 1-3 relevant hashtags
+  * Specific facts and results
+  * Example (in Russian): "Показываю секретную тактику которая помогла мне победить сложнейшего босса всего за 30 секунд. Работает в 90% случаев!\n\n#gaming #геймплей #лайфхак"
+
+🎵 TIKTOK (⚠️ TikTok has TWO separate fields!):
+
+- **Title** (tiktok_title):
+  * Length: 20-40 characters
+  * SEO and search: short title with keywords
+  * What exactly is shown in the video
+  * NO hashtags (hashtags only in description)
+  * Example (in Russian): "Как победить босса за 30 секунд"
+
+- **Description/Caption** (tiktok_description):
+  * Length: 50-150 characters (optimal)
+  * Hook in the first words to grab attention
+  * MUST include CTA (Call-to-Action): "Save it!", "Do you do this too?", "Write in comments"
+  * 3-5 relevant hashtags at the end
+  * Trending + niche hashtags
+  * First-person, direct and engaging tone
+  * Example (in Russian): "Этот трюк сэкономил мне 2 часа попыток 😱 Сохрани чтобы не потерять! А ты знал этот секрет? Напиши в комментах 👇 #gaming #геймплей #лайфхак #тикток #босс"
+
+📸 INSTAGRAM REELS:
+- **Caption** (instagram_description):
+  * Length: up to 150 characters (first 125 visible before "...more")
+  * Emotional hook in the first 125 characters
+  * 3-5 emojis for visual accent
+  * First-person, personal story
+  * Call-to-action: "Share with a friend", "Save for later"
+  * 3-5 hashtags at the end
+  * Aesthetic formatting with paragraphs
+  * Example (in Russian): "Я не верил что это сработает 😱 Но этот трюк изменил всё! 🎮 Теперь я прохожу боссов в 10 раз быстрее ✨\n\nПопробуй сам и напиши что получилось 👇 Кто со мной?\n\n#gaming #геймплей #лайфхак #gamer #мотивация"
+
+🔑 GENERAL RULES FOR ALL PLATFORMS:
+- Write in first person (I, me, my experience)
+- Use specific numbers and facts (30 seconds, 2 hours, 90%, 10 times)
+- Emotional triggers: surprise, curiosity, motivation
+- Hashtags ONLY relevant to content
+- Do NOT invent game names — use only identifiable ones from the transcript
+- If game is unclear — use neutral tags (#gaming #геймплей #gamer)
 
 CLIENT_META PASS-THROUGH AND ENRICHMENT:
 - If input data includes {{ $json.client_meta }}, preserve ALL existing fields inside it.
 - Add the following NEW fields into client_meta for each clip:
-  * "caption" — the Russian caption you generated.
-  * "video_description_for_tiktok" — Russian TikTok description optimized for views.
-  * "video_description_for_instagram" — Russian Instagram description with emojis for views.
-  * "video_title_for_youtube_short" — Russian YouTube Shorts title for views.
-  * "virality_score" — float (7.5–10.0).
-  * "virality_reason" — short English explanation.
+  * "youtube_title" — YouTube Shorts title (30-50 chars, SEO, #Shorts at the end)
+  * "youtube_description" — YouTube description (informative, keywords, 1-3 hashtags)
+  * "tiktok_title" — TikTok title (20-40 chars, SEO, NO hashtags)
+  * "tiktok_description" — TikTok description/caption (50-150 chars, hook + CTA + 3-5 hashtags)
+  * "instagram_description" — Instagram caption (up to 150 chars, emotional hook + emojis + 3-5 hashtags)
+  * "virality_score" — float (7.5–10.0)
+  * "virality_reason" — short English explanation (1-3 sentences)
 - Do NOT remove or overwrite any fields that were already in client_meta on input.
 - Return the enriched client_meta object in each clip's JSON output.
 
@@ -68,20 +115,24 @@ HARD EXCLUSIONS:
 - Each subtitle segment should be 1-3 seconds long for optimal viewing.
 - Use natural phrase boundaries (commas, pauses, sentence breaks).
 - IMPORTANT: timestamps must be RELATIVE to clip start (0-based).
+- ⚠️ CRITICAL: **The FIRST subtitle MUST start at 0.0** (start: 0.0), not with a delay!
+  * Shift the start of the first subtitle to 0.0, BUT keep the end unchanged
+  * This ensures text appears immediately, without a blank screen at the beginning
+  * Example: if the first subtitle was {"text": "Hello", "start": 0.2, "end": 1.5}, change it to {"text": "Hello", "start": 0.0, "end": 1.5}
 
 ⚠️ OUTPUT FORMAT - CRITICAL:
 - Return PURE JSON ONLY (start with { and end with })
 - NO ```json markdown blocks
 - NO explanatory text before or after
 - NO comments inside JSON
-Order clips by predicted performance (best first):
+Order clips by predicted virality (best first):
 {
   "source_video_url": "{{ $json.source_video_url }}",
   "shorts": [
     {
       "start": <number seconds from video start, e.g. 12.340>,
       "end": <number seconds from video start, e.g. 37.900>,
-      "title": "<короткий цепляющий заголовок для клипа (3-5 слов)>",
+      "title": "<short catchy clip title (3-5 words in Russian)>",
       "subtitles": [
         {"text": "Привет всем", "start": 0.000, "end": 1.250},
         {"text": "сегодня покажу", "start": 1.300, "end": 2.500},
@@ -89,12 +140,13 @@ Order clips by predicted performance (best first):
       ],
       "client_meta": {
         ...existing fields from input client_meta (if any)...,
-        "caption": "<русская подпись ~70 слов, разговорно от первого лица; предложения >5 слов; минимум эмодзи; хэштеги только в конце (3–5) по содержанию; всегда #shorts #геймер; не выдумывай названия игр>",
-        "video_description_for_tiktok": "<описание для TikTok на русском с хэштегами для получения просмотров>",
-        "video_description_for_instagram": "<описание для Instagram на русском с эмодзи для получения просмотров>",
-        "video_title_for_youtube_short": "<заголовок для YouTube Shorts на русском для получения просмотров>",
+        "youtube_title": "<YouTube Shorts title in Russian, 30-50 chars, #Shorts at the end>",
+        "youtube_description": "<YouTube description in Russian with keywords, 1-3 hashtags>",
+        "tiktok_title": "<TikTok title in Russian, 20-40 chars, NO hashtags>",
+        "tiktok_description": "<TikTok description in Russian, 50-150 chars, hook + CTA + 3-5 hashtags>",
+        "instagram_description": "<Instagram caption in Russian, up to 150 chars, emotional hook + emojis + 3-5 hashtags>",
         "virality_score": <float, e.g. 9.5>,
-        "virality_reason": "<short explanation in English>"
+        "virality_reason": "<short explanation in English, 1-3 sentences>"
       }
     }
   ]
@@ -106,7 +158,7 @@ Then in subtitles array: {"text": "привет", "start": 0.5, "end": 1.2}
 
 EXAMPLE CLIENT_META ENRICHMENT:
 Input client_meta: {"user_id": "abc123", "campaign": "winter2025"}
-Output client_meta for a clip: {"user_id": "abc123", "campaign": "winter2025", "caption": "...", "video_description_for_tiktok": "...", "video_description_for_instagram": "...", "video_title_for_youtube_short": "...", "virality_score": 9.2, "virality_reason": "..."}
+Output client_meta for a clip: {"user_id": "abc123", "campaign": "winter2025", "youtube_title": "...", "youtube_description": "...", "tiktok_title": "...", "tiktok_description": "...", "instagram_description": "...", "virality_score": 9.2, "virality_reason": "..."}
 
 ⚠️ CRITICAL: 
 - Subtitles timestamps MUST be relative to clip start (subtract clip.start from all word timestamps).
