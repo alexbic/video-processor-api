@@ -20,12 +20,16 @@
 - 🖼️ **Auto Thumbnails** - automatic thumbnail generation from Shorts videos
 - ✂️ **Video Cutting** - by timecodes with Shorts conversion
 - 🎵 **Audio Extraction** - from video files
-- 📡 **Webhooks** - completion notifications with retry logic
+- 📡 **Webhooks** - completion notifications with automatic background retry (every 15 min)
+- 🎯 **Custom Webhook Headers** - per-request authentication headers for webhooks
+- 🔄 **Webhook State Tracking** - unified webhook state in metadata.json
+- ⏰ **File Expiration Tracking** - `expires_at` field shows when files will be deleted
 - ⚡ **Async Processing** - background processing with status tracking
 - 🔠 **Custom Fonts** - support for uploading custom fonts (.ttf/.otf)
 - 🐳 **Redis Support** - multi-worker mode for high loads
 - 🛡️ **Input Validation** - automatic media file validation before processing
 - 🔗 **Full URLs** - absolute links in all responses for n8n/external integrations
+- 🧹 **Smart Cleanup** - orphaned tasks deleted after 1h, expired tasks after 3 days (hardcoded)
 
 ---
 
@@ -261,7 +265,9 @@ curl -X POST http://localhost:5001/process_video \
         "thumbnail_timestamp": 0.5
       }
     ],
-    "webhook_url": "https://n8n.example.com/webhook/video-completed"
+    "webhook": {
+      "url": "https://n8n.example.com/webhook/video-completed"
+    }
   }'
 ```
 
@@ -387,7 +393,7 @@ In webhooks on error, event remains `event: "task_failed"`, and status is `statu
   "total_files": 1,
   "is_chunked": false,
   "metadata_url": "/download/abc123/metadata.json",
-  "note": "Files will auto-delete after 2 hours.",
+  "note": "Files will auto-delete after 3 days.",
   "completed_at": "2025-01-08T10:05:23"
 }
 ```
@@ -442,13 +448,54 @@ curl http://localhost:5001/task_status/abc123
 
 ### Webhooks
 
-Add `webhook_url` to receive notifications:
+Add `webhook` object to receive notifications on task completion:
 
 ```json
 {
-  "webhook_url": "https://n8n.example.com/webhook/video-completed"
+  "webhook": {
+    "url": "https://n8n.example.com/webhook/video-completed"
+  }
 }
 ```
+
+**Custom Webhook Headers (Optional):**
+
+You can add custom headers for webhook authentication via `webhook.headers`:
+
+```json
+{
+  "webhook": {
+    "url": "https://n8n.example.com/webhook/video-completed",
+    "headers": {
+      "X-API-Key": "your-secret-key",
+      "Authorization": "Bearer token-123"
+    }
+  }
+}
+```
+
+**Use Cases:**
+- 🔑 Different API keys for different webhooks
+- 🎫 Request-specific authorization tokens
+- 🏷️ Custom tracing/correlation IDs
+- 👤 Client identification headers
+
+**Validation:**
+- Must be JSON object with string keys/values
+- Header name max: 256 chars
+- Header value max: 2048 chars
+- `Content-Type` cannot be overridden
+- Priority: per-request `webhook.headers` > global `WEBHOOK_HEADERS`
+
+**Global Webhook Headers:**
+
+Set global headers via environment variable (applies to all webhooks that don't specify custom headers):
+
+```bash
+export WEBHOOK_HEADERS='{"X-API-Key": "global-key", "X-Service": "video-processor"}'
+```
+
+---
 
 **Webhook Payload (success):**
 ```json
@@ -471,10 +518,11 @@ Add `webhook_url` to receive notifications:
   "total_size_mb": 15.3,
   "is_chunked": false,
   "metadata_url": "http://video-processor:5001/download/abc123/metadata.json",
-  "file_ttl_seconds": 7200,
-  "file_ttl_human": "2 hours",
+  "file_ttl_seconds": 259200,
+  "file_ttl_human": "3 days",
   "operations_executed": 1,
-  "completed_at": "2025-01-08T10:05:23"
+  "completed_at": "2025-01-08T10:05:23",
+  "expires_at": "2025-01-08T12:05:23"
 }
 ```
 
@@ -489,9 +537,31 @@ Add `webhook_url` to receive notifications:
 }
 ```
 
-**Retry logic:**
-- 3 send attempts
-- Exponential backoff: 1s, 2s, 4s
+**Webhook State Tracking:**
+
+Webhook delivery state is saved in `metadata.json` under `webhook` field:
+
+```json
+{
+  "webhook": {
+    "url": "https://n8n.example.com/webhook/video-completed",
+    "headers": {"X-API-Key": "***"},
+    "status": "delivered",
+    "attempts": 1,
+    "last_attempt": "2025-01-08T10:05:23",
+    "last_status": 200,
+    "last_error": null,
+    "next_retry": null
+  }
+}
+```
+
+**Retry Logic:**
+- Initial attempts: 3 tries with exponential backoff (5s, 15s, 1m)
+- **Background Resender**: Automatically retries failed webhooks every 15 minutes
+- Retry delays: 5min → 15min → 1h → 4h → 12h → 24h (max)
+- Webhook status: `pending` → `delivered` / `failed`
+- Failed webhooks continue retrying until delivered or task TTL expires (3 days)
 
 ---
 
@@ -534,8 +604,12 @@ Polling recommendations:
 | `REDIS_HOST` | `redis` | Redis host for multi-worker task store. |
 | `REDIS_PORT` | `6379` | Redis port. |
 | `REDIS_DB` | `0` | Redis DB index. |
-| **Task Management** |||
-| `TASK_TTL_HOURS` | `2` | TTL for task files in /app/tasks. |
+| **Task Management (Hardcoded in Public Version)** |||
+| `TASK_TTL_HOURS` | `72` | ⚠️ **Hardcoded** TTL for task files in /app/tasks (3 days). |
+| **Webhook Configuration** |||
+| `WEBHOOK_HEADERS` | — | Global webhook headers (JSON string). Example: `{"X-API-Key": "key"}`. Optional. |
+| `DEFAULT_WEBHOOK_URL` | — | Default webhook URL if not specified in request. Optional. |
+| `WEBHOOK_BACKGROUND_INTERVAL_SECONDS` | `900` | ⚠️ **Hardcoded** Background resender interval (15 minutes). |
 | **Recovery System** |||
 | `RECOVERY_ENABLED` | `true` | Auto recovery scan at startup (and optionally periodic). |
 | `RECOVERY_INTERVAL_MINUTES` | `0` | Periodic recovery scan interval. `0` = only on startup. |
@@ -653,7 +727,9 @@ Response:
       }
     }
   ],
-  "webhook_url": "https://n8n.example.com/webhook/completed"
+  "webhook": {
+    "url": "https://n8n.example.com/webhook/completed"
+  }
 }
 ```
 
@@ -729,7 +805,7 @@ curl -X POST http://localhost:5001/process_video \
   "total_files": 1,
   "is_chunked": false,
   "metadata_url": "http://localhost:5001/download/abc123-def456/metadata.json",
-  "note": "Files will auto-delete after 2 hours.",
+  "note": "Files will auto-delete after 3 days.",
   "completed_at": "2025-11-12T19:45:23"
 }
 ```
@@ -747,7 +823,8 @@ curl -X POST http://localhost:5001/process_video \
       "bitrate": "320k"
     }
   ],
-  "webhook_url": "https://n8n.example.com/webhook/audio-ready"
+  "webhook": {
+      "url": "https://n8n.example.com/webhook/audio-ready"
 }
 ```
 
@@ -811,8 +888,8 @@ curl http://localhost:5001/task_status/abc123-def456
   "total_size_mb": 4.8,
   "is_chunked": false,
   "metadata_url": "http://video-processor:5001/download/abc123-def456/metadata.json",
-  "file_ttl_seconds": 7200,
-  "file_ttl_human": "2 hours",
+  "file_ttl_seconds": 259200,
+  "file_ttl_human": "3 days",
   "operations_executed": 1,
   "completed_at": "2025-11-12T19:45:23"
 }
@@ -836,7 +913,8 @@ curl http://localhost:5001/task_status/abc123-def456
       "bitrate": "192k"
     }
   ],
-  "webhook_url": "https://n8n.example.com/webhook/audio-extracted"
+  "webhook": {
+      "url": "https://n8n.example.com/webhook/audio-extracted"
 }
 ```
 
@@ -872,7 +950,8 @@ Note: When splitting is enabled (via `chunk_duration_minutes` or `max_chunk_size
       "optimize_for_whisper": true
     }
   ],
-  "webhook_url": "https://n8n.example.com/webhook/audio-chunks-ready"
+  "webhook": {
+      "url": "https://n8n.example.com/webhook/audio-chunks-ready"
 }
 ```
 
@@ -922,8 +1001,8 @@ Note: When splitting is enabled (via `chunk_duration_minutes` or `max_chunk_size
   "total_size_mb": 64.8,
   "is_chunked": true,
   "metadata_url": "http://video-processor:5001/download/xyz123/metadata.json",
-  "file_ttl_seconds": 7200,
-  "file_ttl_human": "2 hours",
+  "file_ttl_seconds": 259200,
+  "file_ttl_human": "3 days",
   "operations_executed": 1,
   "completed_at": "2025-11-12T19:45:23"
 }
@@ -1027,9 +1106,9 @@ volumes:
 /app/tasks/{task_id}/
   ├── input_*.mp4       # Input files (deleted after processing)
   ├── temp_*.mp4        # Temporary files (deleted after processing)
-  ├── short_*.mp4       # Completed Shorts videos (TTL: 2 hours)
-  ├── video_*.mp4       # Completed cut videos (TTL: 2 hours)
-  ├── audio_*.mp3       # Extracted audio tracks (TTL: 2 hours)
+  ├── short_*.mp4       # Completed Shorts videos (TTL: 3 days)
+  ├── video_*.mp4       # Completed cut videos (TTL: 3 days)
+  ├── audio_*.mp3       # Extracted audio tracks (TTL: 3 days)
   └── metadata.json    # Metadata for all files
 ```
 
@@ -1037,11 +1116,21 @@ volumes:
 
 ## 📝 File Retention
 
-- **Task directories**: Automatically deleted after **2 hours** from creation
+- **Task directories**: Automatically deleted after **3 days** (72 hours) from creation (hardcoded in public version)
+- **Orphaned tasks**: Tasks without `metadata.json` are deleted after **1 hour**
 - **Input/Temp files**: Files with `input_*` and `temp_*` prefixes are deleted immediately after processing completion
-- **Output files**: Files with `short_*`, `video_*`, `audio_*` prefixes are stored for 2 hours in `/app/tasks/{task_id}/`
+- **Output files**: Files with `short_*`, `video_*`, `audio_*` prefixes are stored for 3 days in `/app/tasks/{task_id}/`
 - **Redis Tasks**: TTL = 24 hours
-- **Metadata.json**: Stored for 2 hours and used as fallback for `/task_status` when task is not in Redis/memory **(v1.1.0)**
+- **Metadata.json**: Stored for 3 days and used as fallback for `/task_status` when task is not in Redis/memory
+- **File Expiration**: `expires_at` field in metadata.json shows exact deletion time (ISO 8601 format)
+
+**Cleanup Behavior:**
+- **Expired tasks**: Deleted when `expires_at` < current time (logged with size)
+- **Orphaned tasks**: Deleted after 1 hour if no metadata.json found
+- **Background cleanup**: Runs every hour automatically
+- **Detailed logging**: Shows task ID, size freed (MB), and deletion reason
+
+**Why 3 days?** This TTL provides enough time to upload processed videos to YouTube, TikTok, and other platforms without rushing.
 
 ---
 
@@ -1074,7 +1163,7 @@ volumes:
 **Problem:** `404 File not found` when downloading
 
 **Solutions:**
-- Files auto-delete after 2 hours (configurable via `TASK_TTL_HOURS`)
+- Files auto-delete after 3 days (configurable via `TASK_TTL_HOURS`)
 - Check task status first: `GET /task_status/{task_id}`
 - Download immediately after `status: "completed"`
 - Use `metadata.json` for file inventory
@@ -1149,7 +1238,7 @@ volumes:
 **Solutions:**
 - Redis tasks expire after 24 hours
 - API uses filesystem fallback (reads `metadata.json`)
-- Task directories deleted after 2 hours (files + metadata)
+- Task directories deleted after 3 days (files + metadata)
 - Check `/app/tasks/{task_id}/` directory exists
 
 ### Logging
@@ -1211,7 +1300,7 @@ curl http://localhost:5001/health
 - Download links: use `download_url` for public access and `download_path` for internal calls via API gateway.
 - Metadata: `metadata_url` contains full result snapshot — convenient for caching.
 - Webhooks: handle both events — `task_completed` and `task_failed`.
-- TTL: files are stored for 2 hours; download/move to permanent storage immediately after `completed`.
+- TTL: files are stored for 3 days; download/move to permanent storage immediately after `completed`.
 - **Input URLs** **(v1.1.0)**: Pass direct links to media files, not to HTML pages. API automatically checks Content-Type and rejects invalid files with clear errors.
 - **Full URLs** **(v1.1.0)**: All URLs in responses (`check_status_url`, `download_url`, `metadata_url`) are now absolute, ready for use in n8n and external systems.
 - **404 protection** **(v1.1.0)**: Endpoint `/task_status` uses filesystem fallback — even if task is absent in Redis/memory, status will be read from `metadata.json`.

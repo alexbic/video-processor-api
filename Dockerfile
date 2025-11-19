@@ -1,6 +1,8 @@
 FROM python:3.11-slim
 
-# Установка FFmpeg, шрифтов и необходимых зависимостей
+WORKDIR /app
+
+# Установка FFmpeg, шрифтов, Redis и необходимых зависимостей
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     fontconfig \
@@ -12,15 +14,13 @@ RUN apt-get update && apt-get install -y \
     fonts-roboto \
     fonts-open-sans \
     fonts-montserrat \
+    redis-server \
+    supervisor \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Создание рабочей директории
-WORKDIR /app
-
-# Копирование requirements.txt
-COPY requirements.txt .
-
 # Установка Python зависимостей
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Копирование приложения
@@ -32,20 +32,34 @@ COPY fonts/*.ttf /usr/share/fonts/truetype/custom/
 # Обновление кеша шрифтов
 RUN fc-cache -fv
 
-# Создание директорий для загрузок и выходных файлов
-RUN mkdir -p /app/uploads /app/outputs && \
-    chmod 755 /app/uploads /app/outputs
+# Создание директорий
+RUN mkdir -p /app/tasks /var/log/supervisor /var/run/supervisor
 
-# Открытие порта
+# Supervisor конфиг: Redis + Gunicorn с фиксированными параметрами (публичная версия)
+RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'nodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'user=root' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo '[program:redis]' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'command=redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stdout_logfile=/dev/stdout' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stdout_logfile_maxbytes=0' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stderr_logfile=/dev/stderr' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stderr_logfile_maxbytes=0' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo '[program:gunicorn]' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'command=gunicorn --bind 0.0.0.0:5001 --workers 2 --timeout 600 app:app' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'directory=/app' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stdout_logfile=/dev/stdout' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stdout_logfile_maxbytes=0' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stderr_logfile=/dev/stderr' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'stderr_logfile_maxbytes=0' >> /etc/supervisor/conf.d/supervisord.conf
+
 EXPOSE 5001
 
-# Environment variables (can be overridden in docker-compose)
-ENV WORKERS=1 \
-    REDIS_HOST=redis \
-    REDIS_PORT=6379 \
-    REDIS_DB=0
-
-# Запуск приложения через gunicorn
-# WORKERS=1 by default (safe without Redis)
-# Set WORKERS=2+ and configure REDIS_HOST for multi-worker mode
-CMD gunicorn --bind 0.0.0.0:5001 --workers ${WORKERS} --timeout 600 --access-logfile - --error-logfile - app:app
+# Запускаем supervisor (Redis + Gunicorn с фиксированными лимитами)
+# Публичная версия: 2 workers (hardcoded), embedded Redis 256MB
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

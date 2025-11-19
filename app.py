@@ -111,49 +111,83 @@ def build_absolute_url_background(path: str) -> str:
 # TASK STORAGE - Redis (multi-worker) or In-Memory (single-worker)
 # ============================================
 
-# Try to connect to Redis if available
+# Public version: Built-in Redis (localhost), not configurable
 redis_client = None
-REDIS_HOST = os.getenv('REDIS_HOST', 'redis')
-REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
-REDIS_DB = int(os.getenv('REDIS_DB', 0))
-
-try:
-    import redis
-    redis_client = redis.Redis(
-        host=REDIS_HOST,
-        port=REDIS_PORT,
-        db=REDIS_DB,
-        decode_responses=True,
-        socket_connect_timeout=2,
-        socket_timeout=2
-    )
-    redis_client.ping()
-    STORAGE_MODE = "redis"
-except Exception as e:
-    redis_client = None
-    STORAGE_MODE = "memory"
+REDIS_HOST = 'localhost'  # Built-in Redis
+REDIS_PORT = 6379
+REDIS_DB = 0
+REDIS_INIT_RETRIES = 20  # More retries for built-in Redis startup
+REDIS_INIT_DELAY_SECONDS = 0.5
+STORAGE_MODE = "memory"
 
 # Fallback: In-memory storage (only for single worker!)
 tasks_memory: Dict[str, Dict[str, Any]] = {}
 
+def _ensure_redis() -> bool:
+    """Attempt to (re)initialize Redis client. Returns True on success."""
+    global redis_client, STORAGE_MODE
+    if redis_client is not None and STORAGE_MODE == "redis":
+        return True
+    try:
+        import redis
+        client = redis.Redis(
+            host=REDIS_HOST,
+            port=REDIS_PORT,
+            db=REDIS_DB,
+            decode_responses=True,
+            socket_connect_timeout=2,
+            socket_timeout=2
+        )
+        client.ping()
+        redis_client = client
+        if STORAGE_MODE != "redis":
+            print(f"INFO: Redis connected at {REDIS_HOST}:{REDIS_PORT}")
+        STORAGE_MODE = "redis"
+        return True
+    except Exception as e:
+        if STORAGE_MODE != "memory":
+            print(f"WARNING: Redis unavailable, falling back to memory: {e}")
+        STORAGE_MODE = "memory"
+        redis_client = None
+        return False
+
+# Initialize at startup with retries to wait for Redis
+import time
+for _i in range(max(0, REDIS_INIT_RETRIES)):
+    if _ensure_redis():
+        break
+    try:
+        time.sleep(max(0.0, REDIS_INIT_DELAY_SECONDS))
+    except Exception:
+        pass
+
 def save_task(task_id: str, task_data: dict):
     """Save task to Redis or memory"""
-    if STORAGE_MODE == "redis":
-        redis_client.setex(
-            f"task:{task_id}",
-            86400,  # 24 hours TTL
-            json.dumps(task_data)
-        )
-    else:
-        tasks_memory[task_id] = task_data
+    # Lazy reconnection to Redis
+    _ensure_redis()
+    if STORAGE_MODE == "redis" and redis_client is not None:
+        try:
+            redis_client.setex(
+                f"task:{task_id}",
+                86400,  # 24 hours TTL
+                json.dumps(task_data)
+            )
+            return
+        except Exception as e:
+            # If Redis write fails, save to memory as backup
+            print(f"WARNING: Redis write failed, saving to memory: {e}")
+    tasks_memory[task_id] = task_data
 
 def get_task(task_id: str) -> dict:
     """Get task from Redis or memory"""
-    if STORAGE_MODE == "redis":
-        data = redis_client.get(f"task:{task_id}")
-        return json.loads(data) if data else None
-    else:
-        return tasks_memory.get(task_id)
+    _ensure_redis()
+    if STORAGE_MODE == "redis" and redis_client is not None:
+        try:
+            data = redis_client.get(f"task:{task_id}")
+            return json.loads(data) if data else None
+        except Exception as e:
+            print(f"WARNING: Redis read failed, falling back to memory: {e}")
+    return tasks_memory.get(task_id)
 
 def update_task(task_id: str, updates: dict):
     """Update task in Redis or memory"""
@@ -164,18 +198,33 @@ def update_task(task_id: str, updates: dict):
 
 def list_tasks() -> list:
     """List all tasks from Redis or memory"""
-    if STORAGE_MODE == "redis":
-        keys = redis_client.keys("task:*")
-        tasks = []
-        for key in keys[-100:]:  # Last 100 tasks
-            data = redis_client.get(key)
-            if data:
-                tasks.append(json.loads(data))
-        return tasks
-    else:
-        return list(tasks_memory.values())[-100:]
+    _ensure_redis()
+    if STORAGE_MODE == "redis" and redis_client is not None:
+        try:
+            keys = redis_client.keys("task:*")
+            tasks = []
+            for key in keys[-100:]:  # Last 100 tasks
+                data = redis_client.get(key)
+                if data:
+                    tasks.append(json.loads(data))
+            return tasks
+        except Exception as e:
+            print(f"WARNING: Redis list failed, falling back to memory: {e}")
+    return list(tasks_memory.values())[-100:]
 
+# ==============================================================================
+# ПУБЛИЧНАЯ ВЕРСИЯ - HARDCODED ПАРАМЕТРЫ
+# В Pro версии эти параметры будут конфигурируемы через env переменные
+# ==============================================================================
+
+TASK_TTL_HOURS = 72  # Hardcoded в публичной версии - 3 суток (72 часа)
+WEBHOOK_BACKGROUND_INTERVAL_SECONDS = 900  # 15 минут - hardcoded в публичной версии
+CLEANUP_INTERVAL_SECONDS = 3600  # 1 час - hardcoded в публичной версии
+
+# ==============================================================================
 # Конфигурация
+# ==============================================================================
+
 TASKS_DIR = "/app/tasks"
 os.makedirs(TASKS_DIR, exist_ok=True)
 
@@ -184,8 +233,11 @@ RECOVERY_ENABLED = os.getenv('RECOVERY_ENABLED', 'true').lower() in ('true', '1'
 RECOVERY_INTERVAL_MINUTES = int(os.getenv('RECOVERY_INTERVAL_MINUTES', '0'))  # 0 = только при старте
 MAX_TASK_RETRIES = int(os.getenv('MAX_TASK_RETRIES', '3'))
 RETRY_DELAY_SECONDS = int(os.getenv('RETRY_DELAY_SECONDS', '60'))
-TASK_TTL_HOURS = int(os.getenv('TASK_TTL_HOURS', '2'))  # Время жизни задачи
 RECOVERY_PUBLIC_ENABLED = os.getenv('RECOVERY_PUBLIC_ENABLED', 'false').lower() in ('true', '1', 'yes')
+
+# Webhook настройки
+WEBHOOK_HEADERS = os.getenv('WEBHOOK_HEADERS', None)  # Глобальные webhook заголовки (опционально)
+DEFAULT_WEBHOOK_URL = os.getenv('DEFAULT_WEBHOOK_URL', None)  # Дефолтный webhook URL (опционально)
 
 # Вспомогательные функции для работы с задачами
 def get_task_dir(task_id: str) -> str:
@@ -214,6 +266,49 @@ def load_task_metadata(task_id: str) -> dict:
         with open(metadata_path, 'r') as f:
             return json.load(f)
     return None
+
+def save_webhook_state(task_id: str, state: dict):
+    """Сохраняет состояние webhook в metadata.json в поле 'webhook'"""
+    try:
+        meta_path = os.path.join(get_task_dir(task_id), "metadata.json")
+        # Читаем текущую metadata
+        metadata = None
+        if os.path.exists(meta_path):
+            try:
+                with open(meta_path, 'r', encoding='utf-8') as f:
+                    metadata = json.load(f)
+            except Exception:
+                pass
+
+        if not metadata:
+            # Если metadata еще не создана, создаем минимальную структуру
+            metadata = {"webhook": state}
+        else:
+            # Обновляем webhook объект
+            metadata["webhook"] = state
+
+        # Сохраняем обновленную metadata
+        with open(meta_path, 'w', encoding='utf-8') as f:
+            json.dump(metadata, f, ensure_ascii=False, indent=2)
+        os.chmod(meta_path, 0o644)
+    except Exception as e:
+        logger.debug(f"[{task_id[:8]}] Failed to save webhook state: {e}")
+        pass
+
+def load_webhook_state(task_id: str) -> dict | None:
+    """Загружает состояние webhook из metadata.json поля 'webhook'"""
+    try:
+        meta_path = os.path.join(get_task_dir(task_id), "metadata.json")
+        if not os.path.exists(meta_path):
+            return None
+
+        with open(meta_path, 'r', encoding='utf-8') as f:
+            metadata = json.load(f)
+
+        # Извлекаем webhook из metadata
+        return metadata.get("webhook")
+    except Exception:
+        return None
 
 # Настройка логирования
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
@@ -293,8 +388,18 @@ def _log_startup_once():
     try:
         fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         os.close(fd)
+
+        # Retry Redis connection after app fully starts (for --preload mode)
+        for _i in range(max(0, REDIS_INIT_RETRIES)):
+            if _ensure_redis():
+                break
+            try:
+                time.sleep(max(0.0, REDIS_INIT_DELAY_SECONDS))
+            except Exception:
+                pass
+
         log_startup_info()
-        
+
         # Запускаем recovery при старте (в фоновом потоке с задержкой)
         def delayed_recovery():
             import time
@@ -430,8 +535,7 @@ def validate_client_meta(client_meta):
 
     return True, None
 
-# Вызов логирования после определения всех констант — выводим один раз на контейнер
-_log_startup_once()
+# Вызов логирования отложен до первого запроса (see @app.before_request hook below)
 
 # ============================================
 # INPUT DOWNLOAD + VALIDATION
@@ -545,73 +649,240 @@ def download_media_with_validation(url: str, dest_path: str, timeout: int = 300)
 
 # Очистка старых файлов (старше 2 часов)
 def cleanup_old_files():
-    """Удаляет задачи старше 2 часов"""
+    """Удаляет задачи старше 2 часов (expired) и orphaned задачи без metadata.json"""
     import time
     import shutil
-    current_time = time.time()
+
     try:
         if not os.path.exists(TASKS_DIR):
             return
-        
+
+        cleaned_count = 0
+        orphaned_count = 0
+        total_size_freed = 0
+
         for task_id in os.listdir(TASKS_DIR):
             task_path = os.path.join(TASKS_DIR, task_id)
             if not os.path.isdir(task_path):
                 continue
-            
-            # Проверяем время создания директории задачи
-            if current_time - os.path.getctime(task_path) > 7200:  # 2 часа
-                shutil.rmtree(task_path, ignore_errors=True)
-                logger.info(f"Cleaned up old task: {task_id}")
+
+            metadata_path = os.path.join(task_path, 'metadata.json')
+
+            # Вычисляем размер директории
+            try:
+                dir_size = sum(
+                    os.path.getsize(os.path.join(dirpath, filename))
+                    for dirpath, dirnames, filenames in os.walk(task_path)
+                    for filename in filenames
+                )
+            except Exception:
+                dir_size = 0
+
+            # Orphaned tasks (без metadata.json)
+            if not os.path.exists(metadata_path):
+                try:
+                    shutil.rmtree(task_path, ignore_errors=True)
+                    orphaned_count += 1
+                    total_size_freed += dir_size
+                    size_mb = dir_size / 1024 / 1024
+                    logger.info(f"Removed orphaned task: {task_id[:8]} ({size_mb:.1f} MB)")
+                except Exception as e:
+                    logger.error(f"Failed to remove orphaned task {task_id[:8]}: {e}")
+                continue
+
+            # Expired tasks (TTL истёк на основе expires_at)
+            try:
+                metadata = load_task_metadata(task_id)
+                if metadata:
+                    expires_at = metadata.get('expires_at')
+                    if expires_at:
+                        try:
+                            expires_dt = datetime.fromisoformat(expires_at)
+                            if datetime.now() > expires_dt:
+                                shutil.rmtree(task_path, ignore_errors=True)
+                                cleaned_count += 1
+                                total_size_freed += dir_size
+                                size_mb = dir_size / 1024 / 1024
+                                logger.info(f"Removed expired task: {task_id[:8]} ({size_mb:.1f} MB, expired: {expires_at})")
+                        except Exception:
+                            # Fallback к старому методу на основе ctime
+                            current_time = time.time()
+                            if current_time - os.path.getctime(task_path) > (TASK_TTL_HOURS * 3600):
+                                shutil.rmtree(task_path, ignore_errors=True)
+                                cleaned_count += 1
+                                total_size_freed += dir_size
+                                size_mb = dir_size / 1024 / 1024
+                                logger.info(f"Removed expired task: {task_id[:8]} ({size_mb:.1f} MB, no expires_at)")
+            except Exception as e:
+                logger.debug(f"Cleanup check error for {task_id[:8]}: {e}")
+
+        if cleaned_count > 0 or orphaned_count > 0:
+            total_size_mb = total_size_freed / 1024 / 1024
+            logger.info(f"Cleanup summary: {cleaned_count} expired, {orphaned_count} orphaned, {total_size_mb:.1f} MB freed")
+
     except Exception as e:
         logger.error(f"Cleanup error: {e}")
 
 
-def send_webhook(webhook_url: str, payload: dict, max_retries: int = 3) -> bool:
+def _post_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None, task_id: str, max_retries: int = 3):
     """
-    Отправляет webhook с retry логикой
+    Внутренняя функция отправки webhook с retry логикой и сохранением состояния
 
     Args:
         webhook_url: URL для отправки webhook
         payload: Данные для отправки (JSON)
+        webhook_headers: Кастомные заголовки для конкретного webhook (приоритет выше глобальных)
+        task_id: ID задачи для сохранения состояния webhook
         max_retries: Максимальное количество попыток (default: 3)
-
-    Returns:
-        True если успешно отправлено, False если все попытки провалились
     """
     import requests
     import time
 
     if not webhook_url:
-        return False
+        logger.debug(f"[{task_id[:8]}] No webhook URL provided, skipping")
+        return
 
+    # Загружаем текущее состояние webhook или создаем новое
+    webhook_state = load_webhook_state(task_id)
+    if not webhook_state:
+        webhook_state = {
+            "url": webhook_url,
+            "headers": webhook_headers or {},
+            "status": "pending",
+            "attempts": 0,
+            "last_attempt": None,
+            "last_status": None,
+            "last_error": None,
+            "next_retry": None
+        }
+
+    # Подготавливаем заголовки
+    headers = {"Content-Type": "application/json"}
+
+    # Добавляем глобальные пользовательские заголовки из конфига
+    if WEBHOOK_HEADERS:
+        try:
+            # Парсим если это строка формата "Key: Value\nKey2: Value2"
+            if isinstance(WEBHOOK_HEADERS, str):
+                for line in WEBHOOK_HEADERS.split('\n'):
+                    if ':' in line:
+                        key, value = line.split(':', 1)
+                        k = key.strip()
+                        v = value.strip()
+                        if k.lower() != 'content-type':
+                            headers[k] = v
+            elif isinstance(WEBHOOK_HEADERS, dict):
+                for k, v in WEBHOOK_HEADERS.items():
+                    if k.lower() != 'content-type':
+                        headers[k] = v
+        except Exception as e:
+            logger.debug(f"[{task_id[:8]}] Failed to parse global WEBHOOK_HEADERS: {e}")
+
+    # Добавляем заголовки для конкретного webhook (приоритет выше глобальных)
+    if webhook_headers:
+        try:
+            for k, v in webhook_headers.items():
+                if k.lower() != 'content-type':  # Не позволяем переопределять Content-Type
+                    headers[k] = v
+        except Exception as e:
+            logger.debug(f"[{task_id[:8]}] Failed to apply webhook_headers: {e}")
+
+    # Пытаемся отправить webhook
     for attempt in range(max_retries):
         try:
-            logger.info(f"Sending webhook to {webhook_url} (attempt {attempt + 1}/{max_retries})")
+            webhook_state["attempts"] += 1
+            webhook_state["last_attempt"] = datetime.now().isoformat()
+
+            logger.info(f"[{task_id[:8]}] Sending webhook to {webhook_url} (attempt {attempt + 1}/{max_retries})")
 
             response = requests.post(
                 webhook_url,
                 json=payload,
                 timeout=10,
-                headers={'Content-Type': 'application/json'}
+                headers=headers
             )
 
+            webhook_state["last_status"] = response.status_code
             response.raise_for_status()
-            logger.info(f"Webhook sent successfully to {webhook_url}")
-            return True
+
+            # Успешно отправлено
+            webhook_state["status"] = "delivered"
+            webhook_state["last_error"] = None
+            webhook_state["next_retry"] = None
+            save_webhook_state(task_id, webhook_state)
+
+            logger.info(f"[{task_id[:8]}] Webhook delivered successfully (status {response.status_code})")
+            return
 
         except requests.exceptions.RequestException as e:
-            logger.warning(f"Webhook attempt {attempt + 1}/{max_retries} failed: {e}")
+            error_msg = str(e)
+            webhook_state["last_error"] = error_msg
+            logger.warning(f"[{task_id[:8]}] Webhook attempt {attempt + 1}/{max_retries} failed: {error_msg}")
 
             if attempt < max_retries - 1:
                 # Exponential backoff: 1s, 2s, 4s
                 sleep_time = 2 ** attempt
-                logger.info(f"Retrying in {sleep_time}s...")
+                logger.info(f"[{task_id[:8]}] Retrying in {sleep_time}s...")
                 time.sleep(sleep_time)
             else:
-                logger.error(f"All {max_retries} webhook attempts failed for {webhook_url}")
-                return False
+                # Все попытки провалились - вычисляем next_retry для background resender
+                # Стратегия: 5 мин, 15 мин, 1 час, 4 часа, 12 часов, потом каждые 24 часа
+                delays = [300, 900, 3600, 14400, 43200, 86400]
+                total_attempts = webhook_state["attempts"]
+                delay = delays[min(total_attempts - 1, len(delays) - 1)]
+                next_retry_dt = datetime.now() + timedelta(seconds=delay)
+                webhook_state["next_retry"] = next_retry_dt.isoformat()
+                webhook_state["status"] = "failed"
 
-    return False
+                logger.error(f"[{task_id[:8]}] All {max_retries} webhook attempts failed. Next retry at {webhook_state['next_retry']}")
+
+    # Сохраняем финальное состояние
+    save_webhook_state(task_id, webhook_state)
+
+
+def send_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None = None, task_id: str = None, max_retries: int = 3) -> bool:
+    """
+    Отправляет webhook с retry логикой (обертка для совместимости)
+
+    Args:
+        webhook_url: URL для отправки webhook
+        payload: Данные для отправки (JSON)
+        webhook_headers: Кастомные заголовки (опционально)
+        task_id: ID задачи для отслеживания состояния (опционально)
+        max_retries: Максимальное количество попыток (default: 3)
+
+    Returns:
+        True если успешно отправлено, False если все попытки провалились
+    """
+    if task_id:
+        _post_webhook(webhook_url, payload, webhook_headers, task_id, max_retries)
+        # Проверяем был ли webhook доставлен
+        state = load_webhook_state(task_id)
+        return state and state.get("status") == "delivered"
+    else:
+        # Старый режим без отслеживания состояния
+        import requests
+        import time
+
+        if not webhook_url:
+            return False
+
+        headers = {"Content-Type": "application/json"}
+        if webhook_headers:
+            headers.update(webhook_headers)
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(webhook_url, json=payload, timeout=10, headers=headers)
+                response.raise_for_status()
+                return True
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries - 1:
+                    time.sleep(2 ** attempt)
+                else:
+                    logger.error(f"All webhook attempts failed: {e}")
+                    return False
+        return False
 
 
 # ============================================
@@ -1163,6 +1434,11 @@ OPERATIONS_REGISTRY = {
     'extract_audio': ExtractAudioOperation(),
 }
 
+# Flask hook: вызываем логирование и Redis retry при первом запросе
+@app.before_request
+def before_first_request_handler():
+    _log_startup_once()
+
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -1406,7 +1682,31 @@ def process_video():
         video_url = data.get('video_url')
         execution = data.get('execution', 'sync')  # sync или async
         operations = data.get('operations', [])
-        webhook_url = data.get('webhook_url', os.getenv('WEBHOOK_URL'))
+
+        # Webhook - новая унифицированная структура
+        webhook = data.get('webhook')
+        webhook_url = None
+        webhook_headers = None
+
+        if webhook:
+            if not isinstance(webhook, dict):
+                return jsonify({"error": "Invalid webhook (must be an object)"}), 400
+            webhook_url = webhook.get('url')
+            webhook_headers = webhook.get('headers')
+
+            # Валидация webhook_headers если они есть
+            if webhook_headers is not None:
+                if not isinstance(webhook_headers, dict):
+                    return jsonify({"error": "Invalid webhook.headers (must be an object/dict)"}), 400
+                for key, value in webhook_headers.items():
+                    if not isinstance(key, str) or not isinstance(value, str):
+                        return jsonify({"error": "Invalid webhook.headers (keys and values must be strings)"}), 400
+                    if len(key) > 256 or len(value) > 2048:
+                        return jsonify({"error": "Invalid webhook.headers (header name or value too long)"}), 400
+        else:
+            # Fallback на дефолтный webhook URL из env (если нет webhook объекта)
+            webhook_url = os.getenv('DEFAULT_WEBHOOK_URL')
+
         # Произвольные метаданные клиента для сквозного возврата в ответах/вебхуках
         client_meta = data.get('client_meta')
         if client_meta is None and 'meta' in data:
@@ -1495,7 +1795,6 @@ def process_video():
                 'progress': 0,
                 'video_url': video_url,
                 'operations': operations,
-                'webhook_url': webhook_url,
                 'client_meta': client_meta,
                 'created_at': now.isoformat(),
                 'expires_at': (now + timedelta(hours=TASK_TTL_HOURS)).isoformat(),
@@ -1521,12 +1820,14 @@ def process_video():
             }
             if client_meta is not None:
                 initial_metadata['client_meta'] = client_meta
+            if webhook is not None:
+                initial_metadata['webhook'] = webhook
             save_task_metadata(task_id, initial_metadata)
 
             # Запускаем фоновую обработку
             thread = threading.Thread(
                 target=process_video_pipeline_background,
-                args=(task_id, video_url, operations, webhook_url)
+                args=(task_id, video_url, operations, webhook)
             )
             thread.daemon = True
             thread.start()
@@ -1546,19 +1847,26 @@ def process_video():
         else:
             # Синхронный режим
             task_id = str(uuid.uuid4())
-            
+
             # Создаем директории для задачи
             create_task_dirs(task_id)
-            
-            return process_video_pipeline_sync(task_id, video_url, operations, webhook_url, client_meta)
+
+            return process_video_pipeline_sync(task_id, video_url, operations, webhook, client_meta)
 
     except Exception as e:
         logger.error(f"Process video error: {e}")
         return jsonify({"status": "error", "error": str(e)}), 500
 
 
-def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, webhook_url: str = None, client_meta: dict | None = None) -> dict:
+def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, webhook: dict = None, client_meta: dict | None = None) -> dict:
     """Синхронное выполнение pipeline операций"""
+
+    # Извлекаем webhook_url и webhook_headers из webhook объекта
+    webhook_url = None
+    webhook_headers = None
+    if webhook:
+        webhook_url = webhook.get('url')
+        webhook_headers = webhook.get('headers')
 
     # Скачиваем исходное видео в input/ с валидацией
     input_filename = f"{uuid.uuid4()}.mp4"
@@ -1725,7 +2033,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         }
         if client_meta is not None:
             webhook_payload["client_meta"] = client_meta
-        send_webhook(webhook_url, webhook_payload)
+        send_webhook(webhook_url, webhook_payload, webhook_headers, task_id)
 
     # Определяем chunked
     is_chunked = any(f.get('chunk') for f in files_info)
@@ -1747,8 +2055,15 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
     return jsonify(response_body)
 
 
-def process_video_pipeline_background(task_id: str, video_url: str, operations: list, webhook_url: str = None):
+def process_video_pipeline_background(task_id: str, video_url: str, operations: list, webhook: dict = None):
     """Фоновое выполнение pipeline операций с использованием task-based архитектуры"""
+
+    # Извлекаем webhook_url и webhook_headers из webhook объекта
+    webhook_url = None
+    webhook_headers = None
+    if webhook:
+        webhook_url = webhook.get('url')
+        webhook_headers = webhook.get('headers')
 
     try:
         # Создаем директории для задачи
@@ -1942,7 +2257,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             # client_meta в самом конце
             if client_meta is not None:
                 webhook_payload['client_meta'] = client_meta
-            send_webhook(webhook_url, webhook_payload)
+            send_webhook(webhook_url, webhook_payload, webhook_headers, task_id)
 
     except Exception as e:
         logger.error(f"Task {task_id}: Error - {e}")
@@ -1961,7 +2276,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 'error': str(e),
                 'failed_at': datetime.now().isoformat()
             }
-            send_webhook(webhook_url, error_payload)
+            send_webhook(webhook_url, error_payload, webhook_headers, task_id)
 
 
 def recover_stuck_tasks():
@@ -2096,14 +2411,14 @@ def recover_stuck_tasks():
                 # Иначе process_video_pipeline_background сам загрузит
                 video_url = metadata.get('video_url')
                 operations = metadata.get('operations', [])
-                webhook_url = metadata.get('webhook_url')
-                
+                webhook = metadata.get('webhook')
+
                 if not has_valid_input:
                     logger.info(f"Task {task_id}: No valid input file, will re-download")
-                
+
                 thread = threading.Thread(
                     target=process_video_pipeline_background,
-                    args=(task_id, video_url, operations, webhook_url),
+                    args=(task_id, video_url, operations, webhook),
                     daemon=True
                 )
                 thread.start()
@@ -2195,14 +2510,14 @@ def _recover_task_by_id(task_id: str, force: bool = False) -> tuple[bool, str, d
 
     video_url = metadata.get('video_url')
     operations = metadata.get('operations', [])
-    webhook_url = metadata.get('webhook_url')
+    webhook = metadata.get('webhook')
     if not video_url or not operations:
         return False, "Missing video_url or operations in metadata.json", {}
 
     # Fire background processing
     thread = threading.Thread(
         target=process_video_pipeline_background,
-        args=(task_id, video_url, operations, webhook_url),
+        args=(task_id, video_url, operations, webhook),
         daemon=True
     )
     thread.start()
@@ -2237,5 +2552,135 @@ def recover_task_endpoint(task_id):
         logger.error(f"Manual recover error for {task_id}: {e}")
         return jsonify({'status': 'error', 'error': str(e)}), 500
 
+
+# ==============================================================================
+# BACKGROUND WEBHOOK RESENDER
+# ==============================================================================
+
+def _webhook_resender_loop():
+    """
+    Фоновый процесс для автоматических ретраев webhook.
+    Сканирует все задачи и отправляет webhooks для failed/pending статусов.
+    """
+    import time
+    logger.info(f"Webhook resender started (interval: {WEBHOOK_BACKGROUND_INTERVAL_SECONDS}s)")
+
+    while True:
+        try:
+            time.sleep(WEBHOOK_BACKGROUND_INTERVAL_SECONDS)
+
+            logger.debug("Webhook resender: scanning tasks...")
+
+            if not os.path.exists(TASKS_DIR):
+                continue
+
+            scanned = 0
+            retried = 0
+
+            for task_id in os.listdir(TASKS_DIR):
+                task_path = os.path.join(TASKS_DIR, task_id)
+                if not os.path.isdir(task_path):
+                    continue
+
+                scanned += 1
+
+                # Загружаем metadata
+                metadata = load_task_metadata(task_id)
+                if not metadata:
+                    continue
+
+                # Пропускаем активные задачи
+                status = metadata.get('status')
+                if status in ['queued', 'processing']:
+                    continue
+
+                # Загружаем webhook state
+                webhook_state = load_webhook_state(task_id)
+                if not webhook_state:
+                    continue
+
+                # Пропускаем если уже доставлен
+                if webhook_state.get('status') == 'delivered':
+                    continue
+
+                # URL вебхука: из state или из DEFAULT_WEBHOOK_URL
+                webhook_url = webhook_state.get('url') or DEFAULT_WEBHOOK_URL
+                if not webhook_url:
+                    continue
+
+                # Проверяем next_retry время
+                next_retry = webhook_state.get('next_retry')
+                if next_retry:
+                    try:
+                        next_retry_dt = datetime.fromisoformat(next_retry)
+                        if datetime.now() < next_retry_dt:
+                            logger.debug(f"[{task_id[:8]}] Skipping (next_retry: {next_retry})")
+                            continue
+                    except Exception:
+                        pass
+
+                # Формируем webhook payload
+                webhook_headers = webhook_state.get('headers')
+
+                if status == 'completed':
+                    # Success webhook
+                    output_files = metadata.get('output_files', [])
+                    is_chunked = any(f.get('chunk') for f in output_files)
+
+                    webhook_payload = {
+                        "task_id": task_id,
+                        "event": "task_completed",
+                        "status": "completed",
+                        "video_url": metadata.get('video_url'),
+                        "output_files": output_files,
+                        "total_files": metadata.get('total_files', len(output_files)),
+                        "total_size": metadata.get('total_size', 0),
+                        "total_size_mb": round(metadata.get('total_size', 0) / 1024 / 1024, 1),
+                        "is_chunked": is_chunked,
+                        "metadata_url": build_absolute_url_background(f"/download/{task_id}/metadata.json"),
+                        "file_ttl_seconds": TASK_TTL_HOURS * 3600,
+                        "file_ttl_human": f"{TASK_TTL_HOURS} hours",
+                        "completed_at": metadata.get('completed_at')
+                    }
+
+                    client_meta = metadata.get('client_meta')
+                    if client_meta:
+                        webhook_payload['client_meta'] = client_meta
+
+                elif status == 'error':
+                    # Error webhook
+                    webhook_payload = {
+                        "task_id": task_id,
+                        "event": "task_failed",
+                        "status": "error",
+                        "error": metadata.get('error', 'Unknown error'),
+                        "failed_at": metadata.get('failed_at')
+                    }
+
+                    client_meta = metadata.get('client_meta')
+                    if client_meta:
+                        webhook_payload['client_meta'] = client_meta
+                else:
+                    # Неизвестный статус
+                    continue
+
+                # Отправляем webhook
+                logger.info(f"[{task_id[:8]}] Resender: retrying webhook (status={status})")
+                _post_webhook(webhook_url, webhook_payload, webhook_headers, task_id, max_retries=3)
+                retried += 1
+
+            if retried > 0:
+                logger.info(f"Webhook resender: scanned {scanned} tasks, retried {retried} webhooks")
+
+        except Exception as e:
+            logger.error(f"Webhook resender error: {e}")
+
+
 if __name__ == '__main__':
+    # Запускаем webhook resender в фоновом потоке
+    if DEFAULT_WEBHOOK_URL or True:  # Всегда включен для ретраев failed webhooks
+        resender_thread = threading.Thread(target=_webhook_resender_loop, daemon=True)
+        resender_thread.start()
+        logger.info("Webhook resender thread started")
+
     app.run(host='0.0.0.0', port=5001, debug=False)

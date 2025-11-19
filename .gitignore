@@ -56,4 +56,8 @@ outputs/
 # Environment variables
 .env
 .env.local
- .env.*
+.env.*
+
+# Testing tasks directory
+testing/tasks/
+tasks/

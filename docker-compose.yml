@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+  video-processor:
+    image: alexbic/video-processor-api:latest
+    container_name: video-processor
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./tasks:/app/tasks
+      # Optional: custom fonts
+      # - ./custom-fonts:/app/fonts/custom
+    environment:
+      # =====================================================
+      # 🔐 Authentication (Optional)
+      # =====================================================
+      # Uncomment to enable Bearer token authentication
+      # API_KEY: "your-secret-api-key-here"
+      # PUBLIC_BASE_URL: "https://your-domain.com"
+
+      # =====================================================
+      # 🌐 URL Configuration
+      # =====================================================
+      INTERNAL_BASE_URL: "http://video-processor:5001"
+
+      # =====================================================
+      # 📦 Public Version Limits (Hardcoded)
+      # =====================================================
+      # The following parameters are HARDCODED in app.py and Dockerfile:
+      #   - WORKERS = 2 (embedded in Dockerfile)
+      #   - REDIS: embedded 256MB (localhost:6379)
+      #   - TASK_TTL_HOURS = 72 (3 days)
+      #   - WEBHOOK_BACKGROUND_INTERVAL_SECONDS = 900 (15 minutes)
+      #   - CLEANUP_INTERVAL_SECONDS = 3600 (1 hour)
+      #
+      # These are NOT configurable via environment variables.
+      # Upgrade to Pro version for:
+      #   - Configurable workers (1-10+)
+      #   - External Redis support
+      #   - Configurable TTL (1h - 90 days)
+      #   - Custom webhook intervals
+
+      # =====================================================
+      # 🔗 Webhook Configuration
+      # =====================================================
+      # Global webhook headers (applied to all webhooks)
+      # WEBHOOK_HEADERS: '{"X-API-Key": "global-key", "X-Service": "video-processor"}'
+
+      # Default webhook URL (if not specified in request)
+      # DEFAULT_WEBHOOK_URL: "https://n8n.example.com/webhook/video-completed"
+
+      # =====================================================
+      # 🔄 Recovery System
+      # =====================================================
+      RECOVERY_ENABLED: "true"
+      RECOVERY_INTERVAL_MINUTES: "0"  # 0 = scan only on startup
+      MAX_TASK_RETRIES: "3"
+      RETRY_DELAY_SECONDS: "60"
+      RECOVERY_PUBLIC_ENABLED: "false"  # Disable public recovery endpoint
+
+      # =====================================================
+      # 📝 Client Metadata Limits
+      # =====================================================
+      ALLOW_NESTED_JSON_IN_META: "true"
+      CLIENT_META_MAX_SIZE_BYTES: "16384"  # 16 KB
+      CLIENT_META_MAX_DEPTH: "5"
+      CLIENT_META_MAX_KEYS: "200"
+      CLIENT_META_STRING_MAX_LENGTH: "1000"
+      CLIENT_META_LIST_MAX_LENGTH: "200"
