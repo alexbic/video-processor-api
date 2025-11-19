@@ -322,7 +322,23 @@ logger = logging.getLogger(__name__)
 def log_startup_info():
     """Выводит информацию о конфигурации сервиса при старте."""
     logger.info("=" * 60)
-    logger.info("Video Processor API starting...")
+    logger.info("Video Processor API - PUBLIC VERSION")
+    logger.info("=" * 60)
+    logger.warning("⚠️  PUBLIC VERSION - LIMITED FEATURES")
+    logger.warning("   • Workers: 2 (fixed)")
+    logger.warning("   • Task TTL: 3 days (fixed)")
+    logger.warning("   • Redis: Built-in, 256MB limit")
+    logger.warning("   • Hardcoded parameters (see docs)")
+    logger.warning("")
+    logger.warning("🚀 Want configurable parameters?")
+    logger.warning("   • Variable TTL (hours to months)")
+    logger.warning("   • Configurable workers (1-10+)")
+    logger.warning("   • External Redis support")
+    logger.warning("   • Advanced monitoring")
+    logger.warning("")
+    logger.warning("📧 Contact: support@alexbic.net")
+    logger.warning("🌐 GitHub: https://github.com/alexbic/video-processor-api")
+    logger.info("=" * 60)
     try:
         logger.info(f"Log level: {LOG_LEVEL} (effective: {logging.getLevelName(logger.getEffectiveLevel())})")
     except Exception:
@@ -379,6 +395,20 @@ def log_startup_info():
         logger.info(f"  - Public recover endpoint: {'ENABLED' if RECOVERY_PUBLIC_ENABLED else 'DISABLED'}")
     else:
         logger.info("Recovery: DISABLED")
+
+    # Tasks directory
+    logger.info(f"Tasks dir: /app/tasks (video files stored here)")
+
+    # Webhook settings
+    if DEFAULT_WEBHOOK_URL:
+        logger.info(f"Webhook: default_url set -> {DEFAULT_WEBHOOK_URL}")
+    if WEBHOOK_HEADERS:
+        masked_headers = {k: "***" for k in WEBHOOK_HEADERS.keys()}
+        logger.info(f"Webhook: global headers -> {masked_headers}")
+    logger.info(f"Webhook: background_resender_interval={WEBHOOK_BACKGROUND_INTERVAL_SECONDS}s (fixed in public version)")
+
+    # Client metadata limits
+    logger.info(f"client_meta: ALLOW_NESTED_JSON={ALLOW_NESTED_JSON_IN_META}")
 
     logger.info("=" * 60)
 
