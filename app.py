@@ -419,15 +419,6 @@ def _log_startup_once():
         fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
         os.close(fd)
 
-        # Retry Redis connection after app fully starts (for --preload mode)
-        for _i in range(max(0, REDIS_INIT_RETRIES)):
-            if _ensure_redis():
-                break
-            try:
-                time.sleep(max(0.0, REDIS_INIT_DELAY_SECONDS))
-            except Exception:
-                pass
-
         log_startup_info()
 
         # Запускаем recovery при старте (в фоновом потоке с задержкой)
@@ -435,14 +426,14 @@ def _log_startup_once():
             import time
             time.sleep(5)  # Даем серверу запуститься
             recover_stuck_tasks()
-            
+
             # Если настроена периодичность - запускаем планировщик
             if RECOVERY_INTERVAL_MINUTES > 0:
                 schedule_recovery()
-        
+
         recovery_thread = threading.Thread(target=delayed_recovery, daemon=True)
         recovery_thread.start()
-        
+
     except FileExistsError:
         # Уже логировали в этом контейнере — пропускаем
         pass
@@ -565,7 +556,7 @@ def validate_client_meta(client_meta):
 
     return True, None
 
-# Вызов логирования отложен до первого запроса (see @app.before_request hook below)
+# Вызов логирования после определения всех лимитов и функций — выводим один раз на контейнер
 
 # ============================================
 # INPUT DOWNLOAD + VALIDATION
@@ -1466,12 +1457,6 @@ OPERATIONS_REGISTRY = {
 
 # Вызов логирования после определения всех параметров — выводим один раз на контейнер
 _log_startup_once()
-
-# Flask hook: вызываем логирование при первом запросе
-@app.before_request
-def before_first_request_handler():
-    _log_startup_once()
-
 
 @app.route('/health', methods=['GET'])
 def health_check():
