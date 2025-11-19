@@ -1565,6 +1565,10 @@ def get_task_status(task_id):
                     'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json"),
                     'completed_at': metadata.get('completed_at')
                 }
+                # Добавляем webhook из metadata.json, если есть
+                if metadata.get('webhook') is not None:
+                    resp['webhook'] = metadata.get('webhook')
+                # client_meta всегда в конце
                 if metadata.get('client_meta') is not None:
                     resp['client_meta'] = metadata.get('client_meta')
                 return jsonify(resp)
@@ -1850,6 +1854,10 @@ def process_video():
                 "message": "Task created and processing in background",
                 "check_status_url": build_absolute_url(f"/task_status/{task_id}")
             }
+            # Добавляем webhook объект, если был предоставлен
+            if webhook:
+                resp["webhook"] = webhook
+            # client_meta всегда в конце
             if client_meta is not None:
                 resp["client_meta"] = client_meta
             return jsonify(resp), 202
@@ -2059,7 +2067,10 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         "note": "Files will auto-delete after 2 hours.",
         "completed_at": metadata["completed_at"]
     }
-    # client_meta в самом конце
+    # Добавляем webhook объект, если был предоставлен
+    if webhook:
+        response_body["webhook"] = webhook
+    # client_meta всегда в конце
     if client_meta is not None:
         response_body["client_meta"] = client_meta
     return jsonify(response_body)
