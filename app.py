@@ -1464,6 +1464,9 @@ OPERATIONS_REGISTRY = {
     'extract_audio': ExtractAudioOperation(),
 }
 
+# Вызов логирования после определения всех параметров — выводим один раз на контейнер
+_log_startup_once()
+
 # Flask hook: вызываем логирование и Redis retry при первом запросе
 @app.before_request
 def before_first_request_handler():
