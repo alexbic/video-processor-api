@@ -1683,29 +1683,39 @@ def process_video():
         execution = data.get('execution', 'sync')  # sync или async
         operations = data.get('operations', [])
 
-        # Webhook - новая унифицированная структура
+        # Webhook - только новый формат (объект с url и headers)
         webhook = data.get('webhook')
         webhook_url = None
         webhook_headers = None
 
-        if webhook:
+        if webhook is not None:
+            # Принимаем только объект формата: {"url": "...", "headers": {...}}
             if not isinstance(webhook, dict):
-                return jsonify({"error": "Invalid webhook (must be an object)"}), 400
+                return jsonify({"error": "Invalid webhook (must be an object with 'url' and optional 'headers')"}), 400
+
             webhook_url = webhook.get('url')
             webhook_headers = webhook.get('headers')
 
-            # Валидация webhook_headers если они есть
+            # Валидация webhook.url
+            if webhook_url is not None:
+                if not isinstance(webhook_url, str) or not webhook_url.lower().startswith(("http://", "https://")):
+                    return jsonify({"error": "Invalid webhook.url (must start with http(s)://)"}), 400
+                if len(webhook_url) > 2048:
+                    return jsonify({"error": "Invalid webhook.url (too long)"}), 400
+
+            # Валидация webhook.headers
             if webhook_headers is not None:
                 if not isinstance(webhook_headers, dict):
-                    return jsonify({"error": "Invalid webhook.headers (must be an object/dict)"}), 400
+                    return jsonify({"error": "Invalid webhook.headers (must be an object)"}), 400
                 for key, value in webhook_headers.items():
                     if not isinstance(key, str) or not isinstance(value, str):
                         return jsonify({"error": "Invalid webhook.headers (keys and values must be strings)"}), 400
                     if len(key) > 256 or len(value) > 2048:
                         return jsonify({"error": "Invalid webhook.headers (header name or value too long)"}), 400
-        else:
-            # Fallback на дефолтный webhook URL из env (если нет webhook объекта)
-            webhook_url = os.getenv('DEFAULT_WEBHOOK_URL')
+
+        # Fallback на DEFAULT_WEBHOOK_URL если webhook не указан
+        if webhook_url is None and DEFAULT_WEBHOOK_URL:
+            webhook_url = DEFAULT_WEBHOOK_URL
 
         # Произвольные метаданные клиента для сквозного возврата в ответах/вебхуках
         client_meta = data.get('client_meta')
