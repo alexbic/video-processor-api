@@ -1467,7 +1467,7 @@ OPERATIONS_REGISTRY = {
 # Вызов логирования после определения всех параметров — выводим один раз на контейнер
 _log_startup_once()
 
-# Flask hook: вызываем логирование и Redis retry при первом запросе
+# Flask hook: вызываем логирование при первом запросе
 @app.before_request
 def before_first_request_handler():
     _log_startup_once()
@@ -2082,6 +2082,14 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             "metadata_url": build_absolute_url_background(f"/download/{task_id}/metadata.json"),
             "completed_at": metadata["completed_at"]
         }
+        # Добавляем webhook объект если есть
+        if webhook_url or webhook_headers:
+            webhook_obj = {}
+            if webhook_url:
+                webhook_obj["url"] = webhook_url
+            if webhook_headers:
+                webhook_obj["headers"] = webhook_headers
+            webhook_payload["webhook"] = webhook_obj
         if client_meta is not None:
             webhook_payload["client_meta"] = client_meta
         send_webhook(webhook_url, webhook_payload, webhook_headers, task_id)
@@ -2308,6 +2316,14 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 'operations_executed': total_ops,
                 'completed_at': datetime.now().isoformat()
             }
+            # Добавляем webhook объект если есть
+            if webhook_url or webhook_headers:
+                webhook_obj = {}
+                if webhook_url:
+                    webhook_obj["url"] = webhook_url
+                if webhook_headers:
+                    webhook_obj["headers"] = webhook_headers
+                webhook_payload["webhook"] = webhook_obj
             # client_meta в самом конце
             if client_meta is not None:
                 webhook_payload['client_meta'] = client_meta
@@ -2330,6 +2346,14 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 'error': str(e),
                 'failed_at': datetime.now().isoformat()
             }
+            # Добавляем webhook объект если есть
+            if webhook_url or webhook_headers:
+                webhook_obj = {}
+                if webhook_url:
+                    webhook_obj["url"] = webhook_url
+                if webhook_headers:
+                    webhook_obj["headers"] = webhook_headers
+                error_payload["webhook"] = webhook_obj
             send_webhook(webhook_url, error_payload, webhook_headers, task_id)
 
 
@@ -2697,6 +2721,15 @@ def _webhook_resender_loop():
                         "completed_at": metadata.get('completed_at')
                     }
 
+                    # Добавляем webhook объект если есть
+                    if webhook_url or webhook_headers:
+                        webhook_obj = {}
+                        if webhook_url:
+                            webhook_obj["url"] = webhook_url
+                        if webhook_headers:
+                            webhook_obj["headers"] = webhook_headers
+                        webhook_payload["webhook"] = webhook_obj
+
                     client_meta = metadata.get('client_meta')
                     if client_meta:
                         webhook_payload['client_meta'] = client_meta
@@ -2710,6 +2743,15 @@ def _webhook_resender_loop():
                         "error": metadata.get('error', 'Unknown error'),
                         "failed_at": metadata.get('failed_at')
                     }
+
+                    # Добавляем webhook объект если есть
+                    if webhook_url or webhook_headers:
+                        webhook_obj = {}
+                        if webhook_url:
+                            webhook_obj["url"] = webhook_url
+                        if webhook_headers:
+                            webhook_obj["headers"] = webhook_headers
+                        webhook_payload["webhook"] = webhook_obj
 
                     client_meta = metadata.get('client_meta')
                     if client_meta:
