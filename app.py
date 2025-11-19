@@ -21,6 +21,7 @@ app.json.sort_keys = False
 # ============================================
 
 PUBLIC_BASE_URL = os.getenv('PUBLIC_BASE_URL') or os.getenv('EXTERNAL_BASE_URL')
+INTERNAL_BASE_URL = os.getenv('INTERNAL_BASE_URL')
 API_KEY = os.getenv('API_KEY')  # Bearer token для авторизации
 
 # Умная логика авторизации:
@@ -104,7 +105,12 @@ def build_absolute_url_background(path: str) -> str:
     if API_KEY_ENABLED and PUBLIC_BASE_URL:
         return _join_url(PUBLIC_BASE_URL, path)
     # Fallback: internal Docker network or localhost
-    internal_base = os.getenv('INTERNAL_BASE_URL', 'http://video-processor:5001')
+    internal_base = INTERNAL_BASE_URL or 'http://video-processor:5001'
+    return _join_url(internal_base, path)
+
+def build_internal_url_background(path: str) -> str:
+    """Build internal URL in background context (always uses INTERNAL_BASE_URL)."""
+    internal_base = INTERNAL_BASE_URL or 'http://video-processor:5001'
     return _join_url(internal_base, path)
 
 # ============================================
@@ -258,6 +264,117 @@ def save_task_metadata(task_id: str, metadata: dict):
     with open(metadata_path, 'w') as f:
         json.dump(metadata, f, indent=2)
     os.chmod(metadata_path, 0o644)
+
+
+def build_structured_metadata(
+    task_id: str,
+    status: str,
+    created_at: str,
+    completed_at: str | None,
+    expires_at: str | None,
+    video_url: str | None,
+    operations: list | None,
+    output_files: list | None,
+    total_files: int | None,
+    is_chunked: bool | None,
+    metadata_url: str | None,
+    metadata_url_internal: str | None,
+    webhook_url: str | None,
+    webhook_headers: dict | None,
+    webhook_status: dict | None,
+    retry_count: int | None,
+    client_meta: Any | None,
+    # Optional additional fields
+    operations_count: int | None = None,
+    total_size: int | None = None,
+    total_size_mb: float | None = None,
+    ttl_seconds: int | None = None,
+    ttl_human: str | None = None
+) -> dict:
+    """
+    Builds metadata object with structured, predictable field ordering.
+
+    Field groups (in order):
+    1. Task info (task_id, status, timestamps)
+    2. Input (video_url, operations)
+    3. Output (output_files, metadata_url, etc)
+    4. Webhook (webhook object with status tracking)
+    5. Client meta (always last)
+    """
+    result = {}
+
+    # 1. TASK INFO
+    result["task_id"] = task_id
+    result["status"] = status
+    result["created_at"] = created_at
+    if completed_at is not None:
+        result["completed_at"] = completed_at
+    if expires_at is not None:
+        result["expires_at"] = expires_at
+    if retry_count is not None:
+        result["retry_count"] = retry_count
+
+    # 2. INPUT (original request data)
+    input_data = {}
+    if video_url is not None:
+        input_data["video_url"] = video_url
+    if operations is not None:
+        input_data["operations"] = operations
+    if operations_count is not None:
+        input_data["operations_count"] = operations_count
+    if input_data:  # Only add if not empty
+        result["input"] = input_data
+
+    # 3. OUTPUT (processing result)
+    output_data = {}
+    if output_files is not None:
+        output_data["output_files"] = output_files
+    if total_files is not None:
+        output_data["total_files"] = total_files
+    if total_size is not None:
+        output_data["total_size"] = total_size
+    if total_size_mb is not None:
+        output_data["total_size_mb"] = total_size_mb
+    if is_chunked is not None:
+        output_data["is_chunked"] = is_chunked
+    # URLs (external first if available, then internal)
+    if metadata_url is not None:
+        output_data["metadata_url"] = metadata_url
+    if metadata_url_internal is not None:
+        output_data["metadata_url_internal"] = metadata_url_internal
+    if ttl_seconds is not None:
+        output_data["ttl_seconds"] = ttl_seconds
+    if ttl_human is not None:
+        output_data["ttl_human"] = ttl_human
+    if output_data:  # Only add if not empty
+        result["output"] = output_data
+
+    # 4. WEBHOOK
+    if webhook_status:
+        # Use existing webhook status from storage
+        result["webhook"] = webhook_status
+    elif webhook_url:
+        # Create new webhook object
+        result["webhook"] = {
+            "url": webhook_url,
+            "headers": webhook_headers,
+            "status": "pending",
+            "attempts": 0,
+            "last_attempt": None,
+            "last_status": None,
+            "last_error": None,
+            "next_retry": None,
+            "task_id": task_id
+        }
+    else:
+        result["webhook"] = None
+
+    # 5. CLIENT META (always last)
+    if client_meta is not None:
+        result["client_meta"] = client_meta
+
+    return result
+
 
 def load_task_metadata(task_id: str) -> dict:
     """Загрузить metadata.json для задачи"""
@@ -1836,24 +1953,28 @@ def process_video():
             save_task(task_id, task_data)
 
             # Сохраняем начальные метаданные на диск для механизма recovery
-            initial_metadata = {
-                'task_id': task_id,
-                'status': 'queued',
-                'video_url': video_url,
-                'operations': operations,
-                'operations_count': len(operations),
-                'output_files': [],
-                'total_files': 0,
-                'total_size': 0,
-                'total_size_mb': 0,
-                'created_at': task_data['created_at'],
-                'expires_at': task_data['expires_at'],
-                'retry_count': 0
-            }
-            if client_meta is not None:
-                initial_metadata['client_meta'] = client_meta
-            if webhook is not None:
-                initial_metadata['webhook'] = webhook
+            initial_metadata = build_structured_metadata(
+                task_id=task_id,
+                status='queued',
+                created_at=task_data['created_at'],
+                completed_at=None,
+                expires_at=task_data['expires_at'],
+                video_url=video_url,
+                operations=operations,
+                output_files=[],
+                total_files=0,
+                is_chunked=False,
+                metadata_url=None,
+                metadata_url_internal=None,
+                webhook_url=webhook.get('url') if webhook else None,
+                webhook_headers=webhook.get('headers') if webhook else None,
+                webhook_status=webhook if webhook else None,
+                retry_count=0,
+                client_meta=client_meta,
+                operations_count=len(operations),
+                total_size=0,
+                total_size_mb=0.0
+            )
             save_task_metadata(task_id, initial_metadata)
 
             # Запускаем фоновую обработку
@@ -2034,21 +2155,26 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
     # Сохраняем metadata
     now = datetime.now()
-    metadata = {
-        "task_id": task_id,
-        "status": "completed",
-        "video_url": video_url,
-        "operations": operations,
-        "output_files": files_info,
-        "total_files": len(files_info),
-        "created_at": now.isoformat(),
-        "expires_at": (now + timedelta(hours=TASK_TTL_HOURS)).isoformat(),
-        "completed_at": now.isoformat(),
-        "retry_count": 0
-    }
-    # client_meta в самом конце
-    if client_meta is not None:
-        metadata["client_meta"] = client_meta
+    is_chunked = any(f.get('chunk') for f in files_info)
+    metadata = build_structured_metadata(
+        task_id=task_id,
+        status="completed",
+        created_at=now.isoformat(),
+        completed_at=now.isoformat(),
+        expires_at=(now + timedelta(hours=TASK_TTL_HOURS)).isoformat(),
+        video_url=video_url,
+        operations=operations,
+        output_files=files_info,
+        total_files=len(files_info),
+        is_chunked=is_chunked,
+        metadata_url=build_absolute_url_background(f"/download/{task_id}/metadata.json") if (PUBLIC_BASE_URL and API_KEY) else None,
+        metadata_url_internal=build_internal_url_background(f"/download/{task_id}/metadata.json"),
+        webhook_url=webhook_url,
+        webhook_headers=webhook_headers,
+        webhook_status=None,
+        retry_count=0,
+        client_meta=client_meta
+    )
     save_task_metadata(task_id, metadata)
 
     # Отправляем webhook если указан
@@ -2243,26 +2369,32 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         # Попробуем получить client_meta из сохраненной задачи
         task_snapshot = get_task(task_id) or {}
         client_meta = task_snapshot.get('client_meta')
+        is_chunked = any(f.get('chunk') for f in output_files_info)
 
-        metadata = {
-            'task_id': task_id,
-            'status': 'completed',
-            'operations': operations,
-            'operations_count': total_ops,
-            'output_files': output_files_info,
-            'total_files': len(output_files_info),
-            'total_size': total_size,
-            'total_size_mb': round(total_size / (1024 * 1024), 2),
-                'created_at': task_snapshot.get('created_at', datetime.now().isoformat()),
-                'expires_at': task_snapshot.get('expires_at', (datetime.now() + timedelta(hours=TASK_TTL_HOURS)).isoformat()),
-                'completed_at': datetime.now().isoformat(),
-                'retry_count': task_snapshot.get('retry_count', 0),
-            'ttl_seconds': 7200,
-            'ttl_human': '2 hours'
-        }
-        # client_meta в самом конце
-        if client_meta is not None:
-            metadata['client_meta'] = client_meta
+        metadata = build_structured_metadata(
+            task_id=task_id,
+            status='completed',
+            created_at=task_snapshot.get('created_at', datetime.now().isoformat()),
+            completed_at=datetime.now().isoformat(),
+            expires_at=task_snapshot.get('expires_at', (datetime.now() + timedelta(hours=TASK_TTL_HOURS)).isoformat()),
+            video_url=video_url,
+            operations=operations,
+            output_files=output_files_info,
+            total_files=len(output_files_info),
+            is_chunked=is_chunked,
+            metadata_url=build_absolute_url_background(f"/download/{task_id}/metadata.json") if (PUBLIC_BASE_URL and API_KEY) else None,
+            metadata_url_internal=build_internal_url_background(f"/download/{task_id}/metadata.json"),
+            webhook_url=webhook_url,
+            webhook_headers=webhook_headers,
+            webhook_status=None,
+            retry_count=task_snapshot.get('retry_count', 0),
+            client_meta=client_meta,
+            operations_count=total_ops,
+            total_size=total_size,
+            total_size_mb=round(total_size / (1024 * 1024), 2),
+            ttl_seconds=7200,
+            ttl_human='2 hours'
+        )
         save_task_metadata(task_id, metadata)
 
         # Обновляем задачу
