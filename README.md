@@ -166,7 +166,7 @@ Immediate echo:
 
 - `GET /health` — service status (versions, `storage_mode`, Redis availability) **[no authorization]**
 - `GET /fonts` — list of system and custom fonts **[requires API key]**
-- `POST /process_video` — start pipeline (sync/async; `operations`, optionally `webhook_url`) **[requires API key]**
+- `POST /process_video` — start pipeline (sync/async; `operations`, optionally `webhook` object) **[requires API key]**
 - `GET /task_status/{task_id}` — task status (`queued`/`processing`/`completed`/`error`) **[no authorization]**
 - `GET /tasks` — recent tasks (for debugging) **[requires API key]**
 - `GET /download/{task_id}/{filename}` — download completed file **[no authorization]**

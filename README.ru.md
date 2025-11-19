@@ -166,7 +166,7 @@ curl -H "Authorization: Bearer your-api-key" \
 
 - `GET /health` — состояние сервиса (версии, `storage_mode`, доступность Redis) **[без авторизации]**
 - `GET /fonts` — список системных и кастомных шрифтов **[требует API key если задан]**
-- `POST /process_video` — запуск pipeline (sync/async; `operations`, опционально `webhook_url`) **[требует API key если задан]**
+- `POST /process_video` — запуск pipeline (sync/async; `operations`, опционально объект `webhook`) **[требует API key если задан]**
 - `GET /task_status/{task_id}` — статус задачи (`queued`/`processing`/`completed`/`error`) **[без авторизации]**
 - `GET /tasks` — последние задачи (для отладки) **[требует API key если задан]**
 - `GET /download/{task_id}/{filename}` — скачать готовый файл **[без авторизации]**
