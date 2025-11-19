@@ -432,9 +432,10 @@ curl http://localhost:5001/task_status/abc123
 {
   "webhook": {
     "url": "https://n8n.example.com/webhook/video-completed",
-  "webhook_headers": {
-    "X-API-Key": "your-secret-key",
-    "Authorization": "Bearer token-123"
+    "headers": {
+      "X-API-Key": "your-secret-key",
+      "Authorization": "Bearer token-123"
+    }
   }
 }
 ```
