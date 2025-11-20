@@ -38,7 +38,14 @@ RUN mkdir -p /app/tasks /var/log/supervisor /var/run/supervisor
 
 # Минимальный redis.conf с нужными параметрами (надёжнее, чем длинная CLI-строка)
 RUN mkdir -p /etc/redis && \
-    bash -lc 'cat > /etc/redis/redis.conf <<EOF\nbind 127.0.0.1\nport 6379\nmaxmemory 256mb\nmaxmemory-policy allkeys-lru\nsave \"\"\nprotected-mode no\nEOF'
+    cat > /etc/redis/redis.conf <<'EOF'
+bind 127.0.0.1
+port 6379
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+save ""
+protected-mode no
+EOF
 
 # Supervisor конфиг: Redis + Gunicorn с фиксированными параметрами (публичная версия)
 RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
