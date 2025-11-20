@@ -122,7 +122,7 @@ redis_client = None
 REDIS_HOST = 'localhost'  # Built-in Redis
 REDIS_PORT = 6379
 REDIS_DB = 0
-REDIS_INIT_RETRIES = 20  # More retries for built-in Redis startup
+REDIS_INIT_RETRIES = 60  # More retries for built-in Redis startup (up to ~30s)
 REDIS_INIT_DELAY_SECONDS = 0.5
 STORAGE_MODE = "memory"
 
@@ -147,12 +147,12 @@ def _ensure_redis() -> bool:
         client.ping()
         redis_client = client
         if STORAGE_MODE != "redis":
-            print(f"INFO: Redis connected at {REDIS_HOST}:{REDIS_PORT}")
+            logger.info(f"Redis connected at {REDIS_HOST}:{REDIS_PORT}")
         STORAGE_MODE = "redis"
         return True
     except Exception as e:
         if STORAGE_MODE != "memory":
-            print(f"WARNING: Redis unavailable, falling back to memory: {e}")
+            logger.warning(f"Redis unavailable, falling back to memory: {e}")
         STORAGE_MODE = "memory"
         redis_client = None
         return False
@@ -442,6 +442,15 @@ logger = logging.getLogger(__name__)
 
 def log_startup_info():
     """Выводит информацию о конфигурации сервиса при старте."""
+    # Попробуем ещё раз инициализировать Redis перед выводом статуса,
+    # чтобы поймать случаи, когда Redis поднялся чуть позже
+    try:
+        for _ in range(6):  # +3s ожидания суммарно
+            if _ensure_redis():
+                break
+            time.sleep(0.5)
+    except Exception:
+        pass
     logger.info("=" * 60)
     logger.info("Video Processor API - PUBLIC VERSION")
     logger.info("=" * 60)
