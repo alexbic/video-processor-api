@@ -6,6 +6,7 @@ import uuid
 import logging
 import threading
 from typing import Dict, Any
+import socket
 import re
 import json
 from functools import wraps
@@ -151,6 +152,8 @@ def _ensure_redis() -> bool:
         STORAGE_MODE = "redis"
         return True
     except Exception as e:
+        # Покажем причину неудачного подключения всегда (для диагностики старта)
+        logger.debug(f"Redis connect failed: {e}")
         if STORAGE_MODE != "memory":
             logger.warning(f"Redis unavailable, falling back to memory: {e}")
         STORAGE_MODE = "memory"
@@ -474,6 +477,12 @@ def log_startup_info():
     except Exception:
         pass
     logger.info(f"Storage mode: {STORAGE_MODE}")
+    # Доп. диагностика TCP-порта Redis
+    try:
+        with socket.create_connection((REDIS_HOST, REDIS_PORT), timeout=0.5):
+            logger.info("Redis TCP port: OPEN (connection possible)")
+    except Exception:
+        logger.info("Redis TCP port: CLOSED (no listener)")
     if STORAGE_MODE == "redis":
         logger.info(f"Redis: {REDIS_HOST}:{REDIS_PORT} (db={REDIS_DB})")
         logger.info("Multi-worker support: ENABLED")
