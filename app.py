@@ -14,6 +14,14 @@ from bootstrap import wait_for_redis, log_tcp_port
 
 app = Flask(__name__)
 
+# Запускаем webhook resender в фоновом потоке при инициализации приложения
+try:
+    resender_thread = threading.Thread(target=_webhook_resender_loop, daemon=True)
+    resender_thread.start()
+    logger.info("Webhook resender thread started (auto-init)")
+except Exception as e:
+    logger.error(f"Failed to start webhook resender thread: {e}")
+
 # Отключаем автоматическую сортировку ключей JSON (сохраняем порядок вставки)
 # Flask 3.0+ требует явного указания в json provider
 app.json.sort_keys = False
@@ -2947,10 +2955,4 @@ def _webhook_resender_loop():
 
 
 if __name__ == '__main__':
-    # Запускаем webhook resender в фоновом потоке
-    if DEFAULT_WEBHOOK_URL or True:  # Всегда включен для ретраев failed webhooks
-        resender_thread = threading.Thread(target=_webhook_resender_loop, daemon=True)
-        resender_thread.start()
-        logger.info("Webhook resender thread started")
-
     app.run(host='0.0.0.0', port=5001, debug=False)
