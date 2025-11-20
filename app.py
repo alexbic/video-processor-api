@@ -2517,9 +2517,14 @@ def recover_stuck_tasks():
     recovered = 0
     failed = 0
     expired = 0
+    scanned = 0
+    skipped_status = 0
+    skipped_with_output = 0
+    empty_dirs_removed = 0
     
     try:
         for task_id in os.listdir(TASKS_DIR):
+            scanned += 1
             task_dir = get_task_dir(task_id)
             metadata_path = os.path.join(task_dir, "metadata.json")
             
@@ -2530,6 +2535,7 @@ def recover_stuck_tasks():
                         import shutil
                         shutil.rmtree(task_dir, ignore_errors=True)
                         logger.info(f"Removed empty task directory: {task_id}")
+                        empty_dirs_removed += 1
                 except Exception as e:
                     logger.warning(f"Failed to remove empty dir {task_id}: {e}")
                 continue
@@ -2540,9 +2546,12 @@ def recover_stuck_tasks():
                     continue
                 
                 status = metadata.get('status')
-                
-                # Проверяем только processing задачи
-                if status not in ('processing', 'queued'):
+
+                # Диагностика: считаем пропущенные по статусу
+                # В recovery теперь включаем 'pending' (задачи могли упасть до смены статуса)
+                if status not in ('processing', 'queued', 'pending'):
+                    skipped_status += 1
+                    logger.debug(f"Task {task_id}: Skip (status={status})")
                     continue
                 
                 # Проверяем истек ли TTL
@@ -2575,7 +2584,7 @@ def recover_stuck_tasks():
                 
                 if has_output:
                     # Результат есть, но статус не обновлен
-                    # Такое могло случиться если упали после обработки но до сохранения metadata
+                    skipped_with_output += 1
                     logger.info(f"Task {task_id}: Has output but status={status}, skipping recovery")
                     continue
                 
@@ -2663,7 +2672,11 @@ def recover_stuck_tasks():
     except Exception as e:
         logger.error(f"Recovery scan error: {e}")
     
-    logger.info(f"Recovery scan complete: recovered={recovered}, expired={expired}, failed={failed}")
+    logger.info(
+        "Recovery scan complete: "
+        f"scanned={scanned}, recovered={recovered}, expired={expired}, failed={failed}, "
+        f"skipped_status={skipped_status}, skipped_with_output={skipped_with_output}, empty_dirs_removed={empty_dirs_removed}"
+    )
     logger.info("=" * 60)
 
 def schedule_recovery():
