@@ -481,23 +481,23 @@ def log_startup_info():
         logger.info("   ✓ Configurable parameters ✓ External Redis ✓ Variable TTL")
         logger.info("=" * 60)
         try:
-            logger.info(f"Log level: {LOG_LEVEL}")
+            logger.info(f"   Log level: {LOG_LEVEL}")
         except Exception:
             pass
         # Log API access mode
         if API_KEY_ENABLED:
             if PUBLIC_BASE_URL:
-                logger.info(f"Mode: PUBLIC API | Base URL: {PUBLIC_BASE_URL}")
-                logger.info("Authentication: ENABLED")
+                logger.info(f"   Mode: PUBLIC API | Base URL: {PUBLIC_BASE_URL}")
+                logger.info("   Authentication: ENABLED")
             else:
-                logger.info("Mode: PUBLIC API (internal URLs)")
-                logger.info("Authentication: ENABLED")
+                logger.info("   Mode: PUBLIC API (internal URLs)")
+                logger.info("   Authentication: ENABLED")
         else:
-            logger.info("Mode: INTERNAL (Docker network)")
+            logger.info("   Mode: INTERNAL (Docker network)")
             if PUBLIC_BASE_URL:
                 logger.warning("⚠️  PUBLIC_BASE_URL ignored (API_KEY not set)")
                 logger.warning(f"   Set API_KEY to activate: {PUBLIC_BASE_URL}")
-            logger.info("Authentication: DISABLED")
+            logger.info("   Authentication: DISABLED")
         logger.info("=" * 60)
     finally:
         # Возвращаем старый форматтер
