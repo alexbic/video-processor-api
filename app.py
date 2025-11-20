@@ -123,11 +123,12 @@ def build_internal_url_background(path: str) -> str:
 # ============================================
 
 # Public version: Built-in Redis (localhost), not configurable
+# All Redis parameters are HARDCODED (no environment variables)
 redis_client = None
-REDIS_HOST = 'localhost'  # Built-in Redis
-REDIS_PORT = 6379
-REDIS_DB = 0
-REDIS_INIT_RETRIES = 60  # More retries for built-in Redis startup (up to ~30s)
+REDIS_HOST = 'localhost'  # Built-in Redis (hardcoded)
+REDIS_PORT = 6379         # Built-in Redis port (hardcoded)
+REDIS_DB = 0              # Built-in Redis DB (hardcoded)
+REDIS_INIT_RETRIES = 60   # More retries for built-in Redis startup (up to ~30s)
 REDIS_INIT_DELAY_SECONDS = 0.5
 STORAGE_MODE = "memory"
 
@@ -241,16 +242,16 @@ CLEANUP_INTERVAL_SECONDS = 3600  # 1 час - hardcoded в публичной в
 TASKS_DIR = "/app/tasks"
 os.makedirs(TASKS_DIR, exist_ok=True)
 
-# Recovery настройки
-RECOVERY_ENABLED = os.getenv('RECOVERY_ENABLED', 'true').lower() in ('true', '1', 'yes')
-RECOVERY_INTERVAL_MINUTES = int(os.getenv('RECOVERY_INTERVAL_MINUTES', '0'))  # 0 = только при старте
-MAX_TASK_RETRIES = int(os.getenv('MAX_TASK_RETRIES', '3'))
-RETRY_DELAY_SECONDS = int(os.getenv('RETRY_DELAY_SECONDS', '60'))
-RECOVERY_PUBLIC_ENABLED = os.getenv('RECOVERY_PUBLIC_ENABLED', 'false').lower() in ('true', '1', 'yes')
+# Recovery настройки (HARDCODED for public version)
+RECOVERY_ENABLED = True  # os.getenv('RECOVERY_ENABLED', 'true').lower() in ('true', '1', 'yes')
+RECOVERY_INTERVAL_MINUTES = 0  # int(os.getenv('RECOVERY_INTERVAL_MINUTES', '0'))  # 0 = только при старте
+MAX_TASK_RETRIES = 3  # int(os.getenv('MAX_TASK_RETRIES', '3'))
+RETRY_DELAY_SECONDS = 60  # int(os.getenv('RETRY_DELAY_SECONDS', '60'))
+RECOVERY_PUBLIC_ENABLED = False  # os.getenv('RECOVERY_PUBLIC_ENABLED', 'false').lower() in ('true', '1', 'yes')
 
-# Webhook настройки
-WEBHOOK_HEADERS = os.getenv('WEBHOOK_HEADERS', None)  # Глобальные webhook заголовки (опционально)
-DEFAULT_WEBHOOK_URL = os.getenv('DEFAULT_WEBHOOK_URL', None)  # Дефолтный webhook URL (опционально)
+# Webhook настройки (HARDCODED for public version)
+WEBHOOK_HEADERS = None  # os.getenv('WEBHOOK_HEADERS', None)  # Глобальные webhook заголовки (опционально)
+DEFAULT_WEBHOOK_URL = None  # os.getenv('DEFAULT_WEBHOOK_URL', None)  # Дефолтный webhook URL (опционально)
 
 # Вспомогательные функции для работы с задачами
 def get_task_dir(task_id: str) -> str:
@@ -581,17 +582,17 @@ def _log_startup_once():
 # CLIENT META VALIDATION LIMITS
 # ============================================
 
-# Ограничения для client_meta, чтобы избежать перегрузки сервиса и инъекций
-MAX_CLIENT_META_BYTES = int(os.getenv('MAX_CLIENT_META_BYTES', 16 * 1024))  # 16 KB по умолчанию
-MAX_CLIENT_META_DEPTH = int(os.getenv('MAX_CLIENT_META_DEPTH', 5))
-MAX_CLIENT_META_KEYS = int(os.getenv('MAX_CLIENT_META_KEYS', 200))
-MAX_CLIENT_META_STRING_LENGTH = int(os.getenv('MAX_CLIENT_META_STRING_LENGTH', 1000))
-MAX_CLIENT_META_LIST_LENGTH = int(os.getenv('MAX_CLIENT_META_LIST_LENGTH', 200))
+# Ограничения для client_meta (HARDCODED for public version)
+MAX_CLIENT_META_BYTES = 16 * 1024  # int(os.getenv('MAX_CLIENT_META_BYTES', 16 * 1024))  # 16 KB
+MAX_CLIENT_META_DEPTH = 5  # int(os.getenv('MAX_CLIENT_META_DEPTH', 5))
+MAX_CLIENT_META_KEYS = 200  # int(os.getenv('MAX_CLIENT_META_KEYS', 200))
+MAX_CLIENT_META_STRING_LENGTH = 1000  # int(os.getenv('MAX_CLIENT_META_STRING_LENGTH', 1000))
+MAX_CLIENT_META_LIST_LENGTH = 200  # int(os.getenv('MAX_CLIENT_META_LIST_LENGTH', 200))
 
 ALLOWED_JSON_PRIMITIVES = (str, int, float, bool, type(None))
 
-# Разрешить ли попытку распарсить вложенные JSON-строки в client_meta
-ALLOW_NESTED_JSON_IN_META = os.getenv('ALLOW_NESTED_JSON_IN_META', 'true').lower() in ('1', 'true', 'yes')
+# Разрешить ли попытку распарсить вложенные JSON-строки в client_meta (HARDCODED for public version)
+ALLOW_NESTED_JSON_IN_META = True  # os.getenv('ALLOW_NESTED_JSON_IN_META', 'true').lower() in ('1', 'true', 'yes')
 
 
 def _try_parse_json_string(s: str):
