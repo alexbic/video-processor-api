@@ -876,6 +876,20 @@ def _post_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None,
             "last_error": None,
             "next_retry": None
         }
+    else:
+        # Убеждаемся что все обязательные поля присутствуют (для обратной совместимости)
+        if "attempts" not in webhook_state:
+            webhook_state["attempts"] = 0
+        if "last_attempt" not in webhook_state:
+            webhook_state["last_attempt"] = None
+        if "last_status" not in webhook_state:
+            webhook_state["last_status"] = None
+        if "last_error" not in webhook_state:
+            webhook_state["last_error"] = None
+        if "next_retry" not in webhook_state:
+            webhook_state["next_retry"] = None
+        if "status" not in webhook_state:
+            webhook_state["status"] = "pending"
 
     # Подготавливаем заголовки
     headers = {"Content-Type": "application/json"}
