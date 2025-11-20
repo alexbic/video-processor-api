@@ -2824,6 +2824,19 @@ def recover_task_endpoint(task_id):
 # ==============================================================================
 
 def _webhook_resender_loop():
+        # ...existing code...
+
+    # === Запуск resender только после всех определений ===
+    _resender_marker = '/tmp/vpapi_resender_started'
+    try:
+        if not os.path.exists(_resender_marker):
+            with open(_resender_marker, 'w') as f:
+                f.write(str(os.getpid()))
+            resender_thread = threading.Thread(target=_webhook_resender_loop, name='webhook-resender', daemon=True)
+            resender_thread.start()
+            logger.info(f"Webhook resender thread started in process {os.getpid()} (marker: {_resender_marker})")
+    except Exception as e:
+        logger.warning(f"Failed to start webhook resender thread: {e}")
     """
     Фоновый процесс для автоматических ретраев webhook.
     Сканирует все задачи и отправляет webhooks для failed/pending статусов.
