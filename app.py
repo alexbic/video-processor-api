@@ -2144,6 +2144,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
     # Собираем информацию о всех output файлах
     files_info = []
+    total_size = 0
 
     # Построение карты chunk-информации по шаблону имени *_chunkNNN.ext
     pattern = re.compile(r"^(?P<prefix>.+)_chunk(?P<index>\d{3})\.(?P<ext>[^.]+)$")
@@ -2166,6 +2167,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         if os.path.exists(file_path):
             os.chmod(file_path, 0o644)
             file_size = os.path.getsize(file_path)
+            total_size += file_size
             filename = os.path.basename(file_path)
             download_path = f"/download/{task_id}/{filename}"
             
@@ -2201,7 +2203,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         webhook_status=None,
         retry_count=0,
         client_meta=client_meta,
-        operations_count=total_ops,
+        operations_count=len(operations),
         total_size=total_size,
         total_size_mb=round(total_size / (1024 * 1024), 2),
         ttl_seconds=7200,
@@ -2211,18 +2213,12 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
     # Отправляем webhook если указан
     if webhook_url:
-        # Определяем chunked по наличию поля 'chunk'
-        is_chunked = any(f.get('chunk') for f in files_info)
-        
         webhook_payload = {
             "task_id": task_id,
             "event": "task_completed",
             "status": "completed",
-            "video_url": video_url,
-            "output_files": files_info,
-            "total_files": len(files_info),
-            "is_chunked": is_chunked,
-            "metadata_url": build_absolute_url_background(f"/download/{task_id}/metadata.json"),
+            "input": metadata.get("input", {}),
+            "output": metadata.get("output", {}),
             "completed_at": metadata["completed_at"]
         }
         # Добавляем webhook объект если есть
@@ -2446,23 +2442,14 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
         # Отправляем финальный webhook если указан
         if webhook_url:
-            # Определяем chunked
-            is_chunked = any(f.get('chunk') for f in output_files_info)
-            
+            # Читаем metadata для получения input/output
+            final_metadata = load_task_metadata(task_id)
             webhook_payload = {
                 'task_id': task_id,
                 'event': 'task_completed',
                 'status': 'completed',
-                'video_url': video_url,
-                'output_files': output_files_info,
-                'total_files': len(output_files_info),
-                'total_size': total_size,
-                'total_size_mb': round(total_size / (1024 * 1024), 2),
-                'is_chunked': is_chunked,
-                'metadata_url': build_absolute_url_background(f"/download/{task_id}/metadata.json"),
-                'file_ttl_seconds': 7200,
-                'file_ttl_human': '2 hours',
-                'operations_executed': total_ops,
+                'input': final_metadata.get('input', {}),
+                'output': final_metadata.get('output', {}),
                 'completed_at': datetime.now().isoformat()
             }
             # Добавляем webhook объект если есть
@@ -2488,10 +2475,12 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
         # Отправляем error webhook если указан
         if webhook_url:
+            error_metadata = load_task_metadata(task_id)
             error_payload = {
                 'task_id': task_id,
                 'event': 'task_failed',
                 'status': 'error',
+                'input': error_metadata.get('input', {}) if error_metadata else {},
                 'error': str(e),
                 'failed_at': datetime.now().isoformat()
             }
@@ -2879,27 +2868,15 @@ def _webhook_resender_loop():
                 webhook_headers = webhook_state.get('headers')
 
                 if status == 'completed':
-                    # Success webhook
-                    output = metadata.get('output', {})
-                    output_files = output.get('output_files', [])
-                    is_chunked = any(f.get('chunk') for f in output_files)
-
+                    # Success webhook (строго: input/output из metadata)
                     webhook_payload = {
                         "task_id": task_id,
                         "event": "task_completed",
                         "status": "completed",
-                        "video_url": metadata.get('input', {}).get('video_url'),
-                        "output_files": output_files,
-                        "total_files": output.get('total_files', len(output_files)),
-                        "total_size": output.get('total_size', 0),
-                        "total_size_mb": output.get('total_size_mb', round(output.get('total_size', 0) / 1024 / 1024, 1)),
-                        "is_chunked": is_chunked,
-                        "metadata_url": output.get('metadata_url_internal') or build_absolute_url_background(f"/download/{task_id}/metadata.json"),
-                        "file_ttl_seconds": output.get('ttl_seconds', TASK_TTL_HOURS * 3600),
-                        "file_ttl_human": output.get('ttl_human', f"{TASK_TTL_HOURS} hours"),
+                        "input": metadata.get('input', {}),
+                        "output": metadata.get('output', {}),
                         "completed_at": metadata.get('completed_at')
                     }
-
                     # Добавляем webhook объект если есть
                     if webhook_url or webhook_headers:
                         webhook_obj = {}
@@ -2908,7 +2885,6 @@ def _webhook_resender_loop():
                         if webhook_headers:
                             webhook_obj["headers"] = webhook_headers
                         webhook_payload["webhook"] = webhook_obj
-
                     client_meta = metadata.get('client_meta')
                     if client_meta:
                         webhook_payload['client_meta'] = client_meta

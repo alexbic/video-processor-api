@@ -2,6 +2,7 @@ version: "3.9"
 
 services:
   video-processor:
+    build: .
     image: alexbic/video-processor-api:latest
     container_name: video-processor
     restart: unless-stopped
