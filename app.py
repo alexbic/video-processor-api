@@ -463,97 +463,35 @@ def log_startup_info():
     logger.info("=" * 60)
     logger.info("⚠️  PUBLIC VERSION - HARDCODED PARAMETERS")
     logger.info("")
-    logger.info("📋 HARDCODED CONFIGURATION:")
-    logger.info("   Workers: 2 (fixed in Dockerfile)")
-    logger.info(f"   Redis: {REDIS_HOST}:{REDIS_PORT} (embedded, 256MB, localhost only)")
-    logger.info(f"   Task TTL: {TASK_TTL_HOURS}h (3 days)")
-    logger.info(f"   Recovery: max_retries={MAX_TASK_RETRIES}, delay={RETRY_DELAY_SECONDS}s")
-    logger.info(f"   Webhook: interval={WEBHOOK_BACKGROUND_INTERVAL_SECONDS}s, max_retries={WEBHOOK_MAX_RETRY_ATTEMPTS}")
-    logger.info(f"   Cleanup: interval={CLEANUP_INTERVAL_SECONDS}s (1 hour)")
-    logger.info(f"   Client Meta: max_bytes={MAX_CLIENT_META_BYTES}, depth={MAX_CLIENT_META_DEPTH}, keys={MAX_CLIENT_META_KEYS}")
+    logger.info("📋 Configuration:")
+    logger.info(f"   Workers: 2 | Redis: {REDIS_HOST}:{REDIS_PORT} (256MB) | Storage: {STORAGE_MODE}")
+    logger.info(f"   TTL: {TASK_TTL_HOURS}h | Recovery: retries={MAX_TASK_RETRIES}, delay={RETRY_DELAY_SECONDS}s")
+    logger.info(f"   Webhook: interval={WEBHOOK_BACKGROUND_INTERVAL_SECONDS}s, retries={WEBHOOK_MAX_RETRY_ATTEMPTS}, delay={WEBHOOK_RETRY_DELAY_SECONDS}s")
+    logger.info(f"   Cleanup: {CLEANUP_INTERVAL_SECONDS}s | Meta: {MAX_CLIENT_META_BYTES}B, depth={MAX_CLIENT_META_DEPTH}")
     logger.info("")
-    logger.info("🚀 WANT CONFIGURABLE PARAMETERS?")
-    logger.info("   ✓ Adjustable workers (1-10+)")
-    logger.info("   ✓ External Redis support")
-    logger.info("   ✓ Variable TTL (1h - 90 days)")
-    logger.info("   ✓ Custom webhook/recovery intervals")
-    logger.info("   ✓ Flexible client_meta limits")
-    logger.info("")
-    logger.info("📧 Upgrade to Pro: support@alexbic.net")
-    logger.info("🌐 GitHub: https://github.com/alexbic/video-processor-api")
+    logger.info("🚀 Upgrade to Pro: support@alexbic.net")
+    logger.info("   ✓ Configurable parameters ✓ External Redis ✓ Variable TTL")
     logger.info("=" * 60)
+    
     try:
-        logger.info(f"Log level: {LOG_LEVEL} (effective: {logging.getLevelName(logger.getEffectiveLevel())})")
+        logger.info(f"Log level: {LOG_LEVEL}")
     except Exception:
         pass
-    logger.info(f"Storage mode: {STORAGE_MODE}")
-    # Диагностика TCP-порта Redis (унифицированная функция)
-    log_tcp_port(logger, REDIS_HOST, REDIS_PORT, timeout=0.5)
-    if STORAGE_MODE == "redis":
-        logger.info(f"Redis: {REDIS_HOST}:{REDIS_PORT} (db={REDIS_DB})")
-        logger.info("Multi-worker support: ENABLED")
-    else:
-        logger.info("Redis: Not available")
-        logger.info("Multi-worker support: DISABLED (use --workers 1)")
 
     # Log API access mode
     if API_KEY_ENABLED:
-        # Публичный режим (API_KEY задан)
         if PUBLIC_BASE_URL:
-            logger.info("Mode: PUBLIC API with external URLs")
-            logger.info(f"Base URL: {PUBLIC_BASE_URL}")
-            logger.info("Authentication: ENABLED (Bearer token required)")
+            logger.info(f"Mode: PUBLIC API | Base URL: {PUBLIC_BASE_URL}")
+            logger.info("Authentication: ENABLED")
         else:
-            logger.info("Mode: PUBLIC API with internal URLs")
-            logger.info("Authentication: ENABLED (Bearer token required)")
+            logger.info("Mode: PUBLIC API (internal URLs)")
+            logger.info("Authentication: ENABLED")
     else:
-        # Внутренний режим (API_KEY не задан)
         logger.info("Mode: INTERNAL (Docker network)")
         if PUBLIC_BASE_URL:
-            logger.warning("=" * 60)
-            logger.warning("WARNING: PUBLIC_BASE_URL is set but API_KEY is not!")
-            logger.warning(f"PUBLIC_BASE_URL will be IGNORED: {PUBLIC_BASE_URL}")
-            logger.warning("To activate public mode with external URLs:")
-            logger.warning("  1. Generate API key: openssl rand -hex 32")
-            logger.warning("  2. Set API_KEY environment variable")
-            logger.warning("=" * 60)
-        logger.info("Authentication: DISABLED (internal network)")
-
-    # Отобразим число воркеров если задано
-    try:
-        workers_env = os.getenv('WORKERS')
-        if workers_env:
-            logger.info(f"Workers (gunicorn): {workers_env}")
-    except Exception:
-        pass
-    
-    # Recovery настройки
-    if RECOVERY_ENABLED:
-        logger.info(f"Recovery: ENABLED")
-        logger.info(f"  - Task TTL: {TASK_TTL_HOURS}h")
-        logger.info(f"  - Max retries: {MAX_TASK_RETRIES}")
-        logger.info(f"  - Retry delay: {RETRY_DELAY_SECONDS}s")
-        if RECOVERY_INTERVAL_MINUTES > 0:
-            logger.info(f"  - Interval: {RECOVERY_INTERVAL_MINUTES} min (periodic)")
-        else:
-            logger.info(f"  - Interval: startup only")
-        logger.info(f"  - Public recover endpoint: {'ENABLED' if RECOVERY_PUBLIC_ENABLED else 'DISABLED'}")
-    else:
-        logger.info("Recovery: DISABLED")
-
-    # Tasks directory
-    logger.info(f"Tasks dir: /app/tasks (video files stored here)")
-
-    # Webhook settings
-    if DEFAULT_WEBHOOK_URL:
-        logger.info(f"Webhook: default_url set -> {DEFAULT_WEBHOOK_URL}")
-    if WEBHOOK_HEADERS:
-        masked_headers = {k: "***" for k in WEBHOOK_HEADERS.keys()}
-        logger.info(f"Webhook: global headers -> {masked_headers}")
-    logger.info(f"Webhook: background_resender_interval={WEBHOOK_BACKGROUND_INTERVAL_SECONDS}s (fixed in public version)")
-
-    # Client metadata limits
-    logger.info(f"client_meta: ALLOW_NESTED_JSON={ALLOW_NESTED_JSON_IN_META}")
+            logger.warning("⚠️  PUBLIC_BASE_URL ignored (API_KEY not set)")
+            logger.warning(f"   Set API_KEY to activate: {PUBLIC_BASE_URL}")
+        logger.info("Authentication: DISABLED")
 
     logger.info("=" * 60)
 
