@@ -14,13 +14,17 @@ from bootstrap import wait_for_redis, log_tcp_port
 
 app = Flask(__name__)
 
-# Запускаем webhook resender в фоновом потоке при инициализации приложения
+# Запускаем webhook resender только в одном процессе через marker-файл (аналогично youtube-downloader-api)
+_resender_marker = '/tmp/vpapi_resender_started'
 try:
-    resender_thread = threading.Thread(target=_webhook_resender_loop, daemon=True)
-    resender_thread.start()
-    logger.info("Webhook resender thread started (auto-init)")
+    if not os.path.exists(_resender_marker):
+        with open(_resender_marker, 'w') as f:
+            f.write(str(os.getpid()))
+        resender_thread = threading.Thread(target=_webhook_resender_loop, name='webhook-resender', daemon=True)
+        resender_thread.start()
+        logger.info(f"Webhook resender thread started in process {os.getpid()} (marker: {_resender_marker})")
 except Exception as e:
-    logger.error(f"Failed to start webhook resender thread: {e}")
+    logger.warning(f"Failed to start webhook resender thread: {e}")
 
 # Отключаем автоматическую сортировку ключей JSON (сохраняем порядок вставки)
 # Flask 3.0+ требует явного указания в json provider
