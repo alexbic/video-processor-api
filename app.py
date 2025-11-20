@@ -2830,6 +2830,7 @@ def _webhook_resender_loop():
             scanned = 0
             retried = 0
 
+
             for task_id in os.listdir(TASKS_DIR):
                 task_path = os.path.join(TASKS_DIR, task_id)
                 if not os.path.isdir(task_path):
@@ -2847,10 +2848,12 @@ def _webhook_resender_loop():
                 if status in ['queued', 'processing']:
                     continue
 
-                # Загружаем webhook state
-                webhook_state = load_webhook_state(task_id)
+                # Используем только metadata.json['webhook'] для состояния вебхука
+                webhook_state = metadata.get('webhook')
                 if not webhook_state:
+                    logger.debug(f"[{task_id[:8]}] No webhook state found in metadata.json")
                     continue
+                logger.debug(f"[{task_id[:8]}] Using webhook state from metadata.json['webhook']")
 
                 # Пропускаем если уже доставлен
                 if webhook_state.get('status') == 'delivered':
@@ -2877,22 +2880,23 @@ def _webhook_resender_loop():
 
                 if status == 'completed':
                     # Success webhook
-                    output_files = metadata.get('output_files', [])
+                    output = metadata.get('output', {})
+                    output_files = output.get('output_files', [])
                     is_chunked = any(f.get('chunk') for f in output_files)
 
                     webhook_payload = {
                         "task_id": task_id,
                         "event": "task_completed",
                         "status": "completed",
-                        "video_url": metadata.get('video_url'),
+                        "video_url": metadata.get('input', {}).get('video_url'),
                         "output_files": output_files,
-                        "total_files": metadata.get('total_files', len(output_files)),
-                        "total_size": metadata.get('total_size', 0),
-                        "total_size_mb": round(metadata.get('total_size', 0) / 1024 / 1024, 1),
+                        "total_files": output.get('total_files', len(output_files)),
+                        "total_size": output.get('total_size', 0),
+                        "total_size_mb": output.get('total_size_mb', round(output.get('total_size', 0) / 1024 / 1024, 1)),
                         "is_chunked": is_chunked,
-                        "metadata_url": build_absolute_url_background(f"/download/{task_id}/metadata.json"),
-                        "file_ttl_seconds": TASK_TTL_HOURS * 3600,
-                        "file_ttl_human": f"{TASK_TTL_HOURS} hours",
+                        "metadata_url": output.get('metadata_url_internal') or build_absolute_url_background(f"/download/{task_id}/metadata.json"),
+                        "file_ttl_seconds": output.get('ttl_seconds', TASK_TTL_HOURS * 3600),
+                        "file_ttl_human": output.get('ttl_human', f"{TASK_TTL_HOURS} hours"),
                         "completed_at": metadata.get('completed_at')
                     }
 
