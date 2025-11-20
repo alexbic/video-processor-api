@@ -15,10 +15,8 @@ from bootstrap import wait_for_redis, log_tcp_port
 app = Flask(__name__)
 
 
+
 # === Запуск resender только после всех определений ===
-
-# (ВНИМАНИЕ: этот блок должен быть в самом конце файла, чтобы избежать ошибок NameError)
-
 _resender_marker = '/tmp/vpapi_resender_started'
 try:
     if not os.path.exists(_resender_marker):
