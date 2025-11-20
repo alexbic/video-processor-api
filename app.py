@@ -470,6 +470,7 @@ def log_startup_info():
         logger.info(f"   Workers: 2 | Redis: {REDIS_HOST}:{REDIS_PORT} (256MB) | Storage: {STORAGE_MODE}")
         logger.info(f"   TTL: {TASK_TTL_HOURS}h | Recovery: retries={MAX_TASK_RETRIES}, delay={RETRY_DELAY_SECONDS}s")
         logger.info(f"   Webhook: interval={WEBHOOK_BACKGROUND_INTERVAL_SECONDS}s, retries={WEBHOOK_MAX_RETRY_ATTEMPTS}, delay={WEBHOOK_RETRY_DELAY_SECONDS}s")
+        logger.info(f"   Resender: {int(WEBHOOK_BACKGROUND_INTERVAL_SECONDS)}s | Progress: off")
         logger.info(f"   Cleanup: {CLEANUP_INTERVAL_SECONDS}s | Meta: {MAX_CLIENT_META_BYTES}B, depth={MAX_CLIENT_META_DEPTH}")
         logger.info("")
         logger.info("🚀 Upgrade to Pro: support@alexbic.net")
