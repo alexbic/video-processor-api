@@ -13,12 +13,7 @@ from functools import wraps
 from bootstrap import wait_for_redis, log_tcp_port
 
 app = Flask(__name__)
-
-# Отключаем автоматическую сортировку ключей JSON (сохраняем порядок вставки)
-# Flask 3.0+ требует явного указания в json provider
 app.json.sort_keys = False
-
-# Важно: инициализируем logger ранo, чтобы использовать его в ранних хуках (до basicConfig)
 logger = logging.getLogger(__name__)
 
 # ============================================
@@ -1743,7 +1738,7 @@ def get_task_status(task_id):
                 resp = {
                     'task_id': task_id,
                     'status': 'processing',
-                    'progress': 50
+                    'progress':  50
                 }
                 return jsonify(resp)
 
@@ -2204,7 +2199,12 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         webhook_headers=webhook_headers,
         webhook_status=None,
         retry_count=0,
-        client_meta=client_meta
+        client_meta=client_meta,
+        operations_count=total_ops,
+        total_size=total_size,
+        total_size_mb=round(total_size / (1024 * 1024), 2),
+        ttl_seconds=7200,
+        ttl_human='2 hours'
     )
     save_task_metadata(task_id, metadata)
 
@@ -2810,19 +2810,6 @@ def recover_task_endpoint(task_id):
 # ==============================================================================
 
 def _webhook_resender_loop():
-        # ...existing code...
-
-    # === Запуск resender только после всех определений ===
-    _resender_marker = '/tmp/vpapi_resender_started'
-    try:
-        if not os.path.exists(_resender_marker):
-            with open(_resender_marker, 'w') as f:
-                f.write(str(os.getpid()))
-            resender_thread = threading.Thread(target=_webhook_resender_loop, name='webhook-resender', daemon=True)
-            resender_thread.start()
-            logger.info(f"Webhook resender thread started in process {os.getpid()} (marker: {_resender_marker})")
-    except Exception as e:
-        logger.warning(f"Failed to start webhook resender thread: {e}")
     """
     Фоновый процесс для автоматических ретраев webhook.
     Сканирует все задачи и отправляет webhooks для failed/pending статусов.
@@ -2959,5 +2946,22 @@ def _webhook_resender_loop():
             logger.error(f"Webhook resender error: {e}")
 
 
+
+# Запускаем resender только в первом gunicorn worker (аналогично youtube-downloader-api)
+
+# Запускаем resender только в первом gunicorn worker (аналогично youtube-downloader-api)
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=False)
+
+# Запускаем resender только в первом gunicorn worker (аналогично youtube-downloader-api)
+marker_file = '/tmp/vpapi_resender_started'
+try:
+    if not os.path.exists(marker_file):
+        with open(marker_file, 'w') as f:
+            f.write(str(os.getpid()))
+        _resender_thread = threading.Thread(target=_webhook_resender_loop, name='webhook-resender', daemon=True)
+        _resender_thread.start()
+        logger.debug(f"Resender thread started in process {os.getpid()}")
+except Exception as e:
+    logger.warning(f"Failed to start resender thread: {e}")
