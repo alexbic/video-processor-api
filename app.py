@@ -2520,6 +2520,7 @@ def recover_stuck_tasks():
     scanned = 0
     skipped_status = 0
     skipped_with_output = 0
+    skipped_webhook_failed = 0
     empty_dirs_removed = 0
     
     try:
@@ -2527,7 +2528,7 @@ def recover_stuck_tasks():
             scanned += 1
             task_dir = get_task_dir(task_id)
             metadata_path = os.path.join(task_dir, "metadata.json")
-            
+
             if not os.path.exists(metadata_path):
                 # Пустая директория без метаданных - удаляем
                 try:
@@ -2539,13 +2540,24 @@ def recover_stuck_tasks():
                 except Exception as e:
                     logger.warning(f"Failed to remove empty dir {task_id}: {e}")
                 continue
-                
+
             try:
                 metadata = load_task_metadata(task_id)
                 if not metadata:
                     continue
-                
+
                 status = metadata.get('status')
+
+                # Если задача завершена, но вебхук не доставлен — считаем отдельно
+                if status == 'completed':
+                    webhook = metadata.get('webhook')
+                    # webhook может быть dict или None
+                    if webhook and webhook.get('status') != 'delivered':
+                        skipped_webhook_failed += 1
+                        logger.debug(f"Task {task_id}: Completed but webhook not delivered (webhook_status={webhook.get('status')})")
+                    skipped_status += 1
+                    logger.debug(f"Task {task_id}: Skip (status={status})")
+                    continue
 
                 # Диагностика: считаем пропущенные по статусу
                 # В recovery теперь включаем 'pending' (задачи могли упасть до смены статуса)
@@ -2675,7 +2687,8 @@ def recover_stuck_tasks():
     logger.info(
         "Recovery scan complete: "
         f"scanned={scanned}, recovered={recovered}, expired={expired}, failed={failed}, "
-        f"skipped_status={skipped_status}, skipped_with_output={skipped_with_output}, empty_dirs_removed={empty_dirs_removed}"
+        f"skipped_status={skipped_status}, skipped_with_output={skipped_with_output}, "
+        f"skipped_webhook_failed={skipped_webhook_failed}, empty_dirs_removed={empty_dirs_removed}"
     )
     logger.info("=" * 60)
 
