@@ -17,6 +17,9 @@ app = Flask(__name__)
 # Flask 3.0+ требует явного указания в json provider
 app.json.sort_keys = False
 
+# Важно: инициализируем logger ранo, чтобы использовать его в ранних хуках (до basicConfig)
+logger = logging.getLogger(__name__)
+
 # ============================================
 # API KEY AUTHENTICATION
 # ============================================
