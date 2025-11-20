@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копирование приложения
 COPY app.py .
 COPY bootstrap.py .
+COPY gunicorn_config.py .
 
 # Копирование кастомных шрифтов (Russo One, Fixel)
 COPY fonts/*.ttf /usr/share/fonts/truetype/custom/
@@ -50,7 +51,7 @@ RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
     echo 'stderr_logfile=/dev/stderr' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'stderr_logfile_maxbytes=0' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo '[program:gunicorn]' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'command=gunicorn --preload --bind 0.0.0.0:5001 --workers 2 --timeout 600 app:app' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'command=gunicorn --config gunicorn_config.py --preload --bind 0.0.0.0:5001 --workers 2 --timeout 600 app:app' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'directory=/app' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
