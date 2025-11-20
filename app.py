@@ -935,7 +935,7 @@ def _post_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None,
             response = requests.post(
                 webhook_url,
                 json=payload,
-                timeout=10,
+                timeout=30,
                 headers=headers
             )
 
@@ -1010,7 +1010,7 @@ def send_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None =
 
         for attempt in range(max_retries):
             try:
-                response = requests.post(webhook_url, json=payload, timeout=10, headers=headers)
+                response = requests.post(webhook_url, json=payload, timeout=30, headers=headers)
                 response.raise_for_status()
                 return True
             except requests.exceptions.RequestException as e:
