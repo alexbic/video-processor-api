@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Копирование приложения
 COPY app.py .
+COPY bootstrap.py .
 
 # Копирование кастомных шрифтов (Russo One, Fixel)
 COPY fonts/*.ttf /usr/share/fonts/truetype/custom/
