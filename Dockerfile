@@ -36,13 +36,17 @@ RUN fc-cache -fv
 # Создание директорий
 RUN mkdir -p /app/tasks /var/log/supervisor /var/run/supervisor
 
+# Минимальный redis.conf с нужными параметрами (надёжнее, чем длинная CLI-строка)
+RUN mkdir -p /etc/redis && \
+    bash -lc 'cat > /etc/redis/redis.conf <<EOF\nbind 127.0.0.1\nport 6379\nmaxmemory 256mb\nmaxmemory-policy allkeys-lru\nsave \"\"\nprotected-mode no\nEOF'
+
 # Supervisor конфиг: Redis + Gunicorn с фиксированными параметрами (публичная версия)
 RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
     echo 'nodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'user=root' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo '[program:redis]' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'command=redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'command=/usr/bin/redis-server /etc/redis/redis.conf' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'priority=10' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'startsecs=2' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'startretries=10' >> /etc/supervisor/conf.d/supervisord.conf && \
