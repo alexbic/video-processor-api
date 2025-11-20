@@ -1985,7 +1985,7 @@ def process_video():
             thread.daemon = True
             thread.start()
 
-            logger.info(f"Task {task_id}: Created with {len(operations)} operations")
+            logger.info(f"Task created (async): {task_id} | {video_url} | operations={len(operations)}")
 
             resp = {
                 "task_id": task_id,
@@ -2004,6 +2004,7 @@ def process_video():
         else:
             # Синхронный режим
             task_id = str(uuid.uuid4())
+            logger.info(f"Task created (sync): {task_id} | {video_url} | operations={len(operations)}")
 
             # Создаем директории для задачи
             create_task_dirs(task_id)
