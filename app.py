@@ -233,6 +233,8 @@ def list_tasks() -> list:
 
 TASK_TTL_HOURS = 72  # Hardcoded в публичной версии - 3 суток (72 часа)
 WEBHOOK_BACKGROUND_INTERVAL_SECONDS = 900  # 15 минут - hardcoded в публичной версии
+WEBHOOK_MAX_RETRY_ATTEMPTS = 5  # Максимум попыток отправки webhook - hardcoded
+WEBHOOK_RETRY_DELAY_SECONDS = 60  # Задержка между попытками webhook - hardcoded
 CLEANUP_INTERVAL_SECONDS = 3600  # 1 час - hardcoded в публичной версии
 
 # ==============================================================================
