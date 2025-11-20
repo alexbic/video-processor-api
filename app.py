@@ -14,20 +14,6 @@ from bootstrap import wait_for_redis, log_tcp_port
 
 app = Flask(__name__)
 
-
-
-# === Запуск resender только после всех определений ===
-_resender_marker = '/tmp/vpapi_resender_started'
-try:
-    if not os.path.exists(_resender_marker):
-        with open(_resender_marker, 'w') as f:
-            f.write(str(os.getpid()))
-        resender_thread = threading.Thread(target=_webhook_resender_loop, name='webhook-resender', daemon=True)
-        resender_thread.start()
-        logger.info(f"Webhook resender thread started in process {os.getpid()} (marker: {_resender_marker})")
-except Exception as e:
-    logger.warning(f"Failed to start webhook resender thread: {e}")
-
 # Отключаем автоматическую сортировку ключей JSON (сохраняем порядок вставки)
 # Flask 3.0+ требует явного указания в json provider
 app.json.sort_keys = False
