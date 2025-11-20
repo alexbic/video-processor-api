@@ -2672,8 +2672,8 @@ def recover_stuck_tasks():
                 # Запускаем обработку в фоне
                 # Если входной файл есть и валиден - не перезагружаем
                 # Иначе process_video_pipeline_background сам загрузит
-                video_url = metadata.get('video_url')
-                operations = metadata.get('operations', [])
+                video_url = metadata.get('input', {}).get('video_url')
+                operations = metadata.get('input', {}).get('operations', [])
                 webhook = metadata.get('webhook')
 
                 if not has_valid_input:
@@ -2776,11 +2776,11 @@ def _recover_task_by_id(task_id: str, force: bool = False) -> tuple[bool, str, d
         'last_retry_at': metadata['last_retry_at']
     })
 
-    video_url = metadata.get('video_url')
-    operations = metadata.get('operations', [])
+    video_url = metadata.get('input', {}).get('video_url')
+    operations = metadata.get('input', {}).get('operations', [])
     webhook = metadata.get('webhook')
     if not video_url or not operations:
-        return False, "Missing video_url or operations in metadata.json", {}
+        return False, "Missing video_url or operations in metadata['input']", {}
 
     # Fire background processing
     thread = threading.Thread(
