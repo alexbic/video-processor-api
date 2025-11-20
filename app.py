@@ -363,6 +363,8 @@ def build_structured_metadata(
         output_data["ttl_seconds"] = ttl_seconds
     if ttl_human is not None:
         output_data["ttl_human"] = ttl_human
+    if expires_at is not None:
+        output_data["expires_at"] = expires_at
     if output_data:  # Only add if not empty
         result["output"] = output_data
 
@@ -2025,7 +2027,9 @@ def process_video():
                 client_meta=client_meta,
                 operations_count=len(operations),
                 total_size=0,
-                total_size_mb=0.0
+                total_size_mb=0.0,
+                ttl_seconds=TASK_TTL_HOURS * 3600,
+                ttl_human=format_ttl_human(TASK_TTL_HOURS)
             )
             save_task_metadata(task_id, initial_metadata)
 
@@ -2210,13 +2214,18 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
     # Сохраняем metadata
     now = datetime.now()
+    expires_at_iso = (now + timedelta(hours=TASK_TTL_HOURS)).isoformat()
     is_chunked = any(f.get('chunk') for f in files_info)
+    
+    # Добавляем expires_at к каждому файлу
+    for file_entry in files_info:
+        file_entry["expires_at"] = expires_at_iso
     metadata = build_structured_metadata(
         task_id=task_id,
         status="completed",
         created_at=now.isoformat(),
         completed_at=now.isoformat(),
-        expires_at=(now + timedelta(hours=TASK_TTL_HOURS)).isoformat(),
+        expires_at=expires_at_iso,
         video_url=video_url,
         operations=operations,
         output_files=files_info,
@@ -2424,13 +2433,20 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         task_snapshot = get_task(task_id) or {}
         client_meta = task_snapshot.get('client_meta')
         is_chunked = any(f.get('chunk') for f in output_files_info)
+        
+        # Вычисляем expires_at
+        expires_at_iso = task_snapshot.get('expires_at', (datetime.now() + timedelta(hours=TASK_TTL_HOURS)).isoformat())
+        
+        # Добавляем expires_at к каждому файлу
+        for file_entry in output_files_info:
+            file_entry["expires_at"] = expires_at_iso
 
         metadata = build_structured_metadata(
             task_id=task_id,
             status='completed',
             created_at=task_snapshot.get('created_at', datetime.now().isoformat()),
             completed_at=datetime.now().isoformat(),
-            expires_at=task_snapshot.get('expires_at', (datetime.now() + timedelta(hours=TASK_TTL_HOURS)).isoformat()),
+            expires_at=expires_at_iso,
             video_url=video_url,
             operations=operations,
             output_files=output_files_info,
