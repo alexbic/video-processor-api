@@ -1601,10 +1601,65 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "video-processor-api",
+        "version": "public",
         "storage_mode": STORAGE_MODE,
         "redis_available": STORAGE_MODE == "redis",
         "api_key_enabled": API_KEY_ENABLED,
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat(),
+        
+        # Hardcoded configuration (Public Version)
+        # Upgrade to Pro for configurable parameters via environment variables
+        "config": {
+            "workers": 2,  # Hardcoded in Dockerfile
+            "redis": {
+                "host": REDIS_HOST,
+                "port": REDIS_PORT,
+                "db": REDIS_DB,
+                "maxmemory": "256MB",
+                "embedded": True
+            },
+            "limits": {
+                "task_ttl_hours": TASK_TTL_HOURS,
+                "max_client_meta_bytes": MAX_CLIENT_META_BYTES,
+                "max_client_meta_depth": MAX_CLIENT_META_DEPTH,
+                "max_client_meta_keys": MAX_CLIENT_META_KEYS,
+                "max_client_meta_string_length": MAX_CLIENT_META_STRING_LENGTH,
+                "max_client_meta_list_length": MAX_CLIENT_META_LIST_LENGTH,
+                "allow_nested_json_in_meta": ALLOW_NESTED_JSON_IN_META
+            },
+            "recovery": {
+                "enabled": RECOVERY_ENABLED,
+                "interval_minutes": RECOVERY_INTERVAL_MINUTES,
+                "max_retries": MAX_TASK_RETRIES,
+                "retry_delay_seconds": RETRY_DELAY_SECONDS,
+                "public_recovery_enabled": RECOVERY_PUBLIC_ENABLED
+            },
+            "webhook": {
+                "background_interval_seconds": WEBHOOK_BACKGROUND_INTERVAL_SECONDS,
+                "max_retry_attempts": WEBHOOK_MAX_RETRY_ATTEMPTS,
+                "retry_delay_seconds": WEBHOOK_RETRY_DELAY_SECONDS,
+                "default_url": DEFAULT_WEBHOOK_URL,
+                "global_headers": WEBHOOK_HEADERS
+            },
+            "cleanup": {
+                "interval_seconds": CLEANUP_INTERVAL_SECONDS
+            }
+        },
+        
+        "pro_features": {
+            "available": False,
+            "upgrade_info": "Contact for Pro version with configurable parameters",
+            "features": [
+                "Configurable workers (1-10+)",
+                "External Redis support",
+                "Configurable task TTL (1h - 90 days)",
+                "Custom webhook intervals and retries",
+                "Custom recovery intervals",
+                "Custom cleanup intervals",
+                "Adjustable client_meta limits",
+                "Priority support"
+            ]
+        }
     })
 
 @app.route('/fonts', methods=['GET'])
