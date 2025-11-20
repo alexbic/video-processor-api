@@ -36,27 +36,13 @@ RUN fc-cache -fv
 # Создание директорий
 RUN mkdir -p /app/tasks /var/log/supervisor /var/run/supervisor
 
-# Минимальный redis.conf с нужными параметрами (надёжнее, чем длинная CLI-строка)
-RUN mkdir -p /etc/redis && \
-    cat > /etc/redis/redis.conf <<'EOF'
-bind 127.0.0.1
-port 6379
-maxmemory 256mb
-maxmemory-policy allkeys-lru
-save ""
-protected-mode no
-EOF
-
-# Supervisor конфиг: Redis + Gunicorn с фиксированными параметрами (публичная версия)
+# Supervisor конфиг: прописываем user=root в [supervisord], чтобы убрать CRIT warning
 RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
     echo 'nodaemon=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'user=root' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo '[program:redis]' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'command=/usr/bin/redis-server /etc/redis/redis.conf' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'priority=10' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'startsecs=2' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'startretries=10' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'command=redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'stdout_logfile=/dev/stdout' >> /etc/supervisor/conf.d/supervisord.conf && \
@@ -66,8 +52,6 @@ RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
     echo '[program:gunicorn]' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'command=gunicorn --preload --bind 0.0.0.0:5001 --workers 2 --timeout 600 app:app' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'directory=/app' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'priority=20' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'startsecs=3' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'stdout_logfile=/dev/stdout' >> /etc/supervisor/conf.d/supervisord.conf && \
