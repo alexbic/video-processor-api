@@ -232,6 +232,18 @@ WEBHOOK_MAX_RETRY_ATTEMPTS = 5  # Максимум попыток отправк
 WEBHOOK_RETRY_DELAY_SECONDS = 60  # Задержка между попытками webhook - hardcoded
 CLEANUP_INTERVAL_SECONDS = 3600  # 1 час - hardcoded в публичной версии
 
+def format_ttl_human(hours: int) -> str:
+    """Форматирует время жизни файлов в человеко-читаемом виде"""
+    if hours >= 24:
+        days = hours // 24
+        remaining_hours = hours % 24
+        if remaining_hours == 0:
+            return f"{days} day{'s' if days != 1 else ''}"
+        else:
+            return f"{days} day{'s' if days != 1 else ''} {remaining_hours}h"
+    else:
+        return f"{hours}h"
+
 # ==============================================================================
 # Конфигурация
 # ==============================================================================
@@ -2206,8 +2218,8 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         operations_count=len(operations),
         total_size=total_size,
         total_size_mb=round(total_size / (1024 * 1024), 2),
-        ttl_seconds=7200,
-        ttl_human='2 hours'
+        ttl_seconds=TASK_TTL_HOURS * 3600,
+        ttl_human=format_ttl_human(TASK_TTL_HOURS)
     )
     save_task_metadata(task_id, metadata)
 
@@ -2420,8 +2432,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             operations_count=total_ops,
             total_size=total_size,
             total_size_mb=round(total_size / (1024 * 1024), 2),
-            ttl_seconds=7200,
-            ttl_human='2 hours'
+            ttl_seconds=TASK_TTL_HOURS * 3600,
+            ttl_human=format_ttl_human(TASK_TTL_HOURS)
         )
         save_task_metadata(task_id, metadata)
 
