@@ -433,7 +433,11 @@ try:
     _log_level = getattr(logging, LOG_LEVEL, logging.INFO)
 except Exception:
     _log_level = logging.INFO
-logging.basicConfig(level=_log_level)
+logging.basicConfig(
+    level=_log_level,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
 def log_startup_info():

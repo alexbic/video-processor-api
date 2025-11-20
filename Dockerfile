@@ -41,14 +41,13 @@ RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
     echo 'user=root' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo '' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo '[program:redis]' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'command=redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save "" --loglevel notice' >> /etc/supervisor/conf.d/supervisord.conf && \
+    echo 'command=redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save ""' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'autostart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'autorestart=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'stdout_logfile=/dev/stdout' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'stdout_logfile_maxbytes=0' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'stderr_logfile=/dev/stderr' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'stderr_logfile_maxbytes=0' >> /etc/supervisor/conf.d/supervisord.conf && \
-    echo 'redirect_stderr=true' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo '[program:gunicorn]' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'command=gunicorn --preload --bind 0.0.0.0:5001 --workers 2 --timeout 600 app:app' >> /etc/supervisor/conf.d/supervisord.conf && \
     echo 'directory=/app' >> /etc/supervisor/conf.d/supervisord.conf && \
