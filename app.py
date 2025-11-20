@@ -458,26 +458,36 @@ def log_startup_info():
         wait_for_redis(_ensure_redis, retries=6, delay=0.5, logger=logger)
     except Exception:
         pass
-    logger.info("=" * 60)
-    logger.info("Video Processor API - PUBLIC VERSION")
-    logger.info("=" * 60)
-    logger.info("⚠️  PUBLIC VERSION - HARDCODED PARAMETERS")
-    logger.info("")
-    logger.info("📋 Configuration:")
-    logger.info(f"   Workers: 2 | Redis: {REDIS_HOST}:{REDIS_PORT} (256MB) | Storage: {STORAGE_MODE}")
-    logger.info(f"   TTL: {TASK_TTL_HOURS}h | Recovery: retries={MAX_TASK_RETRIES}, delay={RETRY_DELAY_SECONDS}s")
-    logger.info(f"   Webhook: interval={WEBHOOK_BACKGROUND_INTERVAL_SECONDS}s, retries={WEBHOOK_MAX_RETRY_ATTEMPTS}, delay={WEBHOOK_RETRY_DELAY_SECONDS}s")
-    logger.info(f"   Cleanup: {CLEANUP_INTERVAL_SECONDS}s | Meta: {MAX_CLIENT_META_BYTES}B, depth={MAX_CLIENT_META_DEPTH}")
-    logger.info("")
-    logger.info("🚀 Upgrade to Pro: support@alexbic.net")
-    logger.info("   ✓ Configurable parameters ✓ External Redis ✓ Variable TTL")
-    logger.info("=" * 60)
-    
+    # Сохраняем текущий форматтер
+    root_logger = logging.getLogger()
+    handlers = root_logger.handlers if root_logger.handlers else [logging.StreamHandler()]
+    old_formatters = [h.formatter for h in handlers]
+    # Устанавливаем временный форматтер без времени
+    for h in handlers:
+        h.setFormatter(logging.Formatter('[%(levelname)s] %(name)s: %(message)s'))
+    try:
+        logger.info("=" * 60)
+        logger.info("Video Processor API - PUBLIC VERSION")
+        logger.info("=" * 60)
+        logger.info("⚠️  PUBLIC VERSION - HARDCODED PARAMETERS")
+        logger.info("")
+        logger.info("📋 Configuration:")
+        logger.info(f"   Workers: 2 | Redis: {REDIS_HOST}:{REDIS_PORT} (256MB) | Storage: {STORAGE_MODE}")
+        logger.info(f"   TTL: {TASK_TTL_HOURS}h | Recovery: retries={MAX_TASK_RETRIES}, delay={RETRY_DELAY_SECONDS}s")
+        logger.info(f"   Webhook: interval={WEBHOOK_BACKGROUND_INTERVAL_SECONDS}s, retries={WEBHOOK_MAX_RETRY_ATTEMPTS}, delay={WEBHOOK_RETRY_DELAY_SECONDS}s")
+        logger.info(f"   Cleanup: {CLEANUP_INTERVAL_SECONDS}s | Meta: {MAX_CLIENT_META_BYTES}B, depth={MAX_CLIENT_META_DEPTH}")
+        logger.info("")
+        logger.info("🚀 Upgrade to Pro: support@alexbic.net")
+        logger.info("   ✓ Configurable parameters ✓ External Redis ✓ Variable TTL")
+        logger.info("=" * 60)
+    finally:
+        # Возвращаем старый форматтер
+        for h, old_fmt in zip(handlers, old_formatters):
+            h.setFormatter(old_fmt)
     try:
         logger.info(f"Log level: {LOG_LEVEL}")
     except Exception:
         pass
-
     # Log API access mode
     if API_KEY_ENABLED:
         if PUBLIC_BASE_URL:
@@ -492,7 +502,6 @@ def log_startup_info():
             logger.warning("⚠️  PUBLIC_BASE_URL ignored (API_KEY not set)")
             logger.warning(f"   Set API_KEY to activate: {PUBLIC_BASE_URL}")
         logger.info("Authentication: DISABLED")
-
     logger.info("=" * 60)
 
 def _log_startup_once():
