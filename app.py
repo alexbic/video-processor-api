@@ -10,6 +10,7 @@ import socket
 import re
 import json
 from functools import wraps
+from bootstrap import wait_for_redis, log_tcp_port
 
 app = Flask(__name__)
 
@@ -448,13 +449,10 @@ logger = logging.getLogger(__name__)
 
 def log_startup_info():
     """Выводит информацию о конфигурации сервиса при старте."""
-    # Попробуем ещё раз инициализировать Redis перед выводом статуса,
+    # Ещё раз попробуем инициализировать Redis (до 3 секунд),
     # чтобы поймать случаи, когда Redis поднялся чуть позже
     try:
-        for _ in range(6):  # +3s ожидания суммарно
-            if _ensure_redis():
-                break
-            time.sleep(0.5)
+        wait_for_redis(_ensure_redis, retries=6, delay=0.5, logger=logger)
     except Exception:
         pass
     logger.info("=" * 60)
@@ -480,12 +478,8 @@ def log_startup_info():
     except Exception:
         pass
     logger.info(f"Storage mode: {STORAGE_MODE}")
-    # Доп. диагностика TCP-порта Redis
-    try:
-        with socket.create_connection((REDIS_HOST, REDIS_PORT), timeout=0.5):
-            logger.info("Redis TCP port: OPEN (connection possible)")
-    except Exception:
-        logger.info("Redis TCP port: CLOSED (no listener)")
+    # Диагностика TCP-порта Redis (унифицированная функция)
+    log_tcp_port(logger, REDIS_HOST, REDIS_PORT, timeout=0.5)
     if STORAGE_MODE == "redis":
         logger.info(f"Redis: {REDIS_HOST}:{REDIS_PORT} (db={REDIS_DB})")
         logger.info("Multi-worker support: ENABLED")
