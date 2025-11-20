@@ -464,7 +464,7 @@ def log_startup_info():
     old_formatters = [h.formatter for h in handlers]
     # Устанавливаем временный форматтер без времени для всего стартового блока
     for h in handlers:
-        h.setFormatter(logging.Formatter('[%(levelname)s] %(name)s: %(message)s'))
+        h.setFormatter(logging.Formatter('%(message)s'))
     try:
         logger.info("=" * 60)
         logger.info("Video Processor API - PUBLIC VERSION")
