@@ -2206,8 +2206,11 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
                 "file_size": file_size,
                 "file_size_mb": round(file_size / (1024 * 1024), 2),
                 "download_path": download_path,
-                "download_url": build_absolute_url(download_path)
+                "download_url_internal": build_internal_url_background(download_path)
             }
+            # Добавляем download_url только если есть публичный URL (API_KEY + PUBLIC_BASE_URL)
+            if API_KEY_ENABLED and PUBLIC_BASE_URL:
+                entry["download_url"] = build_absolute_url_background(download_path)
             if filename in chunk_map:
                 entry.update(chunk_map[filename])
             files_info.append(entry)
@@ -2422,8 +2425,11 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                     'file_size': file_size,
                     'file_size_mb': round(file_size / (1024 * 1024), 2),
                     'download_path': f"/download/{task_id}/{filename}",
-                    'download_url': build_absolute_url_background(f"/download/{task_id}/{filename}")
+                    'download_url_internal': build_internal_url_background(f"/download/{task_id}/{filename}")
                 }
+                # Добавляем download_url только если есть публичный URL (API_KEY + PUBLIC_BASE_URL)
+                if API_KEY_ENABLED and PUBLIC_BASE_URL:
+                    entry['download_url'] = build_absolute_url_background(f"/download/{task_id}/{filename}")
                 if filename in chunk_map:
                     entry.update(chunk_map[filename])
                 output_files_info.append(entry)
