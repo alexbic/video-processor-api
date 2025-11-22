@@ -2174,7 +2174,48 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             success, message = result
 
         if not success:
-            return jsonify({"status": "error", "error": message, "task_id": task_id}), 500
+            # Create error metadata with full structure
+            now = datetime.now()
+            error_metadata = build_structured_metadata(
+                task_id=task_id,
+                status="error",
+                created_at=now.isoformat(),
+                completed_at=now.isoformat(),
+                expires_at=(now + timedelta(hours=TASK_TTL_HOURS)).isoformat(),
+                video_url=video_url,
+                operations=operations,
+                output_files=[],
+                total_files=0,
+                is_chunked=False,
+                metadata_url=None,
+                metadata_url_internal=None,
+                webhook_url=webhook_url if webhook else None,
+                webhook_headers=webhook_headers if webhook else None,
+                webhook_status=None,
+                retry_count=0,
+                client_meta=client_meta,
+                operations_count=len(operations),
+                total_size=0,
+                total_size_mb=0.0,
+                ttl_seconds=TASK_TTL_HOURS * 3600,
+                ttl_human=format_ttl_human(TASK_TTL_HOURS)
+            )
+            error_metadata["error"] = message
+            error_metadata["failed_at"] = now.isoformat()
+            
+            # Save error metadata
+            save_task_metadata(task_id, error_metadata)
+            
+            # Sync to Redis
+            try:
+                update_task(task_id, {
+                    "status": "error",
+                    "metadata": error_metadata
+                })
+            except Exception:
+                pass
+            
+            return jsonify(error_metadata), 400
         
         # Сохраняем output файл если это последняя операция
         if idx == len(operations) - 1:
@@ -2361,9 +2402,20 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
             # Генерируем выходной файл
             if idx == total_ops - 1:
-                # Последняя операция
-                output_filename = f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id[:8]}.mp4"
-                output_path = os.path.join(get_task_dir(task_id), f"output_{output_filename}")
+                # Последняя операция - финальный файл с семантическим префиксом
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                # Определяем префикс в зависимости от типа операции
+                if op_type == 'make_short':
+                    prefix = 'short'
+                elif op_type == 'cut_video':
+                    prefix = 'video'
+                elif op_type == 'extract_audio':
+                    prefix = 'audio'
+                else:
+                    prefix = 'processed'
+                
+                output_filename = f"{prefix}_{timestamp}.mp4"
+                output_path = os.path.join(get_task_dir(task_id), output_filename)
             else:
                 # Промежуточный файл
                 output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
@@ -2552,22 +2604,57 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
     except Exception as e:
         logger.error(f"Task {task_id}: Error - {e}")
-        update_task(task_id, {
-            'status': 'error',
-            'error': str(e),
-            'failed_at': datetime.now().isoformat()
-        })
+        
+        # Create full error metadata structure
+        now = datetime.now()
+        error_metadata = build_structured_metadata(
+            task_id=task_id,
+            status="error",
+            created_at=task_snapshot.get('created_at', now.isoformat()),
+            completed_at=now.isoformat(),
+            expires_at=(now + timedelta(hours=TASK_TTL_HOURS)).isoformat(),
+            video_url=video_url,
+            operations=operations,
+            output_files=[],
+            total_files=0,
+            is_chunked=False,
+            metadata_url=None,
+            metadata_url_internal=None,
+            webhook_url=webhook_url,
+            webhook_headers=webhook_headers,
+            webhook_status=None,
+            retry_count=task_snapshot.get('retry_count', 0),
+            client_meta=client_meta,
+            operations_count=len(operations),
+            total_size=0,
+            total_size_mb=0.0,
+            ttl_seconds=TASK_TTL_HOURS * 3600,
+            ttl_human=format_ttl_human(TASK_TTL_HOURS)
+        )
+        error_metadata["error"] = str(e)
+        error_metadata["failed_at"] = now.isoformat()
+        
+        # Save error metadata
+        save_task_metadata(task_id, error_metadata)
+        
+        # Sync to Redis
+        try:
+            update_task(task_id, {
+                'status': 'error',
+                'metadata': error_metadata
+            })
+        except Exception as sync_err:
+            logger.warning(f"[{task_id[:8]}] Failed to sync error to Redis: {sync_err}")
 
         # Отправляем error webhook если указан
         if webhook_url:
-            error_metadata = load_task_metadata(task_id)
             error_payload = {
                 'task_id': task_id,
                 'event': 'task_failed',
                 'status': 'error',
-                'input': error_metadata.get('input', {}) if error_metadata else {},
+                'input': error_metadata.get('input', {}),
                 'error': str(e),
-                'failed_at': datetime.now().isoformat()
+                'failed_at': error_metadata['failed_at']
             }
             # Добавляем webhook объект если есть
             if webhook_url or webhook_headers:
@@ -2577,6 +2664,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 if webhook_headers:
                     webhook_obj["headers"] = webhook_headers
                 error_payload["webhook"] = webhook_obj
+            if client_meta is not None:
+                error_payload['client_meta'] = client_meta
             send_webhook(webhook_url, error_payload, webhook_headers, task_id)
 
 
