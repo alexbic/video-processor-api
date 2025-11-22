@@ -282,28 +282,47 @@ curl -X POST http://localhost:5001/process_video \
 {
   "task_id": "abc123",
   "status": "completed",
-  "video_url": "https://example.com/video.mp4",
-  "output_files": [
-    {
-      "filename": "output.mp4",
-      "file_size": 16040960,
-      "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output.mp4",
-      "download_path": "/download/abc123/output.mp4"
-    }
-  ],
-  "total_files": 1,
-  "is_chunked": false,
-  "metadata_url": "/download/abc123/metadata.json",
-  "completed_at": "2025-01-08T10:05:23"
+  "created_at": "2025-01-08T10:05:18",
+  "completed_at": "2025-01-08T10:05:23",
+  "input": {
+    "video_url": "https://example.com/video.mp4",
+    "operations": [
+      {
+        "operation": "make_short",
+        "title": "Удивительное видео",
+        "font": "Montserrat-Bold.ttf"
+      }
+    ],
+    "operations_count": 1
+  },
+  "output": {
+    "output_files": [
+      {
+        "filename": "output.mp4",
+        "file_size": 16040960,
+        "file_size_mb": 15.3,
+        "download_url": "http://video-processor:5001/download/abc123/output.mp4",
+        "download_path": "/download/abc123/output.mp4"
+      }
+    ],
+    "total_files": 1,
+    "total_size": 16040960,
+    "total_size_mb": 15.3,
+    "is_chunked": false,
+    "metadata_url": "/download/abc123/metadata.json",
+    "ttl_seconds": 259200,
+    "ttl_human": "3 days",
+    "expires_at": "2025-01-11T10:05:23"
+  }
 }
 ```
 
-**Ключевые поля:**
-- `video_url` - исходный URL видео, с которым работали
+**Структура ответа:**
+- Верхний уровень: `task_id`, `status`, временные метки
+- `input`: Данные исходного запроса (`video_url`, `operations`)
+- `output`: Результаты обработки (`output_files`, `total_files`, metadata URL, TTL)
 - `output_files` - **всегда массив** (даже если 1 файл)
-- `is_chunked` - `true` если файлы разбиты на чанки (для Whisper API)
-- `total_files` - общее количество файлов
+- `is_chunked`: `true` если файлы разбиты на чанки
 
 ### Ошибки
 

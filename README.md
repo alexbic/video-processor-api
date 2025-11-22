@@ -295,35 +295,54 @@ The `make_short` operation automatically generates a thumbnail (JPEG image) from
 {
   "task_id": "abc123",
   "status": "completed",
-  "video_url": "https://example.com/video.mp4",
-  "output_files": [
-    {
-      "filename": "short_20251116_210049.mp4",
-      "file_size": 16040960,
-      "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/short_20251116_210049.mp4",
-      "download_path": "/download/abc123/short_20251116_210049.mp4"
-    },
-    {
-      "filename": "short_20251116_210049_thumbnail.jpg",
-      "file_size": 211762,
-      "file_size_mb": 0.2,
-      "download_url": "http://video-processor:5001/download/abc123/short_20251116_210049_thumbnail.jpg",
-      "download_path": "/download/abc123/short_20251116_210049_thumbnail.jpg"
-    }
-  ],
-  "total_files": 2,
-  "is_chunked": false,
-  "metadata_url": "/download/abc123/metadata.json",
-  "completed_at": "2025-01-08T10:05:23"
+  "created_at": "2025-01-08T10:05:18",
+  "completed_at": "2025-01-08T10:05:23",
+  "input": {
+    "video_url": "https://example.com/video.mp4",
+    "operations": [
+      {
+        "operation": "make_short",
+        "title": "Amazing Video",
+        "font": "Montserrat-Bold.ttf"
+      }
+    ],
+    "operations_count": 1
+  },
+  "output": {
+    "output_files": [
+      {
+        "filename": "short_20251116_210049.mp4",
+        "file_size": 16040960,
+        "file_size_mb": 15.3,
+        "download_url": "http://video-processor:5001/download/abc123/short_20251116_210049.mp4",
+        "download_path": "/download/abc123/short_20251116_210049.mp4"
+      },
+      {
+        "filename": "short_20251116_210049_thumbnail.jpg",
+        "file_size": 211762,
+        "file_size_mb": 0.2,
+        "download_url": "http://video-processor:5001/download/abc123/short_20251116_210049_thumbnail.jpg",
+        "download_path": "/download/abc123/short_20251116_210049_thumbnail.jpg"
+      }
+    ],
+    "total_files": 2,
+    "total_size": 16252722,
+    "total_size_mb": 15.5,
+    "is_chunked": false,
+    "metadata_url": "/download/abc123/metadata.json",
+    "ttl_seconds": 259200,
+    "ttl_human": "3 days",
+    "expires_at": "2025-01-11T10:05:23"
+  }
 }
 ```
 
-**Key fields:**
-- `video_url` - original video URL that was processed
-- `output_files` - **always an array** (even if 1 file)
-- `is_chunked` - `true` if files are split into chunks (for Whisper API)
-- `total_files` - total number of files
+**Response structure:**
+- Top level: `task_id`, `status`, timestamps
+- `input`: Original request data (`video_url`, `operations`)
+- `output`: Processing results (`output_files`, `total_files`, metadata URL, TTL info)
+- `output_files` is **always an array** (even if 1 file)
+- `is_chunked`: `true` if files are split into chunks (for Whisper API)
 
 ### Error Responses
 
@@ -380,21 +399,30 @@ In webhooks on error, event remains `event: "task_failed"`, and status is `statu
 {
   "task_id": "abc123",
   "status": "completed",
-  "video_url": "https://example.com/video.mp4",
-  "output_files": [
-    {
-      "filename": "output_20250108_100523.mp4",
-      "file_size": 16040960,
-      "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output_20250108_100523.mp4",
-      "download_path": "/download/abc123/output_20250108_100523.mp4"
-    }
-  ],
-  "total_files": 1,
-  "is_chunked": false,
-  "metadata_url": "/download/abc123/metadata.json",
-  "note": "Files will auto-delete after 3 days.",
-  "completed_at": "2025-01-08T10:05:23"
+  "created_at": "2025-01-08T10:05:18",
+  "completed_at": "2025-01-08T10:05:23",
+  "input": {
+    "video_url": "https://example.com/video.mp4",
+    "operations": [{"operation": "cut_video", "start": 10, "end": 30}],
+    "operations_count": 1
+  },
+  "output": {
+    "output_files": [
+      {
+        "filename": "output_20250108_100523.mp4",
+        "file_size": 16040960,
+        "file_size_mb": 15.3,
+        "download_url": "http://video-processor:5001/download/abc123/output_20250108_100523.mp4",
+        "download_path": "/download/abc123/output_20250108_100523.mp4"
+      }
+    ],
+    "total_files": 1,
+    "is_chunked": false,
+    "metadata_url": "/download/abc123/metadata.json",
+    "ttl_seconds": 259200,
+    "ttl_human": "3 days",
+    "expires_at": "2025-01-11T10:05:23"
+  }
 }
 ```
 
@@ -425,22 +453,31 @@ curl http://localhost:5001/task_status/abc123
 {
   "task_id": "abc123",
   "status": "completed",
-  "progress": 100,
-  "video_url": "https://example.com/video.mp4",
-  "output_files": [
-    {
-      "filename": "output.mp4",
-      "file_size": 16040960,
-      "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output.mp4",
-      "download_path": "/download/abc123/output.mp4"
-    }
-  ],
-  "total_files": 1,
-  "total_size": 16040960,
-  "is_chunked": false,
-  "metadata_url": "http://video-processor:5001/download/abc123/metadata.json",
-  "completed_at": "2025-01-08T10:05:23"
+  "created_at": "2025-01-08T10:05:18",
+  "completed_at": "2025-01-08T10:05:23",
+  "input": {
+    "video_url": "https://example.com/video.mp4",
+    "operations": [{"operation": "cut_video", "start": 10, "end": 30}]
+  },
+  "output": {
+    "output_files": [
+      {
+        "filename": "output.mp4",
+        "file_size": 16040960,
+        "file_size_mb": 15.3,
+        "download_url": "http://video-processor:5001/download/abc123/output.mp4",
+        "download_path": "/download/abc123/output.mp4"
+      }
+    ],
+    "total_files": 1,
+    "total_size": 16040960,
+    "total_size_mb": 15.3,
+    "is_chunked": false,
+    "metadata_url": "http://video-processor:5001/download/abc123/metadata.json",
+    "ttl_seconds": 259200,
+    "ttl_human": "3 days",
+    "expires_at": "2025-01-11T10:05:23"
+  }
 }
 ```
 
@@ -495,26 +532,32 @@ You can add custom headers for webhook authentication via `webhook.headers`:
   "task_id": "abc123",
   "event": "task_completed",
   "status": "completed",
-  "video_url": "https://example.com/video.mp4",
-  "output_files": [
-    {
-      "filename": "output.mp4",
-      "file_size": 16040960,
-      "file_size_mb": 15.3,
-      "download_url": "http://video-processor:5001/download/abc123/output.mp4",
-      "download_path": "/download/abc123/output.mp4"
-    }
-  ],
-  "total_files": 1,
-  "total_size": 16040960,
-  "total_size_mb": 15.3,
-  "is_chunked": false,
-  "metadata_url": "http://video-processor:5001/download/abc123/metadata.json",
-  "file_ttl_seconds": 259200,
-  "file_ttl_human": "3 days",
-  "operations_executed": 1,
+  "created_at": "2025-01-08T10:05:18",
   "completed_at": "2025-01-08T10:05:23",
-  "expires_at": "2025-01-08T12:05:23"
+  "input": {
+    "video_url": "https://example.com/video.mp4",
+    "operations": [{"operation": "cut_video", "start": 10, "end": 30}],
+    "operations_count": 1
+  },
+  "output": {
+    "output_files": [
+      {
+        "filename": "output.mp4",
+        "file_size": 16040960,
+        "file_size_mb": 15.3,
+        "download_url": "http://video-processor:5001/download/abc123/output.mp4",
+        "download_path": "/download/abc123/output.mp4"
+      }
+    ],
+    "total_files": 1,
+    "total_size": 16040960,
+    "total_size_mb": 15.3,
+    "is_chunked": false,
+    "metadata_url": "http://video-processor:5001/download/abc123/metadata.json",
+    "ttl_seconds": 259200,
+    "ttl_human": "3 days",
+    "expires_at": "2025-01-11T10:05:23"
+  }
 }
 ```
 
