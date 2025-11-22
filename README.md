@@ -485,15 +485,7 @@ You can add custom headers for webhook authentication via `webhook.headers`:
 - Header name max: 256 chars
 - Header value max: 2048 chars
 - `Content-Type` cannot be overridden
-- Priority: per-request `webhook.headers` > global `WEBHOOK_HEADERS`
-
-**Global Webhook Headers:**
-
-Set global headers via environment variable (applies to all webhooks that don't specify custom headers):
-
-```bash
-export WEBHOOK_HEADERS='{"X-API-Key": "global-key", "X-Service": "video-processor"}'
-```
+- Specify `webhook.headers` in each request (global headers not supported in public version)
 
 ---
 
@@ -598,31 +590,7 @@ Polling recommendations:
 | `API_KEY` | — | Enables public mode (Bearer required). When unset, internal mode (no auth). |
 | `PUBLIC_BASE_URL` | — | External base for absolute URLs (https://host/app). Used only if `API_KEY` is set. |
 | `INTERNAL_BASE_URL` | `http://video-processor:5001` | Base for background URL generation (webhooks, logs). |
-| **Worker Configuration** |||
-| `WORKERS` | `1` | Gunicorn workers. Use `>=2` only with Redis. |
-| **Redis Configuration** |||
-| `REDIS_HOST` | `redis` | Redis host for multi-worker task store. |
-| `REDIS_PORT` | `6379` | Redis port. |
-| `REDIS_DB` | `0` | Redis DB index. |
-| **Task Management (Hardcoded in Public Version)** |||
-| `TASK_TTL_HOURS` | `72` | ⚠️ **Hardcoded** TTL for task files in /app/tasks (3 days). |
-| **Webhook Configuration** |||
-| `WEBHOOK_HEADERS` | — | Global webhook headers (JSON string). Example: `{"X-API-Key": "key"}`. Optional. |
-| `DEFAULT_WEBHOOK_URL` | — | Default webhook URL if not specified in request. Optional. |
-| `WEBHOOK_BACKGROUND_INTERVAL_SECONDS` | `900` | ⚠️ **Hardcoded** Background resender interval (15 minutes). |
-| **Recovery System** |||
-| `RECOVERY_ENABLED` | `true` | Auto recovery scan at startup (and optionally periodic). |
-| `RECOVERY_INTERVAL_MINUTES` | `0` | Periodic recovery scan interval. `0` = only on startup. |
-| `MAX_TASK_RETRIES` | `3` | Max retries for stuck tasks before failing. |
-| `RETRY_DELAY_SECONDS` | `60` | Delay between recovery retries. |
-| `RECOVERY_PUBLIC_ENABLED` | `false` | Enable public manual recovery endpoint `/recover/{task_id}`. |
-| **Client Metadata Limits** |||
-| `ALLOW_NESTED_JSON_IN_META` | `true` | Try to parse nested JSON strings in `client_meta`. |
-| `MAX_CLIENT_META_BYTES` | `16384` | Size limit for `client_meta` (bytes). |
-| `MAX_CLIENT_META_DEPTH` | `5` | Max nesting for `client_meta`. |
-| `MAX_CLIENT_META_KEYS` | `200` | Max keys in `client_meta` object. |
-| `MAX_CLIENT_META_STRING_LENGTH` | `1000` | Max length of string values. |
-| `MAX_CLIENT_META_LIST_LENGTH` | `200` | Max list length. |
+| `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). |
 
 Notes:
 - With `API_KEY` set + `PUBLIC_BASE_URL` defined → service exposes absolute URLs and requires Bearer token.
@@ -1087,11 +1055,8 @@ Hint: to parse `chunk`, split the string by `:` → `i` and `n`.
 |----------|---------|-------------|
 | `API_KEY` | `None` | Bearer token for authentication. If set, enables Public API mode with protected endpoints. If not set, runs in Internal mode without authentication. |
 | `PUBLIC_BASE_URL` | `None` | External base URL for download links (e.g., `https://domain.com/api`). Only used when `API_KEY` is set. Ignored in Internal mode. |
-| `INTERNAL_BASE_URL` | `http://video-processor:5001` | Internal Docker network URL for background tasks. Used when generating URLs in webhooks/metadata without request context. **New in v1.1.0** |
-| `WORKERS` | `1` | Number of gunicorn workers (use 2+ with Redis for multi-worker mode) |
-| `REDIS_HOST` | `redis` | Redis hostname for multi-worker task storage |
-| `REDIS_PORT` | `6379` | Redis port |
-| `REDIS_DB` | `0` | Redis database number |
+| `INTERNAL_BASE_URL` | `http://video-processor:5001` | Internal Docker network URL for background tasks. Used when generating URLs in webhooks/metadata without request context. |
+| `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). |
 
 ### Docker Volumes
 
@@ -1153,10 +1118,10 @@ volumes:
 **Problem:** `Could not connect to Redis`
 
 **Solutions:**
-- Check `REDIS_HOST` and `REDIS_PORT` environment variables
-- Verify Redis container is running: `docker ps | grep redis`
+- Public version uses built-in Redis (localhost:6379)
+- Verify supervisor properly started Redis
 - API automatically falls back to memory mode if Redis is unavailable
-- For multi-worker mode (2+ workers), Redis is required
+- Check logs: Redis should start automatically with container
 
 #### 3. Files not found after completion
 

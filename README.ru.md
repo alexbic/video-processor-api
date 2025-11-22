@@ -451,15 +451,7 @@ curl http://localhost:5001/task_status/abc123
 - Имя заголовка макс: 256 символов
 - Значение заголовка макс: 2048 символов
 - `Content-Type` нельзя переопределить
-- Приоритет: `webhook.headers` из запроса > глобальный `WEBHOOK_HEADERS`
-
-**Глобальные Webhook Headers:**
-
-Установите глобальные заголовки через переменную окружения (применяются ко всем webhook):
-
-```bash
-export WEBHOOK_HEADERS='{"X-API-Key": "global-key", "X-Service": "video-processor"}'
-```
+- Указывайте `webhook.headers` в каждом запросе (глобальные заголовки не поддерживаются в публичной версии)
 
 ---
 
@@ -660,31 +652,7 @@ export WEBHOOK_HEADERS='{"X-API-Key": "global-key", "X-Service": "video-processo
 | `API_KEY` | — | Включает публичный режим (требуется Bearer). Если не задан, работает во внутреннем режиме (без аутентификации). |
 | `PUBLIC_BASE_URL` | — | Внешний базовый URL для абсолютных ссылок (https://host/app). Используется только если `API_KEY` задан. |
 | `INTERNAL_BASE_URL` | `http://video-processor:5001` | Базовый URL для генерации ссылок в фоновых задачах (webhooks, логи). |
-| **Конфигурация Workers** |||
-| `WORKERS` | `1` | Количество Gunicorn workers. Используйте `>=2` только с Redis. |
-| **Конфигурация Redis** |||
-| `REDIS_HOST` | `redis` | Redis хост для multi-worker хранилища задач. |
-| `REDIS_PORT` | `6379` | Redis порт. |
-| `REDIS_DB` | `0` | Индекс базы данных Redis. |
-| **Управление задачами (Hardcoded в публичной версии)** |||
-| `TASK_TTL_HOURS` | `72` | ⚠️ **Hardcoded** TTL для файлов задач в /app/tasks (3 суток). |
-| **Конфигурация Webhook** |||
-| `WEBHOOK_HEADERS` | — | Глобальные заголовки webhook (JSON строка). Пример: `{"X-API-Key": "key"}`. Опционально. |
-| `DEFAULT_WEBHOOK_URL` | — | URL webhook по умолчанию если не указан в запросе. Опционально. |
-| `WEBHOOK_BACKGROUND_INTERVAL_SECONDS` | `900` | ⚠️ **Hardcoded** Интервал фонового resender (15 минут). |
-| **Система восстановления** |||
-| `RECOVERY_ENABLED` | `true` | Автоматическое сканирование восстановления при запуске (и опционально периодически). |
-| `RECOVERY_INTERVAL_MINUTES` | `0` | Интервал периодического сканирования восстановления. `0` = только при запуске. |
-| `MAX_TASK_RETRIES` | `3` | Макс. количество попыток для зависших задач перед отказом. |
-| `RETRY_DELAY_SECONDS` | `60` | Задержка между попытками восстановления. |
-| `RECOVERY_PUBLIC_ENABLED` | `false` | Включить публичный endpoint ручного восстановления `/recover/{task_id}`. |
-| **Лимиты клиентских метаданных** |||
-| `ALLOW_NESTED_JSON_IN_META` | `true` | Пытаться парсить вложенные JSON строки в `client_meta`. |
-| `MAX_CLIENT_META_BYTES` | `16384` | Лимит размера для `client_meta` (байты). |
-| `MAX_CLIENT_META_DEPTH` | `5` | Макс. вложенность для `client_meta`. |
-| `MAX_CLIENT_META_KEYS` | `200` | Макс. количество ключей в объекте `client_meta`. |
-| `MAX_CLIENT_META_STRING_LENGTH` | `1000` | Макс. длина строковых значений. |
-| `MAX_CLIENT_META_LIST_LENGTH` | `200` | Макс. длина списка. |
+| `LOG_LEVEL` | `INFO` | Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL). |
 
 ### Docker Volumes
 
@@ -775,10 +743,10 @@ volumes:
 **Проблема:** `Could not connect to Redis`
 
 **Решения:**
-- Проверьте переменные окружения `REDIS_HOST` и `REDIS_PORT`
-- Убедитесь, что контейнер Redis запущен: `docker ps | grep redis`
+- Публичная версия использует встроенный Redis (localhost:6379)
+- Убедитесь что supervisor правильно запустил Redis
 - API автоматически переключается на режим памяти, если Redis недоступен
-- Для multi-worker режима (2+ workers) требуется Redis
+- Проверьте логи: Redis должен запускаться автоматически при старте контейнера
 
 #### 3. Файлы не найдены после завершения
 
