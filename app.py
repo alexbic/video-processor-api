@@ -2096,6 +2096,16 @@ def process_video():
 def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, webhook: dict = None, client_meta: dict | None = None) -> dict:
     """Синхронное выполнение pipeline операций"""
 
+    # Создаем начальную задачу в Redis для возможности update_task позже
+    now = datetime.now()
+    initial_task = {
+        'task_id': task_id,
+        'status': 'processing',
+        'created_at': now.isoformat(),
+        'expires_at': (now + timedelta(hours=TASK_TTL_HOURS)).isoformat()
+    }
+    save_task(task_id, initial_task)
+
     # Извлекаем webhook_url и webhook_headers из webhook объекта
     webhook_url = None
     webhook_headers = None
