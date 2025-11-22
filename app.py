@@ -394,8 +394,6 @@ def build_structured_metadata(
         output_data["ttl_seconds"] = ttl_seconds
     if ttl_human is not None:
         output_data["ttl_human"] = ttl_human
-    if expires_at is not None:
-        output_data["expires_at"] = expires_at
     if output_data:  # Only add if not empty
         result["output"] = output_data
 
