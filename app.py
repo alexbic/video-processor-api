@@ -2363,12 +2363,14 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 def process_video_pipeline_background(task_id: str, video_url: str, operations: list, webhook: dict = None):
     """Фоновое выполнение pipeline операций с использованием task-based архитектуры"""
 
-    # Извлекаем webhook_url и webhook_headers из webhook объекта
+    # Извлекаем webhook_url, webhook_headers и client_meta из webhook объекта
     webhook_url = None
     webhook_headers = None
+    client_meta = None
     if webhook:
         webhook_url = webhook.get('url')
         webhook_headers = webhook.get('headers')
+        client_meta = webhook.get('client_meta')
 
     try:
         # Создаем директории для задачи
@@ -2604,6 +2606,9 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
     except Exception as e:
         logger.error(f"Task {task_id}: Error - {e}")
+        
+        # Get task snapshot from Redis or use defaults
+        task_snapshot = get_task(task_id) or {}
         
         # Create full error metadata structure
         now = datetime.now()
