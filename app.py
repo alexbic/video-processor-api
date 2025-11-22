@@ -176,15 +176,16 @@ def save_task(task_id: str, task_data: dict):
     _ensure_redis()
     if STORAGE_MODE == "redis" and redis_client is not None:
         try:
+            redis_ttl = TASK_TTL_HOURS * 3600  # Convert hours to seconds (72h = 259200s)
             redis_client.setex(
                 f"task:{task_id}",
-                86400,  # 24 hours TTL
+                redis_ttl,
                 json.dumps(task_data)
             )
             return
         except Exception as e:
             # If Redis write fails, save to memory as backup
-            print(f"WARNING: Redis write failed, saving to memory: {e}")
+            logger.warning(f"Redis write failed, saving to memory: {e}")
     tasks_memory[task_id] = task_data
 
 def get_task(task_id: str) -> dict:
@@ -275,12 +276,42 @@ def create_task_dirs(task_id: str):
     """Создать директорию для задачи"""
     os.makedirs(get_task_dir(task_id), exist_ok=True)
 
-def save_task_metadata(task_id: str, metadata: dict):
-    """Сохранить metadata.json для задачи"""
+def save_task_metadata(task_id: str, metadata: dict, verify: bool = False):
+    """
+    Save metadata.json for task with optional verification.
+    
+    Args:
+        task_id: Task identifier
+        metadata: Metadata dict to save
+        verify: If True, read back and verify the write succeeded
+    
+    Returns:
+        True if save succeeded (and verification passed if enabled), False otherwise
+    """
     metadata_path = os.path.join(get_task_dir(task_id), "metadata.json")
-    with open(metadata_path, 'w') as f:
-        json.dump(metadata, f, indent=2)
-    os.chmod(metadata_path, 0o644)
+    try:
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        os.chmod(metadata_path, 0o644)
+        
+        if verify:
+            # Read back and verify
+            try:
+                with open(metadata_path, 'r') as f:
+                    saved = json.load(f)
+                if saved.get('task_id') == task_id and saved.get('status') == metadata.get('status'):
+                    logger.debug(f"[{task_id}] metadata.json write verified ✓")
+                    return True
+                else:
+                    logger.warning(f"[{task_id}] metadata.json verification failed ✗")
+                    return False
+            except Exception as e:
+                logger.warning(f"[{task_id}] metadata.json read-back failed: {e} ✗")
+                return False
+        return True
+    except Exception as e:
+        logger.error(f"[{task_id}] Failed to save metadata.json: {e}")
+        return False
 
 
 def build_structured_metadata(
@@ -1725,87 +1756,117 @@ def download_file(file_path):
 
 @app.route('/task_status/<task_id>', methods=['GET'])
 def get_task_status(task_id):
-    """Получить статус задачи (не требует авторизации - task_id уникален)"""
+    """
+    Get task status (no auth required - task_id is unique).
+    
+    Priority (Redis-first architecture):
+    1. Redis cache (< 1ms, TTL 72h) - fastest, always fresh
+    2. metadata.json on disk (5ms, persistent) - reliable fallback after Redis expires
+    3. Task directory exists check - minimal info for in-progress tasks
+    4. 404 - task not found
+    """
     try:
-        task = get_task(task_id)
+        # PRIORITY 1: Try Redis first (fastest, within TTL)
+        _ensure_redis()
+        task = None
+        if STORAGE_MODE == "redis" and redis_client is not None:
+            try:
+                data = redis_client.get(f"task:{task_id}")
+                if data:
+                    task = json.loads(data)
+                    logger.debug(f"[{task_id}] Found in Redis (priority 1)")
+            except Exception as e:
+                logger.debug(f"[{task_id}] Redis read failed: {e}")
 
-        # Fallback: если записи в хранилище нет — попробуем метаданные с диска
+        # PRIORITY 2: Fallback to metadata.json (persistent, source of truth)
         if not task:
             metadata = load_task_metadata(task_id)
-            if metadata and metadata.get('status') == 'completed':
-                # Пересоберём абсолютные ссылки
-                output_files = metadata.get('output_files', [])
+            if metadata:
+                logger.debug(f"[{task_id}] Found in metadata.json (priority 2, Redis expired)")
+                # Rebuild absolute URLs for output files
+                output = metadata.get('output', {})
+                output_files = output.get('output_files', [])
                 for f in output_files:
                     dp = f.get('download_path')
                     if dp:
                         f['download_url'] = build_absolute_url(dp)
+                
+                # Rebuild metadata_url
+                if 'metadata_url' in output:
+                    output['metadata_url'] = build_absolute_url(f"/download/{task_id}/metadata.json")
+                
+                # Return metadata as-is (already has input/output structure)
+                return jsonify(metadata)
 
-                # Ответ в желаемом порядке, client_meta внизу
-                resp = {
-                    'task_id': task_id,
-                    'status': 'completed',
-                    'progress': 100,
-                    'created_at': metadata.get('created_at'),
-                    'video_url': metadata.get('video_url'),
-                    'output_files': output_files,
-                    'total_files': metadata.get('total_files', len(output_files)),
-                    'total_size': metadata.get('total_size'),
-                    'is_chunked': any(f.get('chunk') for f in output_files) if output_files else False,
-                    'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json"),
-                    'completed_at': metadata.get('completed_at')
-                }
-                # Добавляем webhook из metadata.json, если есть
-                if metadata.get('webhook') is not None:
-                    resp['webhook'] = metadata.get('webhook')
-                # client_meta всегда в конце
-                if metadata.get('client_meta') is not None:
-                    resp['client_meta'] = metadata.get('client_meta')
-                return jsonify(resp)
+        # PRIORITY 3: Check if task directory exists (in-progress without metadata yet)
+        if not task and os.path.isdir(get_task_dir(task_id)):
+            logger.debug(f"[{task_id}] Task directory exists (priority 3, processing)")
+            return jsonify({
+                'task_id': task_id,
+                'status': 'processing',
+                'progress': 50
+            })
 
-            # Если директория задачи существует — считаем, что в процессе
-            if os.path.isdir(get_task_dir(task_id)):
-                resp = {
-                    'task_id': task_id,
-                    'status': 'processing',
-                    'progress':  50
-                }
-                return jsonify(resp)
-
+        # PRIORITY 4: Task not found
+        if not task:
             return jsonify({"status": "error", "error": "Task not found"}), 404
 
-        # Базовый ответ (без client_meta; добавим в конце)
+        # Build response from Redis task data (convert to input/output structure if needed)
         response = {
             'task_id': task_id,
             'status': task['status'],
-            'progress': task.get('progress', 0),
             'created_at': task.get('created_at')
         }
 
         if task['status'] == 'completed':
+            response['completed_at'] = task.get('completed_at')
+            
+            # Input section
+            input_data = {}
+            if task.get('video_url'):
+                input_data['video_url'] = task['video_url']
+            if task.get('operations'):
+                input_data['operations'] = task['operations']
+                input_data['operations_count'] = len(task['operations'])
+            if input_data:
+                response['input'] = input_data
+            
+            # Output section
             output_files = task.get('output_files', [])
             for f in output_files:
                 dp = f.get('download_path')
                 if dp:
                     f['download_url'] = build_absolute_url(dp)
-            is_chunked = any(f.get('chunk') for f in output_files) if output_files else False
-            response.update({
-                'video_url': task.get('video_url'),
+            
+            output_data = {
                 'output_files': output_files,
                 'total_files': task.get('total_files', len(output_files)),
-                'total_size': task.get('total_size'),
-                'is_chunked': is_chunked,
-                'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json"),
-                'completed_at': task.get('completed_at')
-            })
+                'is_chunked': any(f.get('chunk') for f in output_files) if output_files else False,
+                'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json")
+            }
+            if task.get('total_size'):
+                output_data['total_size'] = task['total_size']
+                output_data['total_size_mb'] = round(task['total_size'] / (1024 * 1024), 1)
+            if task.get('ttl_seconds'):
+                output_data['ttl_seconds'] = task['ttl_seconds']
+            if task.get('ttl_human'):
+                output_data['ttl_human'] = task['ttl_human']
+            if task.get('expires_at'):
+                output_data['expires_at'] = task['expires_at']
+            response['output'] = output_data
+            
         elif task['status'] == 'error':
-            response.update({
-                'error': task.get('error'),
-                'failed_at': task.get('failed_at')
-            })
+            response['error'] = task.get('error')
+            if task.get('failed_at'):
+                response['failed_at'] = task['failed_at']
+        
+        # Webhook status (if present)
+        if task.get('webhook'):
+            response['webhook'] = task['webhook']
 
-        # Добавляем client_meta в самом конце
+        # client_meta всегда в конце
         if task.get('client_meta') is not None:
-            response['client_meta'] = task.get('client_meta')
+            response['client_meta'] = task['client_meta']
 
         return jsonify(response)
 
@@ -2447,6 +2508,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         for file_entry in output_files_info:
             file_entry["expires_at"] = expires_at_iso
 
+        # Build complete metadata with input/output structure
         metadata = build_structured_metadata(
             task_id=task_id,
             status='completed',
@@ -2471,20 +2533,36 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             ttl_seconds=TASK_TTL_HOURS * 3600,
             ttl_human=format_ttl_human(TASK_TTL_HOURS)
         )
-        save_task_metadata(task_id, metadata)
-
-        # Обновляем задачу
-        update_task(task_id, {
+        
+        # CRITICAL: Save metadata.json first (source of truth) with verification
+        write_ok = save_task_metadata(task_id, metadata, verify=True)
+        if not write_ok:
+            logger.error(f"[{task_id}] metadata.json write/verify failed, but continuing")
+        
+        # Flatten metadata for Redis storage (Redis has simpler structure for fast access)
+        redis_task = {
+            'task_id': task_id,
             'status': 'completed',
-            'progress': 100,
+            'created_at': metadata.get('created_at'),
+            'completed_at': metadata.get('completed_at'),
             'video_url': video_url,
+            'operations': operations,
             'output_files': output_files_info,
             'total_files': len(output_files_info),
             'total_size': total_size,
-            'metadata_url': build_absolute_url_background(f"/download/{task_id}/metadata.json"),
-            'operations_executed': total_ops,
-            'completed_at': datetime.now().isoformat()
-        })
+            'total_size_mb': round(total_size / (1024 * 1024), 2),
+            'ttl_seconds': TASK_TTL_HOURS * 3600,
+            'ttl_human': format_ttl_human(TASK_TTL_HOURS),
+            'expires_at': expires_at_iso,
+            'retry_count': task_snapshot.get('retry_count', 0)
+        }
+        if client_meta:
+            redis_task['client_meta'] = client_meta
+        if webhook:
+            redis_task['webhook'] = webhook
+            
+        # Sync to Redis (fast cache, TTL 72h)
+        save_task(task_id, redis_task)
 
         logger.info(f"Task {task_id}: Completed successfully with {len(output_files_info)} output file(s)")
 
