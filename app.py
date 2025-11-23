@@ -1591,8 +1591,8 @@ def health_check():
 @require_api_key
 def list_fonts():
     """
-    Получить список доступных шрифтов (предустановленных)
-    Только встроенные шрифты. Кастомные шрифты - только в PRO версии.
+    Получить список доступных шрифтов (предустановленных + custom)
+    Сканирует /app/fonts/ и системные шрифты.
     """
     try:
         # Предустановленные шрифты (встроенные в контейнер)
@@ -1630,11 +1630,30 @@ def list_fonts():
             if os.path.exists(font["file"]):
                 available_fonts.append(font)
 
+        # Добавляем динамически обнаруженные шрифты из /app/fonts/
+        app_fonts_dir = "/app/fonts"
+        if os.path.exists(app_fonts_dir):
+            for filename in sorted(os.listdir(app_fonts_dir)):
+                if filename.lower().endswith(('.ttf', '.ttc', '.otf')):
+                    # Пропускаем файлы, которые уже в списке предустановленных
+                    font_path = os.path.join(app_fonts_dir, filename)
+                    already_listed = any(f["file"] == font_path for f in available_fonts)
+                    if not already_listed:
+                        # Генерируем "дружелюбное" имя из имени файла
+                        base_name = os.path.splitext(filename)[0]
+                        # Заменяем дефисы на пробелы, e.g. "Russo-One.ttf" -> "Russo One"
+                        font_name = base_name.replace('-', ' ').replace('_', ' ').strip()
+                        available_fonts.append({
+                            "name": font_name,
+                            "family": "custom",
+                            "file": font_path
+                        })
+
         return jsonify({
             "status": "success",
             "total_fonts": len(available_fonts),
             "fonts": available_fonts,
-            "note": "Custom fonts upload available in PRO version only"
+            "note": "Includes system fonts and custom fonts from /app/fonts/"
         })
 
     except Exception as e:
@@ -2004,7 +2023,12 @@ def process_video():
         else:
             # Синхронный режим
             task_id = str(uuid.uuid4())
-            logger.info(f"Task created (sync): {task_id} | {video_url} | operations={len(operations)}")
+            
+            # Красивое логирование создания задачи
+            logger.info(f"[{task_id[:8]}] ✅ ЗАДАЧА СОЗДАНА")
+            logger.info(f"[{task_id[:8]}] 🔧 Режим: СИНХРОННЫЙ")
+            logger.info(f"[{task_id[:8]}] 📹 Видео: {video_url[:60]}...")
+            logger.info(f"[{task_id[:8]}] ⚙️  Подзадач: {len(operations)}")
 
             # Создаем директории для задачи
             create_task_dirs(task_id)
@@ -2067,7 +2091,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             # Промежуточный файл
             output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
-        logger.info(f"Task {task_id}: Executing operation {idx+1}/{len(operations)}: {op_type}")
+        logger.info(f"[{task_id[:8]}] ⚙️  Операция {idx+1}/{len(operations)}: {op_type}")
 
         # Выполняем операцию
         result = operation.execute(current_input, output_path, op_data)
@@ -2112,9 +2136,9 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
                 file_path = os.path.join(task_dir, filename)
                 try:
                     os.remove(file_path)
-                    logger.info(f"Task {task_id}: Deleted temporary file: {filename}")
+                    logger.info(f"[{task_id[:8]}] 🗑️  Удален временный файл: {filename}")
                 except Exception as e:
-                    logger.warning(f"Task {task_id}: Failed to delete {filename}: {e}")
+                    logger.warning(f"[{task_id[:8]}] ⚠️  Не удалось удалить {filename}: {e}")
 
     # Собираем информацию о всех output файлах
     files_info = []
@@ -2184,6 +2208,13 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         ttl_human='2 hours'
     )
     save_task_metadata(task_id, metadata)
+
+    # Красивое логирование успешного завершения
+    logger.info(f"[{task_id[:8]}] ✅ ЗАДАЧА ЗАВЕРШЕНА")
+    logger.info(f"[{task_id[:8]}] 🎬 Видео создано: {files_info[0]['filename'] if files_info else 'N/A'}")
+    if any(f['filename'].endswith('_thumbnail.jpg') for f in files_info):
+        logger.info(f"[{task_id[:8]}] 🖼️  Превью создано")
+    logger.info(f"[{task_id[:8]}] 📊 Размер: {metadata['total_size_mb']} MB")
 
     # Отправляем webhook если указан
     if webhook_url:

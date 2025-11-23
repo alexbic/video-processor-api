@@ -2,21 +2,12 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Установка FFmpeg, шрифтов, Redis и необходимых зависимостей
+# Установка FFmpeg, Redis и необходимых зависимостей
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    fontconfig \
-    fonts-dejavu-core \
-    fonts-liberation \
-    fonts-liberation2 \
-    fonts-noto-core \
-    fonts-noto-ui-core \
-    fonts-roboto \
-    fonts-open-sans \
-    fonts-montserrat \
     redis-server \
     supervisor \
-    curl \
+    fontconfig \
     && rm -rf /var/lib/apt/lists/*
 
 # Установка Python зависимостей
@@ -28,14 +19,19 @@ COPY app.py .
 COPY bootstrap.py .
 COPY gunicorn_config.py .
 
-# Копирование кастомных шрифтов (Russo One, Fixel)
-COPY fonts/*.ttf /usr/share/fonts/truetype/custom/
+# Копирование кастомных шрифтов для приложения
+RUN mkdir -p /app/fonts /app/tasks /var/log/supervisor /var/run/supervisor
 
-# Обновление кеша шрифтов
-RUN fc-cache -fv
+COPY fonts/ /app/fonts/
 
-# Создание директорий
-RUN mkdir -p /app/tasks /var/log/supervisor /var/run/supervisor
+# Конфигурация fontconfig для распознавания шрифтов в /app/fonts
+RUN mkdir -p /etc/fonts/conf.d && \
+    echo '<?xml version="1.0"?>' > /etc/fonts/local.conf && \
+    echo '<!DOCTYPE fontconfig SYSTEM "fonts.dtd">' >> /etc/fonts/local.conf && \
+    echo '<fontconfig>' >> /etc/fonts/local.conf && \
+    echo '  <dir>/app/fonts</dir>' >> /etc/fonts/local.conf && \
+    echo '</fontconfig>' >> /etc/fonts/local.conf && \
+    fc-cache -fv /app/fonts
 
 # Supervisor конфиг: прописываем user=root в [supervisord], чтобы убрать CRIT warning
 RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
@@ -62,6 +58,5 @@ RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
 
 EXPOSE 5001
 
-# Запускаем supervisor (Redis + Gunicorn с фиксированными лимитами)
-# Публичная версия: 2 workers (hardcoded), embedded Redis 256MB
+# Запускаем supervisor (Redis + Gunicorn)
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
