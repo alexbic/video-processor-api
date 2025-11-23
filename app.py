@@ -2179,7 +2179,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
         # Логируем начало операции
-        logger.info(f"🚀 Обработка: {op_type} [{idx+1}/{len(operations)}]")
+        logger.info(f"[{task_id[:8]}] 🚀 Обработка: {op_type} [{idx+1}/{len(operations)}]")
         op_start_time = datetime.now()
 
         # Выполняем операцию
@@ -2324,7 +2324,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         file_size = file_info.get('file_size_mb', 0)
         
         if filename.endswith('.mp4') and '_thumbnail' not in filename:
-            logger.info(f"🎬 Видео создано: {filename} ({file_size} MB)")
+            logger.info(f"[{task_id[:8]}] 🎬 Видео создано: {filename} ({file_size} MB)")
     
     # Потом превью
     for file_info in files_info:
@@ -2332,7 +2332,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         file_size = file_info.get('file_size_mb', 0)
         
         if filename.endswith(('.jpg', '.jpeg', '.png')):
-            logger.info(f"🖼️ Превью создано: {filename} ({file_size} MB)")
+            logger.info(f"[{task_id[:8]}] 🖼️ Превью создано: {filename} ({file_size} MB)")
     
     # Потом аудио
     for file_info in files_info:
@@ -2340,11 +2340,11 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         file_size = file_info.get('file_size_mb', 0)
         
         if filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
-            logger.info(f"🎵 Аудио готово: {filename} ({file_size} MB)")
+            logger.info(f"[{task_id[:8]}] 🎵 Аудио готово: {filename} ({file_size} MB)")
     
     # В конце - очистка
     if cleaned_count > 0:
-        logger.info(f"🗑️ Очищены временные файлы: {cleaned_count} файл(ов)")
+        logger.info(f"[{task_id[:8]}] 🗑️ Очищены временные файлы: {cleaned_count} файл(ов)")
 
     # Сохраняем metadata
     now = datetime.now()
@@ -2484,7 +2484,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 # Промежуточный файл
                 output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
-            logger.info(f"🚀 Обработка: {op_type} [{idx+1}/{total_ops}]")
+            logger.info(f"[{task_id[:8]}] 🚀 Обработка: {op_type} [{idx+1}/{total_ops}]")
 
             # Выполняем операцию
             result = operation.execute(current_input, output_path, op_data)
@@ -2582,7 +2582,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             file_size = file_info.get('file_size_mb', 0)
             
             if filename.endswith('.mp4') and '_thumbnail' not in filename:
-                logger.info(f"🎬 Видео создано: {filename} ({file_size} MB)")
+                logger.info(f"[{task_id[:8]}] 🎬 Видео создано: {filename} ({file_size} MB)")
         
         # Потом превью
         for file_info in output_files_info:
@@ -2590,7 +2590,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             file_size = file_info.get('file_size_mb', 0)
             
             if filename.endswith(('.jpg', '.jpeg', '.png')):
-                logger.info(f"🖼️ Превью создано: {filename} ({file_size} MB)")
+                logger.info(f"[{task_id[:8]}] 🖼️ Превью создано: {filename} ({file_size} MB)")
         
         # Потом аудио
         for file_info in output_files_info:
@@ -2598,7 +2598,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             file_size = file_info.get('file_size_mb', 0)
             
             if filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
-                logger.info(f"🎵 Аудио готово: {filename} ({file_size} MB)")
+                logger.info(f"[{task_id[:8]}] 🎵 Аудио готово: {filename} ({file_size} MB)")
 
         # Сохраняем метаданные
         # Попробуем получить client_meta из сохраненной задачи
