@@ -9,6 +9,7 @@ from typing import Dict, Any
 import socket
 import re
 import json
+import sys
 from functools import wraps
 from bootstrap import wait_for_redis, log_tcp_port
 
@@ -2731,8 +2732,8 @@ def recover_stuck_tasks():
         logger.info("Recovery disabled (RECOVERY_ENABLED=false)")
         return
     
-    logger.debug("=" * 60)
-    logger.debug("Starting task recovery scan...")
+    sys.stdout.write("=" * 60 + "\n")
+    logger.info("Starting task recovery scan...")
     current_time = datetime.now()
     recovered = 0
     failed = 0
@@ -2904,13 +2905,13 @@ def recover_stuck_tasks():
     except Exception as e:
         logger.error(f"Recovery scan error: {e}")
     
-    logger.debug(
+    logger.info(
         "Recovery scan complete: "
         f"scanned={scanned}, recovered={recovered}, expired={expired}, failed={failed}, "
         f"skipped_status={skipped_status}, skipped_with_output={skipped_with_output}, "
         f"skipped_webhook_failed={skipped_webhook_failed}, empty_dirs_removed={empty_dirs_removed}"
     )
-    logger.debug("=" * 60)
+    sys.stdout.write("=" * 60 + "\n")
 
 def schedule_recovery():
     """Запускает recovery периодически если RECOVERY_INTERVAL_MINUTES > 0"""
