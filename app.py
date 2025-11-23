@@ -1415,7 +1415,7 @@ class MakeShortOperation(VideoOperation):
 
             thumbnail_result = subprocess.run(thumbnail_cmd, capture_output=True, text=True)
             if thumbnail_result.returncode == 0 and os.path.exists(thumbnail_path):
-                logger.info(f"Generated thumbnail: {os.path.basename(thumbnail_path)} at {thumbnail_timestamp}s")
+                logger.info(f"🖼️ Превью сгенерировано: {os.path.basename(thumbnail_path)} at {thumbnail_timestamp}s")
             else:
                 logger.warning(f"Failed to generate thumbnail: {thumbnail_result.stderr}")
                 thumbnail_path = None
@@ -2152,8 +2152,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
     output_files = []  # Список всех созданных output файлов
 
     # Логируем создание задачи
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    logger.info(f"[{now}] ✨ Задача создана: [{task_id}] | SYNC | Подзадач {len(operations)}")
+    logger.info(f"✨ Задача создана: [{task_id[:8]}] | SYNC | Подзадач {len(operations)}")
     
     # Выполняем операции последовательно
     for idx, op_data in enumerate(operations):
@@ -2181,8 +2180,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
         # Логируем начало операции
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        logger.info(f"[{now}] [{task_id[:8]}] 🚀 Обработка: {op_type} [{idx+1}/{len(operations)}]")
+        logger.info(f"🚀 Обработка: {op_type} [{idx+1}/{len(operations)}]")
         op_start_time = datetime.now()
 
         # Выполняем операцию
@@ -2266,15 +2264,20 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
     task_dir = get_task_dir(task_id)
     
     # Удаляем входные и временные файлы по префиксу
+    cleaned_count = 0
     if os.path.exists(task_dir):
         for filename in os.listdir(task_dir):
             if filename.startswith('input_') or filename.startswith('temp_'):
                 file_path = os.path.join(task_dir, filename)
                 try:
                     os.remove(file_path)
-                    logger.info(f"Task {task_id}: Deleted temporary file: {filename}")
+                    cleaned_count += 1
                 except Exception as e:
-                    logger.warning(f"Task {task_id}: Failed to delete {filename}: {e}")
+                    logger.warning(f"Failed to delete {filename}: {e}")
+    
+    # Логируем очистку один раз
+    if cleaned_count > 0:
+        logger.info(f"🗑️ Очищены временные файлы: {cleaned_count} файл(ов)")
 
     # Собираем информацию о всех output файлах
     files_info = []
@@ -2320,7 +2323,6 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             files_info.append(entry)
 
     # Красивое логирование результатов
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     for file_info in files_info:
         filename = file_info.get('filename', '')
         file_size = file_info.get('file_size_mb', 0)
@@ -2328,16 +2330,16 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         if filename.endswith('.mp4'):
             # Видео (основной файл или cut_video)
             if '_thumbnail' not in filename:
-                logger.info(f"[{now}] [{task_id[:8]}] 🎬 Видео готово: {file_size} MB")
+                logger.info(f"🎬 Видео готово: {file_size} MB")
         elif filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
             # Аудио (extract_audio)
-            logger.info(f"[{now}] [{task_id[:8]}] 🎵 Аудио готово: {file_size} MB")
+            logger.info(f"🎵 Аудио готово: {file_size} MB")
         elif filename.endswith(('.jpg', '.jpeg', '.png')):
             # Изображение (превью)
-            logger.info(f"[{now}] [{task_id[:8]}] 🖼️ Превью создано: {file_size} MB")
+            logger.info(f"🖼️ Превью создано: {file_size} MB")
         else:
             # Другие файлы
-            logger.info(f"[{now}] [{task_id[:8]}] 📁 Файл готов: {filename} ({file_size} MB)")
+            logger.info(f"📁 Файл готов: {filename} ({file_size} MB)")
 
     # Сохраняем metadata
     now = datetime.now()
@@ -2840,13 +2842,17 @@ def recover_stuck_tasks():
                     continue
                 
                 # Удаляем временные файлы перед retry
+                temp_deleted_count = 0
                 for filename in files:
                     if filename.startswith('temp_'):
                         try:
                             os.remove(os.path.join(task_dir, filename))
-                            logger.info(f"Task {task_id}: Deleted temp file: {filename}")
+                            temp_deleted_count += 1
                         except Exception as e:
                             logger.warning(f"Task {task_id}: Failed to delete {filename}: {e}")
+                
+                if temp_deleted_count > 0:
+                    logger.debug(f"Task {task_id}: Deleted {temp_deleted_count} temp file(s)")
                 
                 # Проверяем есть ли входной файл и валиден ли он
                 has_valid_input = False
@@ -2857,7 +2863,7 @@ def recover_stuck_tasks():
                         if os.path.exists(input_path) and os.path.getsize(input_path) > 1024:  # > 1KB
                             has_valid_input = True
                             input_file = input_path
-                            logger.info(f"Task {task_id}: Found valid input file: {filename}")
+                            logger.debug(f"Task {task_id}: Found valid input file: {filename}")
                             break
                 
                 # Перезапускаем задачу
@@ -2960,12 +2966,18 @@ def _recover_task_by_id(task_id: str, force: bool = False) -> tuple[bool, str, d
         files = os.listdir(task_dir)
     except Exception:
         files = []
+    
+    temp_deleted_count = 0
     for filename in files:
         if filename.startswith('temp_'):
             try:
                 os.remove(os.path.join(task_dir, filename))
+                temp_deleted_count += 1
             except Exception:
                 pass
+    
+    if temp_deleted_count > 0:
+        logger.debug(f"Task {task_id}: Cleanup removed {temp_deleted_count} temp file(s)")
 
     # Prepare retry counters
     retry_count = int(metadata.get('retry_count', 0)) + 1
