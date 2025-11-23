@@ -2236,16 +2236,24 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
     # Красивое логирование успешного завершения
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
-    # Логируем основное видео
-    if files_info:
-        video_file = next((f for f in files_info if f['filename'].endswith('.mp4')), files_info[0])
-        video_size = video_file.get('file_size_mb', 0)
-        logger.info(f"[{now}] [{task_id[:8]}] 🎬 Видео готово: {video_size} MB")
-    
-    # Логируем превью если существует
-    if any(f['filename'].endswith('_thumbnail.jpg') or f['filename'].endswith('.jpg') for f in files_info):
-        thumb_time = 0.5
-        logger.info(f"[{now}] [{task_id[:8]}] 🖼️ Превью создано ({thumb_time}s)")
+    # Логируем файлы в зависимости от типа
+    for file_info in files_info:
+        filename = file_info.get('filename', '')
+        file_size = file_info.get('file_size_mb', 0)
+        
+        if filename.endswith('.mp4'):
+            # Видео (основной файл или cut_video)
+            if '_thumbnail' not in filename:
+                logger.info(f"[{now}] [{task_id[:8]}] 🎬 Видео готово: {file_size} MB")
+        elif filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
+            # Аудио (extract_audio)
+            logger.info(f"[{now}] [{task_id[:8]}] 🎵 Аудио готово: {file_size} MB")
+        elif filename.endswith(('.jpg', '.jpeg', '.png')):
+            # Изображение (превью)
+            logger.info(f"[{now}] [{task_id[:8]}] 🖼️ Превью создано: {file_size} MB")
+        else:
+            # Другие файлы
+            logger.info(f"[{now}] [{task_id[:8]}] 📁 Файл готов: {filename} ({file_size} MB)")
 
     # Отправляем webhook если указан
     if webhook_url:
@@ -2480,6 +2488,26 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         })
 
         logger.info(f"Task {task_id}: Completed successfully with {len(output_files_info)} output file(s)")
+
+        # Красивое логирование успешного завершения в фоновом режиме
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        for file_info in output_files_info:
+            filename = file_info.get('filename', '')
+            file_size = file_info.get('file_size_mb', 0)
+            
+            if filename.endswith('.mp4'):
+                # Видео (основной файл или cut_video)
+                if '_thumbnail' not in filename:
+                    logger.info(f"[{now}] [{task_id[:8]}] 🎬 Видео готово: {file_size} MB")
+            elif filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
+                # Аудио (extract_audio)
+                logger.info(f"[{now}] [{task_id[:8]}] 🎵 Аудио готово: {file_size} MB")
+            elif filename.endswith(('.jpg', '.jpeg', '.png')):
+                # Изображение (превью)
+                logger.info(f"[{now}] [{task_id[:8]}] 🖼️ Превью создано: {file_size} MB")
+            else:
+                # Другие файлы
+                logger.info(f"[{now}] [{task_id[:8]}] 📁 Файл готов: {filename} ({file_size} MB)")
 
         # Отправляем финальный webhook если указан
         if webhook_url:
