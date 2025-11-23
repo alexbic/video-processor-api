@@ -176,15 +176,16 @@ def save_task(task_id: str, task_data: dict):
     _ensure_redis()
     if STORAGE_MODE == "redis" and redis_client is not None:
         try:
+            redis_ttl = TASK_TTL_HOURS * 3600  # Convert hours to seconds (72h = 259200s)
             redis_client.setex(
                 f"task:{task_id}",
-                86400,  # 24 hours TTL
+                redis_ttl,
                 json.dumps(task_data)
             )
             return
         except Exception as e:
             # If Redis write fails, save to memory as backup
-            print(f"WARNING: Redis write failed, saving to memory: {e}")
+            logger.warning(f"Redis write failed, saving to memory: {e}")
     tasks_memory[task_id] = task_data
 
 def get_task(task_id: str) -> dict:
@@ -232,6 +233,18 @@ WEBHOOK_MAX_RETRY_ATTEMPTS = 5  # Максимум попыток отправк
 WEBHOOK_RETRY_DELAY_SECONDS = 60  # Задержка между попытками webhook - hardcoded
 CLEANUP_INTERVAL_SECONDS = 3600  # 1 час - hardcoded в публичной версии
 
+def format_ttl_human(hours: int) -> str:
+    """Форматирует время жизни файлов в человеко-читаемом виде"""
+    if hours >= 24:
+        days = hours // 24
+        remaining_hours = hours % 24
+        if remaining_hours == 0:
+            return f"{days} day{'s' if days != 1 else ''}"
+        else:
+            return f"{days} day{'s' if days != 1 else ''} {remaining_hours}h"
+    else:
+        return f"{hours}h"
+
 # ==============================================================================
 # Конфигурация
 # ==============================================================================
@@ -263,12 +276,42 @@ def create_task_dirs(task_id: str):
     """Создать директорию для задачи"""
     os.makedirs(get_task_dir(task_id), exist_ok=True)
 
-def save_task_metadata(task_id: str, metadata: dict):
-    """Сохранить metadata.json для задачи"""
+def save_task_metadata(task_id: str, metadata: dict, verify: bool = False):
+    """
+    Save metadata.json for task with optional verification.
+    
+    Args:
+        task_id: Task identifier
+        metadata: Metadata dict to save
+        verify: If True, read back and verify the write succeeded
+    
+    Returns:
+        True if save succeeded (and verification passed if enabled), False otherwise
+    """
     metadata_path = os.path.join(get_task_dir(task_id), "metadata.json")
-    with open(metadata_path, 'w') as f:
-        json.dump(metadata, f, indent=2)
-    os.chmod(metadata_path, 0o644)
+    try:
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        os.chmod(metadata_path, 0o644)
+        
+        if verify:
+            # Read back and verify
+            try:
+                with open(metadata_path, 'r') as f:
+                    saved = json.load(f)
+                if saved.get('task_id') == task_id and saved.get('status') == metadata.get('status'):
+                    logger.debug(f"[{task_id}] metadata.json write verified ✓")
+                    return True
+                else:
+                    logger.warning(f"[{task_id}] metadata.json verification failed ✗")
+                    return False
+            except Exception as e:
+                logger.warning(f"[{task_id}] metadata.json read-back failed: {e} ✗")
+                return False
+        return True
+    except Exception as e:
+        logger.error(f"[{task_id}] Failed to save metadata.json: {e}")
+        return False
 
 
 def build_structured_metadata(
@@ -864,6 +907,20 @@ def _post_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None,
             "last_error": None,
             "next_retry": None
         }
+    else:
+        # Убеждаемся что все обязательные поля присутствуют (для обратной совместимости)
+        if "attempts" not in webhook_state:
+            webhook_state["attempts"] = 0
+        if "last_attempt" not in webhook_state:
+            webhook_state["last_attempt"] = None
+        if "last_status" not in webhook_state:
+            webhook_state["last_status"] = None
+        if "last_error" not in webhook_state:
+            webhook_state["last_error"] = None
+        if "next_retry" not in webhook_state:
+            webhook_state["next_retry"] = None
+        if "status" not in webhook_state:
+            webhook_state["status"] = "pending"
 
     # Подготавливаем заголовки
     headers = {"Content-Type": "application/json"}
@@ -907,7 +964,7 @@ def _post_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None,
             response = requests.post(
                 webhook_url,
                 json=payload,
-                timeout=10,
+                timeout=30,
                 headers=headers
             )
 
@@ -982,7 +1039,7 @@ def send_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None =
 
         for attempt in range(max_retries):
             try:
-                response = requests.post(webhook_url, json=payload, timeout=10, headers=headers)
+                response = requests.post(webhook_url, json=payload, timeout=30, headers=headers)
                 response.raise_for_status()
                 return True
             except requests.exceptions.RequestException as e:
@@ -1086,149 +1143,12 @@ class MakeShortOperation(VideoOperation):
                 'end_time': None,
                 'crop_mode': 'center',
                 'letterbox_config': {},
-                'text_items': [],  # Универсальная система для всех текстовых элементов
+                'title': {},
+                'subtitles': {},
                 'generate_thumbnail': True,  # Автоматическая генерация превью
                 'thumbnail_timestamp': 0.5   # Время для извлечения превью (секунды)
             }
         )
-
-    def _resolve_font_path(self, fontfile: str) -> str:
-        """
-        Резолвит имя шрифта в полный путь.
-        
-        Входные данные:
-        - /app/fonts/FontName.ttf (полный путь из контейнера) → возвращаем как есть
-        - FontName.ttf (только имя) → преобразуем в /app/fonts/FontName.ttf
-        - font_name (без расширения) → преобразуем в /app/fonts/font_name.ttf
-        
-        Возвращает полный путь для использования в FFmpeg drawtext фильтре.
-        """
-        if not fontfile:
-            return None
-        
-        # Если уже полный путь в контейнере - используем как есть
-        if fontfile.startswith('/app/fonts/'):
-            return fontfile
-        
-        # Если это относительный путь или имя файла
-        if '/' in fontfile:
-            # Относительный путь - преобразуем в абсолютный
-            return f'/app/fonts/{fontfile.split("/")[-1]}'
-        
-        # Просто имя файла - добавляем префикс контейнера
-        if fontfile.endswith('.ttf'):
-            return f'/app/fonts/{fontfile}'
-        else:
-            # На случай если передали без расширения
-            return f'/app/fonts/{fontfile}.ttf'
-
-    def _process_text_item(self, text_item: dict) -> tuple[str, dict]:
-        """
-        Обрабатывает один текстовый элемент и возвращает drawtext строку для FFmpeg.
-        
-        Args:
-            text_item: Словарь с параметрами текстового элемента:
-                - text: Текст для отображения
-                - fontfile: Имя файла шрифта (без пути)
-                - fontsize: Размер шрифта (по умолчанию 60)
-                - fontcolor: Цвет текста (по умолчанию white)
-                - y: Y позиция (по умолчанию h-200)
-                - x: X позиция (по умолчанию (w-text_w)/2)
-                - start: Время начала (секунды)
-                - end: Время окончания (секунды)
-                - max_lines: Максимальное количество строк (по умолчанию 3)
-                - text_align: Выравнивание (left, center, right)
-                - box: Показывать ли плашку (0 или 1)
-                - boxcolor: Цвет плашки
-                - boxborderw: Толщина границы плашки
-        
-        Returns:
-            (drawtext_filter_string, error_dict)
-            Если ошибка - вторая компонента содержит информацию об ошибке
-        """
-        try:
-            text = text_item.get('text', '')
-            if not text:
-                return '', {'error': 'Empty text'}
-            
-            # Получаем параметры с дефолтными значениями
-            fontfile = text_item.get('fontfile')
-            fontsize = text_item.get('fontsize', 60)
-            fontcolor = text_item.get('fontcolor', 'white')
-            y = text_item.get('y', 'h-200')
-            x = text_item.get('x', '(w-text_w)/2')
-            start = text_item.get('start', 0)
-            end = text_item.get('end', 5)
-            max_lines = text_item.get('max_lines', 3)
-            text_align = text_item.get('text_align', 'center')
-            
-            # Параметры плашки (опционально)
-            box = text_item.get('box', 0)
-            boxcolor = text_item.get('boxcolor', 'black@0.5')
-            boxborderw = text_item.get('boxborderw', 10)
-            
-            # Обработка текста: автоматический перенос строк
-            max_chars_per_line = int(950 / (fontsize * 0.55))
-            
-            if len(text) > max_chars_per_line:
-                # Разбиваем на слова и складываем в строки
-                words = text.split(' ')
-                lines = []
-                current_line = []
-                current_length = 0
-                
-                for word in words:
-                    word_len = len(word) + 1
-                    if current_length + word_len > max_chars_per_line and current_line:
-                        lines.append(' '.join(current_line))
-                        current_line = [word]
-                        current_length = word_len
-                    else:
-                        current_line.append(word)
-                        current_length += word_len
-                
-                if current_line:
-                    lines.append(' '.join(current_line))
-                
-                # Ограничиваем количество строк
-                text = ' '.join(lines[:max_lines])
-            
-            # Экранируем спецсимволы для FFmpeg
-            text_escaped = text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
-            
-            # Строим параметры drawtext фильтра
-            drawtext_params = [
-                f"text='{text_escaped}'",
-                "expansion=normal",
-                f"fontsize={fontsize}",
-                f"fontcolor={fontcolor}",
-                f"text_align={text_align}",
-                f"x={x}",
-                f"y={y}",
-                f"enable='between(t\\,{start}\\,{end})'"
-            ]
-            
-            # Добавляем шрифт если указан
-            if fontfile:
-                font_path = self._resolve_font_path(fontfile)
-                if font_path:
-                    # Экранируем путь для FFmpeg
-                    font_escaped = font_path.replace(':', '\\:').replace("'", "\\'")
-                    drawtext_params.append(f"fontfile='{font_escaped}'")
-            
-            # Добавляем плашку если включена
-            if box:
-                drawtext_params.append(f"box=1")
-                drawtext_params.append(f"boxcolor={boxcolor}")
-                drawtext_params.append(f"boxborderw={boxborderw}")
-            
-            # Собираем финальную строку drawtext
-            drawtext_filter = ':'.join(drawtext_params)
-            return drawtext_filter, None
-            
-        except Exception as e:
-            logger.warning(f"Error processing text_item: {e}")
-            return '', {'error': str(e)}
 
     def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
         """Конвертация в Shorts формат (1080x1920)"""
@@ -1256,6 +1176,45 @@ class MakeShortOperation(VideoOperation):
             'overlay_y': letterbox_config_raw.get('overlay_y', '(H-h)/2')
         }
 
+        # Обработка title (новый формат: объект с text и настройками)
+        title_raw = params.get('title', {})
+        title_text = title_raw.get('text', '')
+        title_config = {
+            'fontfile': title_raw.get('fontfile'),
+            'font': title_raw.get('font'),
+            'fontsize': title_raw.get('fontsize', 70),
+            'fontcolor': title_raw.get('fontcolor', 'white'),
+            'bordercolor': title_raw.get('bordercolor', 'black'),
+            'borderw': title_raw.get('borderw', 3),
+            'text_align': title_raw.get('text_align', 'center'),
+            'box': title_raw.get('box', False),
+            'boxcolor': title_raw.get('boxcolor', 'black@0.5'),
+            'boxborderw': title_raw.get('boxborderw', 10),
+            'x': title_raw.get('x', 'center'),
+            'y': title_raw.get('y', 150),
+            'start_time': title_raw.get('start_time', 0.5),
+            'duration': title_raw.get('duration', 4),
+            'fade_in': title_raw.get('fade_in', 0.5),
+            'fade_out': title_raw.get('fade_out', 0.5)
+        }
+
+        # Обработка subtitles (новый формат: объект с items и настройками)
+        subtitles_raw = params.get('subtitles', {})
+        subtitles = subtitles_raw.get('items', [])
+        subtitle_config = {
+            'fontfile': subtitles_raw.get('fontfile'),
+            'font': subtitles_raw.get('font'),
+            'fontsize': subtitles_raw.get('fontsize', 60),
+            'fontcolor': subtitles_raw.get('fontcolor', 'white'),
+            'bordercolor': subtitles_raw.get('bordercolor', 'black'),
+            'borderw': subtitles_raw.get('borderw', 3),
+            'text_align': subtitles_raw.get('text_align', 'center'),
+            'box': subtitles_raw.get('box', False),
+            'boxcolor': subtitles_raw.get('boxcolor', 'black@0.5'),
+            'boxborderw': subtitles_raw.get('boxborderw', 10),
+            'y': subtitles_raw.get('y', 'h-200')
+        }
+
         # Определяем фильтр обрезки
         if crop_mode == 'letterbox':
             video_filter = (
@@ -1270,17 +1229,141 @@ class MakeShortOperation(VideoOperation):
         else:  # center
             video_filter = "crop=ih*9/16:ih,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
 
-        # ===== НОВАЯ СИСТЕМА: Универсальные текстовые элементы =====
-        # Обрабатываем text_items если они указаны (приоритет выше старой системы)
-        text_items = params.get('text_items', [])
-        if text_items:
-            for text_item in text_items:
-                drawtext_filter, error = self._process_text_item(text_item)
-                if error:
-                    logger.warning(f"Skipping text item: {error}")
-                    continue
-                if drawtext_filter:
-                    video_filter += f",drawtext={drawtext_filter}"
+        # Добавляем текстовые оверлеи если указаны
+        if title_text:
+            # Автоматический перенос текста заголовка
+            max_chars_per_line_title = int(950 / (title_config['fontsize'] * 0.55))
+            if len(title_text) > max_chars_per_line_title:
+                words = title_text.split(' ')
+                lines = []
+                current_line = []
+                current_length = 0
+
+                for word in words:
+                    word_len = len(word) + 1
+                    if current_length + word_len > max_chars_per_line_title and current_line:
+                        lines.append(' '.join(current_line))
+                        current_line = [word]
+                        current_length = word_len
+                    else:
+                        current_line.append(word)
+                        current_length += word_len
+
+                if current_line:
+                    lines.append(' '.join(current_line))
+
+                title_text = '\n'.join(lines[:2])
+
+            # Экранируем спецсимволы
+            title_escaped = title_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+
+            # Вычисляем тайминги для fade эффектов
+            title_start = title_config['start_time']
+            title_duration = title_config['duration']
+            title_fade_in = title_config['fade_in']
+            title_fade_out = title_config['fade_out']
+            title_end = title_start + title_duration
+            fade_in_end = title_start + title_fade_in
+            fade_out_start = title_end - title_fade_out
+
+            # Формируем drawtext фильтр
+            drawtext_params = [
+                f"text='{title_escaped}'",
+                "expansion=normal",
+                f"text_align={title_config['text_align']}"
+            ]
+
+            if title_config['fontfile']:
+                fontfile_escaped = title_config['fontfile'].replace(':', '\\:').replace("'", "\\'")
+                drawtext_params.append(f"fontfile='{fontfile_escaped}'")
+            elif title_config['font']:
+                font_escaped = title_config['font'].replace(':', '\\:').replace("'", "\\'")
+                drawtext_params.append(f"font='{font_escaped}'")
+
+            drawtext_params.extend([
+                f"fontsize={title_config['fontsize']}",
+                f"fontcolor={title_config['fontcolor']}",
+                f"bordercolor={title_config['bordercolor']}",
+                f"borderw={title_config['borderw']}",
+                f"x=(w-text_w)/2",
+                f"y={title_config['y']}",
+                f"enable='between(t\\,{title_start}\\,{title_end})'",
+                f"alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
+            ])
+
+            # Добавляем box (плашку) если включено
+            if title_config.get('box'):
+                drawtext_params.append(f"box=1")
+                drawtext_params.append(f"boxcolor={title_config['boxcolor']}")
+                if 'boxborderw' in title_config:
+                    drawtext_params.append(f"boxborderw={title_config['boxborderw']}")
+
+            video_filter += f",drawtext={':'.join(drawtext_params)}"
+
+        # Динамические субтитры
+        if subtitles:
+            for subtitle in subtitles:
+                sub_text = subtitle.get('text', '')
+                sub_start = subtitle.get('start', 0)
+                sub_end = subtitle.get('end', 0)
+
+                if sub_text and sub_start is not None and sub_end is not None:
+                    # Автоматический перенос текста
+                    max_chars_per_line = int(950 / (subtitle_config['fontsize'] * 0.55))
+                    if len(sub_text) > max_chars_per_line:
+                        words = sub_text.split(' ')
+                        lines = []
+                        current_line = []
+                        current_length = 0
+
+                        for word in words:
+                            word_len = len(word) + 1
+                            if current_length + word_len > max_chars_per_line and current_line:
+                                lines.append(' '.join(current_line))
+                                current_line = [word]
+                                current_length = word_len
+                            else:
+                                current_line.append(word)
+                                current_length += word_len
+
+                        if current_line:
+                            lines.append(' '.join(current_line))
+
+                        sub_text = '\n'.join(lines[:2])
+
+                    sub_escaped = sub_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+
+                    sub_drawtext_params = [
+                        f"text='{sub_escaped}'",
+                        "expansion=normal",
+                        f"text_align={subtitle_config['text_align']}"
+                    ]
+
+                    if subtitle_config['fontfile']:
+                        subfontfile_escaped = subtitle_config['fontfile'].replace(':', '\\:').replace("'", "\\'")
+                        sub_drawtext_params.append(f"fontfile='{subfontfile_escaped}'")
+                    elif subtitle_config['font']:
+                        subfont_escaped = subtitle_config['font'].replace(':', '\\:').replace("'", "\\'")
+                        sub_drawtext_params.append(f"font='{subfont_escaped}'")
+
+                    sub_drawtext_params.extend([
+                        f"fontsize={subtitle_config['fontsize']}",
+                        f"fontcolor={subtitle_config['fontcolor']}",
+                        f"bordercolor={subtitle_config['bordercolor']}",
+                        f"borderw={subtitle_config['borderw']}",
+                        f"x=(w-text_w)/2",
+                        f"y={subtitle_config['y']}",
+                        f"enable='between(t\\,{sub_start}\\,{sub_end})'"
+                    ])
+
+                    # Добавляем box (плашку) для субтитров если включено
+                    if subtitle_config.get('box'):
+                        sub_drawtext_params.append(f"box=1")
+                        sub_drawtext_params.append(f"boxcolor={subtitle_config['boxcolor']}")
+                        if subtitle_config.get('boxborderw'):
+                            sub_drawtext_params.append(f"boxborderw={subtitle_config['boxborderw']}")
+
+                    video_filter += f",drawtext={':'.join(sub_drawtext_params)}"
 
         # Выполняем FFmpeg команду
         cmd = ['ffmpeg']
@@ -1591,8 +1674,8 @@ def health_check():
 @require_api_key
 def list_fonts():
     """
-    Получить список доступных шрифтов (предустановленных + custom)
-    Сканирует /app/fonts/ и системные шрифты.
+    Получить список доступных шрифтов (предустановленных)
+    Только встроенные шрифты. Кастомные шрифты - только в PRO версии.
     """
     try:
         # Предустановленные шрифты (встроенные в контейнер)
@@ -1630,30 +1713,11 @@ def list_fonts():
             if os.path.exists(font["file"]):
                 available_fonts.append(font)
 
-        # Добавляем динамически обнаруженные шрифты из /app/fonts/
-        app_fonts_dir = "/app/fonts"
-        if os.path.exists(app_fonts_dir):
-            for filename in sorted(os.listdir(app_fonts_dir)):
-                if filename.lower().endswith(('.ttf', '.ttc', '.otf')):
-                    # Пропускаем файлы, которые уже в списке предустановленных
-                    font_path = os.path.join(app_fonts_dir, filename)
-                    already_listed = any(f["file"] == font_path for f in available_fonts)
-                    if not already_listed:
-                        # Генерируем "дружелюбное" имя из имени файла
-                        base_name = os.path.splitext(filename)[0]
-                        # Заменяем дефисы на пробелы, e.g. "Russo-One.ttf" -> "Russo One"
-                        font_name = base_name.replace('-', ' ').replace('_', ' ').strip()
-                        available_fonts.append({
-                            "name": font_name,
-                            "family": "custom",
-                            "file": font_path
-                        })
-
         return jsonify({
             "status": "success",
             "total_fonts": len(available_fonts),
             "fonts": available_fonts,
-            "note": "Includes system fonts and custom fonts from /app/fonts/"
+            "note": "Custom fonts upload available in PRO version only"
         })
 
     except Exception as e:
@@ -1690,89 +1754,79 @@ def download_file(file_path):
 
 @app.route('/task_status/<task_id>', methods=['GET'])
 def get_task_status(task_id):
-    """Получить статус задачи (не требует авторизации - task_id уникален)"""
+    """
+    Get task status (no auth required - task_id is unique).
+    
+    Priority (Redis-first architecture):
+    1. Redis cache (< 1ms, TTL 72h) - fastest, always fresh
+    2. metadata.json on disk (5ms, persistent) - reliable fallback after Redis expires
+    3. Task directory exists check - minimal info for in-progress tasks
+    4. 404 - task not found
+    """
     try:
-        task = get_task(task_id)
+        # PRIORITY 1: Try Redis first (fastest, within TTL)
+        _ensure_redis()
+        task = None
+        if STORAGE_MODE == "redis" and redis_client is not None:
+            try:
+                data = redis_client.get(f"task:{task_id}")
+                if data:
+                    task = json.loads(data)
+                    logger.debug(f"[{task_id[:8]}] /task_status: cache HIT (Redis), status={task.get('status')}")
+            except Exception as e:
+                logger.debug(f"[{task_id[:8]}] Redis read failed: {e}")
 
-        # Fallback: если записи в хранилище нет — попробуем метаданные с диска
-        if not task:
-            metadata = load_task_metadata(task_id)
-            if metadata and metadata.get('status') == 'completed':
-                # Пересоберём абсолютные ссылки
-                output_files = metadata.get('output_files', [])
-                for f in output_files:
-                    dp = f.get('download_path')
-                    if dp:
-                        f['download_url'] = build_absolute_url(dp)
+        if task:
+            # Redis содержит актуальные данные синхронизированные с metadata.json
+            status = task.get('status')
+            
+            # Для всех статусов возвращаем данные из Redis
+            if status in ['queued', 'processing']:
+                # Задачи в процессе - минимальный статус
+                return jsonify({
+                    "task_id": task_id,
+                    "status": status,
+                    "created_at": task.get('created_at'),
+                    "progress": task.get('progress', 0)
+                })
+            
+            if status == 'completed':
+                # Завершённые задачи - полная структура из Redis
+                # (синхронизирована с metadata.json при завершении)
+                return jsonify(task.get('metadata', task))
+            
+            if status == 'error':
+                # Ошибки - полная структура из Redis
+                return jsonify(task.get('metadata', task))
+            
+            # Fallback для неизвестных статусов
+            return jsonify(task)
 
-                # Ответ в желаемом порядке, client_meta внизу
-                resp = {
-                    'task_id': task_id,
-                    'status': 'completed',
-                    'progress': 100,
-                    'created_at': metadata.get('created_at'),
-                    'video_url': metadata.get('video_url'),
-                    'output_files': output_files,
-                    'total_files': metadata.get('total_files', len(output_files)),
-                    'total_size': metadata.get('total_size'),
-                    'is_chunked': any(f.get('chunk') for f in output_files) if output_files else False,
-                    'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json"),
-                    'completed_at': metadata.get('completed_at')
-                }
-                # Добавляем webhook из metadata.json, если есть
-                if metadata.get('webhook') is not None:
-                    resp['webhook'] = metadata.get('webhook')
-                # client_meta всегда в конце
-                if metadata.get('client_meta') is not None:
-                    resp['client_meta'] = metadata.get('client_meta')
-                return jsonify(resp)
+        # PRIORITY 2: Fallback to metadata.json (persistent, source of truth)
+        logger.debug(f"[{task_id[:8]}] /task_status: cache MISS (Redis), checking disk")
+        metadata = load_task_metadata(task_id)
+        if metadata:
+            logger.info(f"[{task_id[:8]}] /task_status: returning from disk (Redis TTL expired or unavailable)")
+            # Return metadata as-is (already has input/output structure)
+            return jsonify(metadata)
 
-            # Если директория задачи существует — считаем, что в процессе
-            if os.path.isdir(get_task_dir(task_id)):
-                resp = {
-                    'task_id': task_id,
-                    'status': 'processing',
-                    'progress':  50
-                }
-                return jsonify(resp)
-
-            return jsonify({"status": "error", "error": "Task not found"}), 404
-
-        # Базовый ответ (без client_meta; добавим в конце)
-        response = {
-            'task_id': task_id,
-            'status': task['status'],
-            'progress': task.get('progress', 0),
-            'created_at': task.get('created_at')
-        }
-
-        if task['status'] == 'completed':
-            output_files = task.get('output_files', [])
-            for f in output_files:
-                dp = f.get('download_path')
-                if dp:
-                    f['download_url'] = build_absolute_url(dp)
-            is_chunked = any(f.get('chunk') for f in output_files) if output_files else False
-            response.update({
-                'video_url': task.get('video_url'),
-                'output_files': output_files,
-                'total_files': task.get('total_files', len(output_files)),
-                'total_size': task.get('total_size'),
-                'is_chunked': is_chunked,
-                'metadata_url': build_absolute_url(f"/download/{task_id}/metadata.json"),
-                'completed_at': task.get('completed_at')
-            })
-        elif task['status'] == 'error':
-            response.update({
-                'error': task.get('error'),
-                'failed_at': task.get('failed_at')
+        # PRIORITY 3: Check if task directory exists (in-progress without metadata yet)
+        if os.path.isdir(get_task_dir(task_id)):
+            logger.warning(f"[{task_id[:8]}] /task_status: task directory exists but no data (Redis/disk issue)")
+            try:
+                created_at = datetime.fromtimestamp(os.path.getctime(get_task_dir(task_id))).isoformat()
+            except Exception:
+                created_at = None
+            
+            return jsonify({
+                "task_id": task_id,
+                "status": "processing",
+                "created_at": created_at
             })
 
-        # Добавляем client_meta в самом конце
-        if task.get('client_meta') is not None:
-            response['client_meta'] = task.get('client_meta')
-
-        return jsonify(response)
+        # PRIORITY 4: Task not found
+        logger.warning(f"[{task_id[:8]}] /task_status: task not found (no Redis, no metadata.json, no directory)")
+        return jsonify({"error": "Task not found"}), 404
 
     except Exception as e:
         logger.error(f"Status check error: {e}")
@@ -1987,12 +2041,14 @@ def process_video():
                 metadata_url_internal=None,
                 webhook_url=webhook.get('url') if webhook else None,
                 webhook_headers=webhook.get('headers') if webhook else None,
-                webhook_status=None,  # Let build_structured_metadata create new webhook object
+                webhook_status=webhook if webhook else None,
                 retry_count=0,
                 client_meta=client_meta,
                 operations_count=len(operations),
                 total_size=0,
-                total_size_mb=0.0
+                total_size_mb=0.0,
+                ttl_seconds=TASK_TTL_HOURS * 3600,
+                ttl_human=format_ttl_human(TASK_TTL_HOURS)
             )
             save_task_metadata(task_id, initial_metadata)
 
@@ -2004,9 +2060,7 @@ def process_video():
             thread.daemon = True
             thread.start()
 
-            # Красивое логирование создания задачи
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            logger.info(f"[{now}] ✨ Задача создана: [{task_id}] | ASYNC | Подзадач {len(operations)}")
+            logger.info(f"Task created (async): {task_id} | {video_url} | operations={len(operations)}")
 
             resp = {
                 "task_id": task_id,
@@ -2025,10 +2079,7 @@ def process_video():
         else:
             # Синхронный режим
             task_id = str(uuid.uuid4())
-            
-            # Красивое логирование создания задачи
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            logger.info(f"[{now}] ✨ Задача создана: [{task_id}] | SYNC | Подзадач {len(operations)}")
+            logger.info(f"Task created (sync): {task_id} | {video_url} | operations={len(operations)}")
 
             # Создаем директории для задачи
             create_task_dirs(task_id)
@@ -2042,6 +2093,16 @@ def process_video():
 
 def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, webhook: dict = None, client_meta: dict | None = None) -> dict:
     """Синхронное выполнение pipeline операций"""
+
+    # Создаем начальную задачу в Redis для возможности update_task позже
+    now = datetime.now()
+    initial_task = {
+        'task_id': task_id,
+        'status': 'processing',
+        'created_at': now.isoformat(),
+        'expires_at': (now + timedelta(hours=TASK_TTL_HOURS)).isoformat()
+    }
+    save_task(task_id, initial_task)
 
     # Извлекаем webhook_url и webhook_headers из webhook объекта
     webhook_url = None
@@ -2065,8 +2126,11 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
     current_input = input_path
     output_files = []  # Список всех созданных output файлов
-    operation_times = {}  # Отслеживание времени выполнения операций
 
+    # Логируем создание задачи
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    logger.info(f"[{now}] ✨ Задача создана: [{task_id}] | SYNC | Подзадач {len(operations)}")
+    
     # Выполняем операции последовательно
     for idx, op_data in enumerate(operations):
         op_type = op_data['type']
@@ -2092,23 +2156,15 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             # Промежуточный файл
             output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
-        # Логируем начало операции с правильной иконкой
-        op_icons = {
-            'make_short': '🎬',
-            'extract_audio': '🎵',
-            'cut_video': '📹',
-            'extract_shorts': '📱'
-        }
-        op_icon = op_icons.get(op_type, '⚙️')
+        # Логируем начало операции
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         logger.info(f"[{now}] [{task_id[:8]}] 🚀 Обработка: {op_type} [{idx+1}/{len(operations)}]")
-        
         op_start_time = datetime.now()
 
         # Выполняем операцию
         result = operation.execute(current_input, output_path, op_data)
         
-        # Сохраняем время выполнения операции
+        # Вычисляем время выполнения операции
         op_duration = (datetime.now() - op_start_time).total_seconds()
         
         # Обрабатываем результат (может быть 2 или 3 значения)
@@ -2126,10 +2182,48 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             success, message = result
 
         if not success:
-            return jsonify({"status": "error", "error": message, "task_id": task_id}), 500
-        
-        # Сохраняем время выполнения операции
-        operation_times[op_type] = op_duration
+            # Create error metadata with full structure
+            now = datetime.now()
+            error_metadata = build_structured_metadata(
+                task_id=task_id,
+                status="error",
+                created_at=now.isoformat(),
+                completed_at=now.isoformat(),
+                expires_at=(now + timedelta(hours=TASK_TTL_HOURS)).isoformat(),
+                video_url=video_url,
+                operations=operations,
+                output_files=[],
+                total_files=0,
+                is_chunked=False,
+                metadata_url=None,
+                metadata_url_internal=None,
+                webhook_url=webhook_url if webhook else None,
+                webhook_headers=webhook_headers if webhook else None,
+                webhook_status=None,
+                retry_count=0,
+                client_meta=client_meta,
+                operations_count=len(operations),
+                total_size=0,
+                total_size_mb=0.0,
+                ttl_seconds=TASK_TTL_HOURS * 3600,
+                ttl_human=format_ttl_human(TASK_TTL_HOURS)
+            )
+            error_metadata["error"] = message
+            error_metadata["failed_at"] = now.isoformat()
+            
+            # Save error metadata
+            save_task_metadata(task_id, error_metadata)
+            
+            # Sync to Redis
+            try:
+                update_task(task_id, {
+                    "status": "error",
+                    "metadata": error_metadata
+                })
+            except Exception:
+                pass
+            
+            return jsonify(error_metadata), 400
         
         # Сохраняем output файл если это последняя операция
         if idx == len(operations) - 1:
@@ -2146,7 +2240,6 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
     # Удаляем временные файлы
     import shutil
     task_dir = get_task_dir(task_id)
-    deleted_count = 0
     
     # Удаляем входные и временные файлы по префиксу
     if os.path.exists(task_dir):
@@ -2155,14 +2248,9 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
                 file_path = os.path.join(task_dir, filename)
                 try:
                     os.remove(file_path)
-                    deleted_count += 1
+                    logger.info(f"Task {task_id}: Deleted temporary file: {filename}")
                 except Exception as e:
-                    logger.warning(f"[{task_id[:8]}] ⚠️  Не удалось удалить {filename}: {e}")
-    
-    # Логируем очистку временных файлов
-    if deleted_count > 0:
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        logger.info(f"[{now}] [{task_id[:8]}] 🗑️ Очищены временные файлы ({deleted_count} удалено)")
+                    logger.warning(f"Task {task_id}: Failed to delete {filename}: {e}")
 
     # Собираем информацию о всех output файлах
     files_info = []
@@ -2198,45 +2286,17 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
                 "file_size": file_size,
                 "file_size_mb": round(file_size / (1024 * 1024), 2),
                 "download_path": download_path,
-                "download_url": build_absolute_url(download_path)
+                "download_url_internal": build_internal_url_background(download_path)
             }
+            # Добавляем download_url только если есть публичный URL (API_KEY + PUBLIC_BASE_URL)
+            if API_KEY_ENABLED and PUBLIC_BASE_URL:
+                entry["download_url"] = build_absolute_url_background(download_path)
             if filename in chunk_map:
                 entry.update(chunk_map[filename])
             files_info.append(entry)
 
-    # Сохраняем metadata
-    now = datetime.now()
-    is_chunked = any(f.get('chunk') for f in files_info)
-    metadata = build_structured_metadata(
-        task_id=task_id,
-        status="completed",
-        created_at=now.isoformat(),
-        completed_at=now.isoformat(),
-        expires_at=(now + timedelta(hours=TASK_TTL_HOURS)).isoformat(),
-        video_url=video_url,
-        operations=operations,
-        output_files=files_info,
-        total_files=len(files_info),
-        is_chunked=is_chunked,
-        metadata_url=build_absolute_url_background(f"/download/{task_id}/metadata.json") if (PUBLIC_BASE_URL and API_KEY) else None,
-        metadata_url_internal=build_internal_url_background(f"/download/{task_id}/metadata.json"),
-        webhook_url=webhook_url,
-        webhook_headers=webhook_headers,
-        webhook_status=None,
-        retry_count=0,
-        client_meta=client_meta,
-        operations_count=len(operations),
-        total_size=total_size,
-        total_size_mb=round(total_size / (1024 * 1024), 2),
-        ttl_seconds=7200,
-        ttl_human='2 hours'
-    )
-    save_task_metadata(task_id, metadata)
-
-    # Красивое логирование успешного завершения
+    # Красивое логирование результатов
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
-    # Логируем файлы в зависимости от типа
     for file_info in files_info:
         filename = file_info.get('filename', '')
         file_size = file_info.get('file_size_mb', 0)
@@ -2254,6 +2314,52 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         else:
             # Другие файлы
             logger.info(f"[{now}] [{task_id[:8]}] 📁 Файл готов: {filename} ({file_size} MB)")
+
+    # Сохраняем metadata
+    now = datetime.now()
+    expires_at_iso = (now + timedelta(hours=TASK_TTL_HOURS)).isoformat()
+    is_chunked = any(f.get('chunk') for f in files_info)
+    
+    # Добавляем expires_at к каждому файлу
+    for file_entry in files_info:
+        file_entry["expires_at"] = expires_at_iso
+    metadata = build_structured_metadata(
+        task_id=task_id,
+        status="completed",
+        created_at=now.isoformat(),
+        completed_at=now.isoformat(),
+        expires_at=expires_at_iso,
+        video_url=video_url,
+        operations=operations,
+        output_files=files_info,
+        total_files=len(files_info),
+        is_chunked=is_chunked,
+        metadata_url=build_absolute_url_background(f"/download/{task_id}/metadata.json") if (PUBLIC_BASE_URL and API_KEY) else None,
+        metadata_url_internal=build_internal_url_background(f"/download/{task_id}/metadata.json"),
+        webhook_url=webhook_url,
+        webhook_headers=webhook_headers,
+        webhook_status=None,
+        retry_count=0,
+        client_meta=client_meta,
+        operations_count=len(operations),
+        total_size=total_size,
+        total_size_mb=round(total_size / (1024 * 1024), 2),
+        ttl_seconds=TASK_TTL_HOURS * 3600,
+        ttl_human=format_ttl_human(TASK_TTL_HOURS)
+    )
+    
+    # Save metadata.json (source of truth)
+    save_task_metadata(task_id, metadata)
+    
+    # Sync to Redis (fast cache)
+    try:
+        update_task(task_id, {
+            "status": "completed",
+            "metadata": metadata
+        })
+        logger.debug(f"[{task_id[:8]}] ✓ Redis synchronized with metadata.json")
+    except Exception as e:
+        logger.warning(f"[{task_id[:8]}] Failed to sync Redis (non-critical): {e}")
 
     # Отправляем webhook если указан
     if webhook_url:
@@ -2277,46 +2383,26 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             webhook_payload["client_meta"] = client_meta
         send_webhook(webhook_url, webhook_payload, webhook_headers, task_id)
 
-    # Определяем chunked
-    is_chunked = any(f.get('chunk') for f in files_info)
-
-    response_body = {
-        "task_id": task_id,
-        "status": "completed",
-        "video_url": video_url,
-        "output_files": files_info,
-        "total_files": len(files_info),
-        "is_chunked": is_chunked,
-        "metadata_url": build_absolute_url(f"/download/{task_id}/metadata.json"),
-        "note": "Files will auto-delete after 2 hours.",
-        "completed_at": metadata["completed_at"]
-    }
-    # Добавляем webhook объект, если был предоставлен
-    if webhook:
-        response_body["webhook"] = webhook
-    # client_meta всегда в конце
-    if client_meta is not None:
-        response_body["client_meta"] = client_meta
-    return jsonify(response_body)
+    # Return the same metadata that was saved to metadata.json
+    # This ensures sync response = /task_status response = metadata.json content
+    return jsonify(metadata)
 
 
 def process_video_pipeline_background(task_id: str, video_url: str, operations: list, webhook: dict = None):
     """Фоновое выполнение pipeline операций с использованием task-based архитектуры"""
 
-    # Извлекаем webhook_url и webhook_headers из webhook объекта
+    # Извлекаем webhook_url, webhook_headers и client_meta из webhook объекта
     webhook_url = None
     webhook_headers = None
+    client_meta = None
     if webhook:
         webhook_url = webhook.get('url')
         webhook_headers = webhook.get('headers')
+        client_meta = webhook.get('client_meta')
 
     try:
         # Создаем директории для задачи
         create_task_dirs(task_id)
-        
-        # Красивое логирование создания задачи для фонового режима
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        logger.info(f"[{now}] ✨ Задача создана: [{task_id}] | ASYNC | Подзадач {len(operations)}")
         
         update_task(task_id, {'status': 'processing', 'progress': 5})
 
@@ -2346,15 +2432,25 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
             # Генерируем выходной файл
             if idx == total_ops - 1:
-                # Последняя операция
-                output_filename = f"processed_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id[:8]}.mp4"
-                output_path = os.path.join(get_task_dir(task_id), f"output_{output_filename}")
+                # Последняя операция - финальный файл с семантическим префиксом
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                # Определяем префикс в зависимости от типа операции
+                if op_type == 'make_short':
+                    prefix = 'short'
+                elif op_type == 'cut_video':
+                    prefix = 'video'
+                elif op_type == 'extract_audio':
+                    prefix = 'audio'
+                else:
+                    prefix = 'processed'
+                
+                output_filename = f"{prefix}_{timestamp}.mp4"
+                output_path = os.path.join(get_task_dir(task_id), output_filename)
             else:
                 # Промежуточный файл
                 output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            logger.info(f"[{now}] [{task_id[:8]}] 🚀 Обработка: {op_type} [{idx+1}/{total_ops}]")
+            logger.info(f"Task {task_id}: Executing operation {idx+1}/{total_ops}: {op_type}")
 
             # Выполняем операцию
             result = operation.execute(current_input, output_path, op_data)
@@ -2436,8 +2532,11 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                     'file_size': file_size,
                     'file_size_mb': round(file_size / (1024 * 1024), 2),
                     'download_path': f"/download/{task_id}/{filename}",
-                    'download_url': build_absolute_url_background(f"/download/{task_id}/{filename}")
+                    'download_url_internal': build_internal_url_background(f"/download/{task_id}/{filename}")
                 }
+                # Добавляем download_url только если есть публичный URL (API_KEY + PUBLIC_BASE_URL)
+                if API_KEY_ENABLED and PUBLIC_BASE_URL:
+                    entry['download_url'] = build_absolute_url_background(f"/download/{task_id}/{filename}")
                 if filename in chunk_map:
                     entry.update(chunk_map[filename])
                 output_files_info.append(entry)
@@ -2447,13 +2546,21 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         task_snapshot = get_task(task_id) or {}
         client_meta = task_snapshot.get('client_meta')
         is_chunked = any(f.get('chunk') for f in output_files_info)
+        
+        # Вычисляем expires_at
+        expires_at_iso = task_snapshot.get('expires_at', (datetime.now() + timedelta(hours=TASK_TTL_HOURS)).isoformat())
+        
+        # Добавляем expires_at к каждому файлу
+        for file_entry in output_files_info:
+            file_entry["expires_at"] = expires_at_iso
 
+        # Build complete metadata with input/output structure
         metadata = build_structured_metadata(
             task_id=task_id,
             status='completed',
             created_at=task_snapshot.get('created_at', datetime.now().isoformat()),
             completed_at=datetime.now().isoformat(),
-            expires_at=task_snapshot.get('expires_at', (datetime.now() + timedelta(hours=TASK_TTL_HOURS)).isoformat()),
+            expires_at=expires_at_iso,
             video_url=video_url,
             operations=operations,
             output_files=output_files_info,
@@ -2469,45 +2576,36 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             operations_count=total_ops,
             total_size=total_size,
             total_size_mb=round(total_size / (1024 * 1024), 2),
-            ttl_seconds=7200,
-            ttl_human='2 hours'
+            ttl_seconds=TASK_TTL_HOURS * 3600,
+            ttl_human=format_ttl_human(TASK_TTL_HOURS)
         )
-        save_task_metadata(task_id, metadata)
-
-        # Обновляем задачу
-        update_task(task_id, {
-            'status': 'completed',
-            'progress': 100,
-            'video_url': video_url,
-            'output_files': output_files_info,
-            'total_files': len(output_files_info),
-            'total_size': total_size,
-            'metadata_url': build_absolute_url_background(f"/download/{task_id}/metadata.json"),
-            'operations_executed': total_ops,
-            'completed_at': datetime.now().isoformat()
-        })
+        
+        # CRITICAL: Save metadata.json first (source of truth) with verification
+        logger.info(f"[{task_id[:8]}] Saving final metadata.json (status=completed)")
+        logger.debug(f"[{task_id[:8]}] Final metadata keys: {list(metadata.keys())}")
+        try:
+            write_ok = save_task_metadata(task_id, metadata, verify=True)
+            if write_ok:
+                logger.info(f"[{task_id[:8]}] ✓ Final metadata.json saved and verified successfully")
+            else:
+                logger.error(f"[{task_id[:8]}] ✗ CRITICAL: Failed to save final metadata")
+        except Exception as e:
+            logger.error(f"[{task_id[:8]}] ✗ CRITICAL: Failed to save final metadata: {e}")
+            raise
+        
+        # Синхронизируем Redis с metadata.json для быстрого доступа (cache)
+        # Храним полную структуру под ключом 'metadata' для моментального ответа
+        try:
+            update_task(task_id, {
+                "status": "completed",
+                "metadata": metadata  # Полная структура для моментального ответа
+            })
+            logger.debug(f"[{task_id[:8]}] ✓ Redis synchronized with metadata.json")
+        except Exception as e:
+            logger.warning(f"[{task_id[:8]}] Failed to sync Redis (non-critical): {e}")
+            # Не критично - metadata.json уже сохранён
 
         logger.info(f"Task {task_id}: Completed successfully with {len(output_files_info)} output file(s)")
-
-        # Красивое логирование успешного завершения в фоновом режиме
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        for file_info in output_files_info:
-            filename = file_info.get('filename', '')
-            file_size = file_info.get('file_size_mb', 0)
-            
-            if filename.endswith('.mp4'):
-                # Видео (основной файл или cut_video)
-                if '_thumbnail' not in filename:
-                    logger.info(f"[{now}] [{task_id[:8]}] 🎬 Видео готово: {file_size} MB")
-            elif filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
-                # Аудио (extract_audio)
-                logger.info(f"[{now}] [{task_id[:8]}] 🎵 Аудио готово: {file_size} MB")
-            elif filename.endswith(('.jpg', '.jpeg', '.png')):
-                # Изображение (превью)
-                logger.info(f"[{now}] [{task_id[:8]}] 🖼️ Превью создано: {file_size} MB")
-            else:
-                # Другие файлы
-                logger.info(f"[{now}] [{task_id[:8]}] 📁 Файл готов: {filename} ({file_size} MB)")
 
         # Отправляем финальный webhook если указан
         if webhook_url:
@@ -2536,22 +2634,60 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
 
     except Exception as e:
         logger.error(f"Task {task_id}: Error - {e}")
-        update_task(task_id, {
-            'status': 'error',
-            'error': str(e),
-            'failed_at': datetime.now().isoformat()
-        })
+        
+        # Get task snapshot from Redis or use defaults
+        task_snapshot = get_task(task_id) or {}
+        
+        # Create full error metadata structure
+        now = datetime.now()
+        error_metadata = build_structured_metadata(
+            task_id=task_id,
+            status="error",
+            created_at=task_snapshot.get('created_at', now.isoformat()),
+            completed_at=now.isoformat(),
+            expires_at=(now + timedelta(hours=TASK_TTL_HOURS)).isoformat(),
+            video_url=video_url,
+            operations=operations,
+            output_files=[],
+            total_files=0,
+            is_chunked=False,
+            metadata_url=None,
+            metadata_url_internal=None,
+            webhook_url=webhook_url,
+            webhook_headers=webhook_headers,
+            webhook_status=None,
+            retry_count=task_snapshot.get('retry_count', 0),
+            client_meta=client_meta,
+            operations_count=len(operations),
+            total_size=0,
+            total_size_mb=0.0,
+            ttl_seconds=TASK_TTL_HOURS * 3600,
+            ttl_human=format_ttl_human(TASK_TTL_HOURS)
+        )
+        error_metadata["error"] = str(e)
+        error_metadata["failed_at"] = now.isoformat()
+        
+        # Save error metadata
+        save_task_metadata(task_id, error_metadata)
+        
+        # Sync to Redis
+        try:
+            update_task(task_id, {
+                'status': 'error',
+                'metadata': error_metadata
+            })
+        except Exception as sync_err:
+            logger.warning(f"[{task_id[:8]}] Failed to sync error to Redis: {sync_err}")
 
         # Отправляем error webhook если указан
         if webhook_url:
-            error_metadata = load_task_metadata(task_id)
             error_payload = {
                 'task_id': task_id,
                 'event': 'task_failed',
                 'status': 'error',
-                'input': error_metadata.get('input', {}) if error_metadata else {},
+                'input': error_metadata.get('input', {}),
                 'error': str(e),
-                'failed_at': datetime.now().isoformat()
+                'failed_at': error_metadata['failed_at']
             }
             # Добавляем webhook объект если есть
             if webhook_url or webhook_headers:
@@ -2561,6 +2697,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 if webhook_headers:
                     webhook_obj["headers"] = webhook_headers
                 error_payload["webhook"] = webhook_obj
+            if client_meta is not None:
+                error_payload['client_meta'] = client_meta
             send_webhook(webhook_url, error_payload, webhook_headers, task_id)
 
 
@@ -2715,8 +2853,8 @@ def recover_stuck_tasks():
                 # Запускаем обработку в фоне
                 # Если входной файл есть и валиден - не перезагружаем
                 # Иначе process_video_pipeline_background сам загрузит
-                video_url = metadata.get('video_url')
-                operations = metadata.get('operations', [])
+                video_url = metadata.get('input', {}).get('video_url')
+                operations = metadata.get('input', {}).get('operations', [])
                 webhook = metadata.get('webhook')
 
                 if not has_valid_input:
@@ -2819,11 +2957,11 @@ def _recover_task_by_id(task_id: str, force: bool = False) -> tuple[bool, str, d
         'last_retry_at': metadata['last_retry_at']
     })
 
-    video_url = metadata.get('video_url')
-    operations = metadata.get('operations', [])
+    video_url = metadata.get('input', {}).get('video_url')
+    operations = metadata.get('input', {}).get('operations', [])
     webhook = metadata.get('webhook')
     if not video_url or not operations:
-        return False, "Missing video_url or operations in metadata.json", {}
+        return False, "Missing video_url or operations in metadata['input']", {}
 
     # Fire background processing
     thread = threading.Thread(
