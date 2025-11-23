@@ -1195,7 +1195,6 @@ class CutVideoOperation(VideoOperation):
         if result.returncode != 0:
             return False, f"FFmpeg error: {result.stderr}"
 
-        logger.info(f"🎬 Видео нарезано: {os.path.getsize(output_path) / (1024*1024):.2f} MB")
         return True, "Video cut completed"
 
 
@@ -1416,7 +1415,7 @@ class MakeShortOperation(VideoOperation):
 
             thumbnail_result = subprocess.run(thumbnail_cmd, capture_output=True, text=True)
             if thumbnail_result.returncode == 0 and os.path.exists(thumbnail_path):
-                logger.info(f"🖼️ Превью сгенерировано: {os.path.basename(thumbnail_path)} at {thumbnail_timestamp}s")
+                pass  # Логирование будет в конце pipeline
             else:
                 logger.warning(f"Failed to generate thumbnail: {thumbnail_result.stderr}")
                 thumbnail_path = None
@@ -1578,7 +1577,7 @@ class ExtractAudioOperation(VideoOperation):
             if os.path.exists(output_audio):
                 os.remove(output_audio)
 
-            logger.info(f"🎵 Аудио разделено: {len(chunk_files)} чанков")
+            logger.debug(f"Split audio into {len(chunk_files)} chunks")
 
             # Возвращаем список полных путей к чанкам
             return True, f"Audio extracted and split into {len(chunk_files)} chunks", chunk_files
@@ -2275,10 +2274,6 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
                     cleaned_count += 1
                 except Exception as e:
                     logger.warning(f"Failed to delete {filename}: {e}")
-    
-    # Логируем очистку один раз
-    if cleaned_count > 0:
-        logger.info(f"🗑️ Очищены временные файлы: {cleaned_count} файл(ов)")
 
     # Собираем информацию о всех output файлах
     files_info = []
@@ -2323,24 +2318,34 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
                 entry.update(chunk_map[filename])
             files_info.append(entry)
 
-    # Красивое логирование результатов
+    # Красивое логирование результатов в правильном порядке
+    # Сначала видео файлы
     for file_info in files_info:
         filename = file_info.get('filename', '')
         file_size = file_info.get('file_size_mb', 0)
         
-        if filename.endswith('.mp4'):
-            # Видео (основной файл или cut_video)
-            if '_thumbnail' not in filename:
-                logger.info(f"🎬 Видео готово: {file_size} MB")
-        elif filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
-            # Аудио (extract_audio)
-            logger.info(f"🎵 Аудио готово: {file_size} MB")
-        elif filename.endswith(('.jpg', '.jpeg', '.png')):
-            # Изображение (превью)
-            logger.info(f"🖼️ Превью создано: {file_size} MB")
-        else:
-            # Другие файлы
-            logger.info(f"📁 Файл готов: {filename} ({file_size} MB)")
+        if filename.endswith('.mp4') and '_thumbnail' not in filename:
+            logger.info(f"🎬 Видео создано: {filename} ({file_size} MB)")
+    
+    # Потом превью
+    for file_info in files_info:
+        filename = file_info.get('filename', '')
+        file_size = file_info.get('file_size_mb', 0)
+        
+        if filename.endswith(('.jpg', '.jpeg', '.png')):
+            logger.info(f"🖼️ Превью создано: {filename} ({file_size} MB)")
+    
+    # Потом аудио
+    for file_info in files_info:
+        filename = file_info.get('filename', '')
+        file_size = file_info.get('file_size_mb', 0)
+        
+        if filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
+            logger.info(f"🎵 Аудио готово: {filename} ({file_size} MB)")
+    
+    # В конце - очистка
+    if cleaned_count > 0:
+        logger.info(f"🗑️ Очищены временные файлы: {cleaned_count} файл(ов)")
 
     # Сохраняем metadata
     now = datetime.now()
@@ -2571,24 +2576,30 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                     entry.update(chunk_map[filename])
                 output_files_info.append(entry)
 
-        # Красивое логирование результатов
+        # Красивое логирование результатов в правильном порядке
+        # Сначала видео файлы
         for file_info in output_files_info:
             filename = file_info.get('filename', '')
             file_size = file_info.get('file_size_mb', 0)
             
-            if filename.endswith('.mp4'):
-                # Видео (основной файл или cut_video)
-                if '_thumbnail' not in filename:
-                    logger.info(f"🎬 Видео готово: {file_size} MB")
-            elif filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
-                # Аудио (extract_audio)
-                logger.info(f"🎵 Аудио готово: {file_size} MB")
-            elif filename.endswith(('.jpg', '.jpeg', '.png')):
-                # Изображение (превью)
-                logger.info(f"🖼️ Превью создано: {file_size} MB")
-            else:
-                # Другие файлы
-                logger.info(f"📁 Файл готов: {filename} ({file_size} MB)")
+            if filename.endswith('.mp4') and '_thumbnail' not in filename:
+                logger.info(f"🎬 Видео создано: {filename} ({file_size} MB)")
+        
+        # Потом превью
+        for file_info in output_files_info:
+            filename = file_info.get('filename', '')
+            file_size = file_info.get('file_size_mb', 0)
+            
+            if filename.endswith(('.jpg', '.jpeg', '.png')):
+                logger.info(f"🖼️ Превью создано: {filename} ({file_size} MB)")
+        
+        # Потом аудио
+        for file_info in output_files_info:
+            filename = file_info.get('filename', '')
+            file_size = file_info.get('file_size_mb', 0)
+            
+            if filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
+                logger.info(f"🎵 Аудио готово: {filename} ({file_size} MB)")
 
         # Сохраняем метаданные
         # Попробуем получить client_meta из сохраненной задачи
