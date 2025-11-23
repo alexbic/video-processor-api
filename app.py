@@ -703,8 +703,73 @@ def download_media_with_validation(url: str, dest_path: str, timeout: int = 300)
     Возвращает (ok, message). В случае ok=False файл не создаётся.
     """
     import requests
+    import shutil
 
     try:
+        # Handle file:// protocol (local file copy)
+        if url.startswith('file://'):
+            local_path = url[7:]  # Remove 'file://' prefix
+            # Normalize path (handle file:///path on Unix and file://path on Windows)
+            if local_path.startswith('/'):
+                local_path = local_path
+            else:
+                # Windows case: file://C:/path -> C:/path
+                local_path = '/' + local_path if not local_path[1:2] == ':' else local_path
+            
+            if not os.path.exists(local_path):
+                return False, f"Local file not found: {local_path}"
+            
+            if not os.path.isfile(local_path):
+                return False, f"Local path is not a file: {local_path}"
+            
+            file_size = os.path.getsize(local_path)
+            if file_size < 100 * 1024:  # < 100KB
+                return False, f"Local file too small ({file_size} bytes). Likely not media."
+            
+            # Copy file with validation
+            tmp_path = dest_path + '.part'
+            try:
+                shutil.copy2(local_path, tmp_path)
+            except Exception as e:
+                return False, f"Failed to copy local file: {e}"
+            
+            # Validate file signature
+            try:
+                with open(tmp_path, 'rb') as f:
+                    sig = f.read(64)
+            except Exception as e:
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                return False, f"Failed to read local file: {e}"
+            
+            sig_l = sig.lower()
+            looks_html = b'<html' in sig_l or b'doctype html' in sig_l
+            looks_mp4 = b'ftyp' in sig
+            looks_webm = sig.startswith(b"\x1A\x45\xDF\xA3")
+            looks_ts = sig.startswith(b"\x47")
+            
+            if looks_html:
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                return False, "Local file is HTML, not media."
+            
+            if not (looks_mp4 or looks_webm or looks_ts):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+                return False, "Local file does not look like media (unknown signature)."
+            
+            # Move to final location
+            os.replace(tmp_path, dest_path)
+            os.chmod(dest_path, 0o644)
+            return True, f"Copied {file_size} bytes from local file"
+        
+        # Handle http:// and https:// URLs
         headers = {
             'User-Agent': 'Mozilla/5.0 (compatible; VideoProcessor/1.0; +https://alexbic.net)'
         }
@@ -2666,8 +2731,8 @@ def recover_stuck_tasks():
         logger.info("Recovery disabled (RECOVERY_ENABLED=false)")
         return
     
-    logger.info("=" * 60)
-    logger.info("Starting task recovery scan...")
+    logger.debug("=" * 60)
+    logger.debug("Starting task recovery scan...")
     current_time = datetime.now()
     recovered = 0
     failed = 0
@@ -2839,13 +2904,13 @@ def recover_stuck_tasks():
     except Exception as e:
         logger.error(f"Recovery scan error: {e}")
     
-    logger.info(
+    logger.debug(
         "Recovery scan complete: "
         f"scanned={scanned}, recovered={recovered}, expired={expired}, failed={failed}, "
         f"skipped_status={skipped_status}, skipped_with_output={skipped_with_output}, "
         f"skipped_webhook_failed={skipped_webhook_failed}, empty_dirs_removed={empty_dirs_removed}"
     )
-    logger.info("=" * 60)
+    logger.debug("=" * 60)
 
 def schedule_recovery():
     """Запускает recovery периодически если RECOVERY_INTERVAL_MINUTES > 0"""
