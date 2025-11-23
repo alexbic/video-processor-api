@@ -1143,12 +1143,106 @@ class MakeShortOperation(VideoOperation):
                 'end_time': None,
                 'crop_mode': 'center',
                 'letterbox_config': {},
-                'title': {},
-                'subtitles': {},
+                'text_items': [],  # Новая универсальная система текста
                 'generate_thumbnail': True,  # Автоматическая генерация превью
                 'thumbnail_timestamp': 0.5   # Время для извлечения превью (секунды)
             }
         )
+
+    def _resolve_font_path(self, fontfile: str) -> str:
+        """Резолвит имя шрифта в полный путь для FFmpeg"""
+        if not fontfile:
+            return None
+        
+        # Если уже полный путь - возвращаем как есть
+        if fontfile.startswith('/'):
+            return fontfile
+        
+        # Если это просто имя файла - добавляем префикс контейнера
+        if '/' not in fontfile:
+            return f"/app/fonts/{fontfile}.ttf" if not fontfile.endswith(('.ttf', '.ttc', '.otf')) else f"/app/fonts/{fontfile}"
+        
+        return fontfile
+
+    def _process_text_item(self, text_item: dict) -> str:
+        """Обрабатывает один текстовый элемент и возвращает drawtext строку для FFmpeg"""
+        try:
+            text = text_item.get('text', '')
+            if not text:
+                return None
+            
+            # Получаем параметры с дефолтными значениями
+            fontfile = text_item.get('fontfile')
+            fontsize = text_item.get('fontsize', 60)
+            fontcolor = text_item.get('fontcolor', 'white')
+            y = text_item.get('y', 'h-200')
+            x = text_item.get('x', '(w-text_w)/2')
+            start = text_item.get('start', 0)
+            end = text_item.get('end', 5)
+            max_lines = text_item.get('max_lines', 3)
+            text_align = text_item.get('text_align', 'center')
+            
+            # Параметры плашки (опционально)
+            box = text_item.get('box', 0)
+            boxcolor = text_item.get('boxcolor', 'black@0.5')
+            boxborderw = text_item.get('boxborderw', 10)
+            
+            # Автоматический перенос строк
+            max_chars_per_line = int(950 / (fontsize * 0.55))
+            if len(text) > max_chars_per_line:
+                words = text.split(' ')
+                lines = []
+                current_line = []
+                current_length = 0
+                
+                for word in words:
+                    word_len = len(word) + 1
+                    if current_length + word_len > max_chars_per_line and current_line:
+                        lines.append(' '.join(current_line))
+                        current_line = [word]
+                        current_length = word_len
+                    else:
+                        current_line.append(word)
+                        current_length += word_len
+                
+                if current_line:
+                    lines.append(' '.join(current_line))
+                
+                text = '\n'.join(lines[:max_lines])
+            
+            # Экранируем спецсимволы для FFmpeg
+            text_escaped = text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
+            
+            # Строим параметры drawtext фильтра
+            drawtext_params = [
+                f"text='{text_escaped}'",
+                "expansion=normal",
+                f"fontsize={fontsize}",
+                f"fontcolor={fontcolor}",
+                f"text_align={text_align}",
+                f"x={x}",
+                f"y={y}",
+                f"enable='between(t\\,{start}\\,{end})'"
+            ]
+            
+            # Добавляем шрифт если указан
+            if fontfile:
+                font_path = self._resolve_font_path(fontfile)
+                fontfile_escaped = font_path.replace(':', '\\:').replace("'", "\\'")
+                drawtext_params.append(f"fontfile='{fontfile_escaped}'")
+            
+            # Добавляем плашку если включена
+            if box:
+                drawtext_params.append(f"box=1")
+                drawtext_params.append(f"boxcolor={boxcolor}")
+                drawtext_params.append(f"boxborderw={boxborderw}")
+            
+            # Собираем финальную строку drawtext
+            return 'drawtext=' + ':'.join(drawtext_params)
+            
+        except Exception as e:
+            logger.warning(f"Error processing text_item: {e}")
+            return None
 
     def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
         """Конвертация в Shorts формат (1080x1920)"""
@@ -1176,45 +1270,6 @@ class MakeShortOperation(VideoOperation):
             'overlay_y': letterbox_config_raw.get('overlay_y', '(H-h)/2')
         }
 
-        # Обработка title (новый формат: объект с text и настройками)
-        title_raw = params.get('title', {})
-        title_text = title_raw.get('text', '')
-        title_config = {
-            'fontfile': title_raw.get('fontfile'),
-            'font': title_raw.get('font'),
-            'fontsize': title_raw.get('fontsize', 70),
-            'fontcolor': title_raw.get('fontcolor', 'white'),
-            'bordercolor': title_raw.get('bordercolor', 'black'),
-            'borderw': title_raw.get('borderw', 3),
-            'text_align': title_raw.get('text_align', 'center'),
-            'box': title_raw.get('box', False),
-            'boxcolor': title_raw.get('boxcolor', 'black@0.5'),
-            'boxborderw': title_raw.get('boxborderw', 10),
-            'x': title_raw.get('x', 'center'),
-            'y': title_raw.get('y', 150),
-            'start_time': title_raw.get('start_time', 0.5),
-            'duration': title_raw.get('duration', 4),
-            'fade_in': title_raw.get('fade_in', 0.5),
-            'fade_out': title_raw.get('fade_out', 0.5)
-        }
-
-        # Обработка subtitles (новый формат: объект с items и настройками)
-        subtitles_raw = params.get('subtitles', {})
-        subtitles = subtitles_raw.get('items', [])
-        subtitle_config = {
-            'fontfile': subtitles_raw.get('fontfile'),
-            'font': subtitles_raw.get('font'),
-            'fontsize': subtitles_raw.get('fontsize', 60),
-            'fontcolor': subtitles_raw.get('fontcolor', 'white'),
-            'bordercolor': subtitles_raw.get('bordercolor', 'black'),
-            'borderw': subtitles_raw.get('borderw', 3),
-            'text_align': subtitles_raw.get('text_align', 'center'),
-            'box': subtitles_raw.get('box', False),
-            'boxcolor': subtitles_raw.get('boxcolor', 'black@0.5'),
-            'boxborderw': subtitles_raw.get('boxborderw', 10),
-            'y': subtitles_raw.get('y', 'h-200')
-        }
-
         # Определяем фильтр обрезки
         if crop_mode == 'letterbox':
             video_filter = (
@@ -1229,141 +1284,14 @@ class MakeShortOperation(VideoOperation):
         else:  # center
             video_filter = "crop=ih*9/16:ih,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
 
-        # Добавляем текстовые оверлеи если указаны
-        if title_text:
-            # Автоматический перенос текста заголовка
-            max_chars_per_line_title = int(950 / (title_config['fontsize'] * 0.55))
-            if len(title_text) > max_chars_per_line_title:
-                words = title_text.split(' ')
-                lines = []
-                current_line = []
-                current_length = 0
-
-                for word in words:
-                    word_len = len(word) + 1
-                    if current_length + word_len > max_chars_per_line_title and current_line:
-                        lines.append(' '.join(current_line))
-                        current_line = [word]
-                        current_length = word_len
-                    else:
-                        current_line.append(word)
-                        current_length += word_len
-
-                if current_line:
-                    lines.append(' '.join(current_line))
-
-                title_text = '\n'.join(lines[:2])
-
-            # Экранируем спецсимволы
-            title_escaped = title_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
-
-            # Вычисляем тайминги для fade эффектов
-            title_start = title_config['start_time']
-            title_duration = title_config['duration']
-            title_fade_in = title_config['fade_in']
-            title_fade_out = title_config['fade_out']
-            title_end = title_start + title_duration
-            fade_in_end = title_start + title_fade_in
-            fade_out_start = title_end - title_fade_out
-
-            # Формируем drawtext фильтр
-            drawtext_params = [
-                f"text='{title_escaped}'",
-                "expansion=normal",
-                f"text_align={title_config['text_align']}"
-            ]
-
-            if title_config['fontfile']:
-                fontfile_escaped = title_config['fontfile'].replace(':', '\\:').replace("'", "\\'")
-                drawtext_params.append(f"fontfile='{fontfile_escaped}'")
-            elif title_config['font']:
-                font_escaped = title_config['font'].replace(':', '\\:').replace("'", "\\'")
-                drawtext_params.append(f"font='{font_escaped}'")
-
-            drawtext_params.extend([
-                f"fontsize={title_config['fontsize']}",
-                f"fontcolor={title_config['fontcolor']}",
-                f"bordercolor={title_config['bordercolor']}",
-                f"borderw={title_config['borderw']}",
-                f"x=(w-text_w)/2",
-                f"y={title_config['y']}",
-                f"enable='between(t\\,{title_start}\\,{title_end})'",
-                f"alpha='if(lt(t\\,{fade_in_end})\\,(t-{title_start})/{title_fade_in}\\,if(gt(t\\,{fade_out_start})\\,({title_end}-t)/{title_fade_out}\\,1))'"
-            ])
-
-            # Добавляем box (плашку) если включено
-            if title_config.get('box'):
-                drawtext_params.append(f"box=1")
-                drawtext_params.append(f"boxcolor={title_config['boxcolor']}")
-                if 'boxborderw' in title_config:
-                    drawtext_params.append(f"boxborderw={title_config['boxborderw']}")
-
-            video_filter += f",drawtext={':'.join(drawtext_params)}"
-
-        # Динамические субтитры
-        if subtitles:
-            for subtitle in subtitles:
-                sub_text = subtitle.get('text', '')
-                sub_start = subtitle.get('start', 0)
-                sub_end = subtitle.get('end', 0)
-
-                if sub_text and sub_start is not None and sub_end is not None:
-                    # Автоматический перенос текста
-                    max_chars_per_line = int(950 / (subtitle_config['fontsize'] * 0.55))
-                    if len(sub_text) > max_chars_per_line:
-                        words = sub_text.split(' ')
-                        lines = []
-                        current_line = []
-                        current_length = 0
-
-                        for word in words:
-                            word_len = len(word) + 1
-                            if current_length + word_len > max_chars_per_line and current_line:
-                                lines.append(' '.join(current_line))
-                                current_line = [word]
-                                current_length = word_len
-                            else:
-                                current_line.append(word)
-                                current_length += word_len
-
-                        if current_line:
-                            lines.append(' '.join(current_line))
-
-                        sub_text = '\n'.join(lines[:2])
-
-                    sub_escaped = sub_text.replace('\\', '\\\\').replace(':', '\\:').replace("'", "\\'").replace(',', '\\,')
-
-                    sub_drawtext_params = [
-                        f"text='{sub_escaped}'",
-                        "expansion=normal",
-                        f"text_align={subtitle_config['text_align']}"
-                    ]
-
-                    if subtitle_config['fontfile']:
-                        subfontfile_escaped = subtitle_config['fontfile'].replace(':', '\\:').replace("'", "\\'")
-                        sub_drawtext_params.append(f"fontfile='{subfontfile_escaped}'")
-                    elif subtitle_config['font']:
-                        subfont_escaped = subtitle_config['font'].replace(':', '\\:').replace("'", "\\'")
-                        sub_drawtext_params.append(f"font='{subfont_escaped}'")
-
-                    sub_drawtext_params.extend([
-                        f"fontsize={subtitle_config['fontsize']}",
-                        f"fontcolor={subtitle_config['fontcolor']}",
-                        f"bordercolor={subtitle_config['bordercolor']}",
-                        f"borderw={subtitle_config['borderw']}",
-                        f"x=(w-text_w)/2",
-                        f"y={subtitle_config['y']}",
-                        f"enable='between(t\\,{sub_start}\\,{sub_end})'"
-                    ])
-
-                    # Добавляем box (плашку) для субтитров если включено
-                    if subtitle_config.get('box'):
-                        sub_drawtext_params.append(f"box=1")
-                        sub_drawtext_params.append(f"boxcolor={subtitle_config['boxcolor']}")
-                        if subtitle_config.get('boxborderw'):
-                            sub_drawtext_params.append(f"boxborderw={subtitle_config['boxborderw']}")
-
-                    video_filter += f",drawtext={':'.join(sub_drawtext_params)}"
+        # === НОВАЯ СИСТЕМА: Универсальные текстовые элементы ===
+        # Обрабатываем text_items если они указаны
+        text_items = params.get('text_items', [])
+        if text_items:
+            for text_item in text_items:
+                drawtext_filter = self._process_text_item(text_item)
+                if drawtext_filter:
+                    video_filter += f",{drawtext_filter}"
 
         # Выполняем FFmpeg команду
         cmd = ['ffmpeg']
@@ -1713,11 +1641,25 @@ def list_fonts():
             if os.path.exists(font["file"]):
                 available_fonts.append(font)
 
+        # Добавляем динамически обнаруженные шрифты из /app/fonts/
+        app_fonts_dir = "/app/fonts"
+        if os.path.exists(app_fonts_dir):
+            for filename in sorted(os.listdir(app_fonts_dir)):
+                if filename.lower().endswith(('.ttf', '.ttc', '.otf')):
+                    font_path = os.path.join(app_fonts_dir, filename)
+                    # Генерируем дружественное имя из имени файла
+                    font_name = filename.rsplit('.', 1)[0]  # Удаляем расширение
+                    available_fonts.append({
+                        "name": font_name,
+                        "family": "custom",
+                        "file": font_path
+                    })
+
         return jsonify({
             "status": "success",
             "total_fonts": len(available_fonts),
             "fonts": available_fonts,
-            "note": "Custom fonts upload available in PRO version only"
+            "note": "Includes system fonts and custom fonts from /app/fonts/"
         })
 
     except Exception as e:
