@@ -2103,7 +2103,6 @@ def process_video():
         else:
             # Синхронный режим
             task_id = str(uuid.uuid4())
-            logger.info(f"Task created (sync): {task_id} | {video_url} | operations={len(operations)}")
 
             # Создаем директории для задачи
             create_task_dirs(task_id)
@@ -2152,7 +2151,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
     output_files = []  # Список всех созданных output файлов
 
     # Логируем создание задачи
-    logger.info(f"✨ Задача создана: [{task_id[:8]}] | SYNC | Подзадач {len(operations)}")
+    logger.info(f"✨ Задача создана: [{task_id}] | SYNC | Подзадач {len(operations)}")
     
     # Выполняем операции последовательно
     for idx, op_data in enumerate(operations):
@@ -2439,7 +2438,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         update_task(task_id, {'status': 'processing', 'progress': 5})
         
         # Логируем создание задачи
-        logger.info(f"✨ Задача создана: [{task_id[:8]}] | ASYNC | Подзадач {len(operations)}")
+        logger.info(f"✨ Задача создана: [{task_id}] | ASYNC | Подзадач {len(operations)}")
 
         # Скачиваем исходное видео
         input_filename = f"{uuid.uuid4()}.mp4"
