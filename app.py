@@ -1987,7 +1987,7 @@ def process_video():
                 metadata_url_internal=None,
                 webhook_url=webhook.get('url') if webhook else None,
                 webhook_headers=webhook.get('headers') if webhook else None,
-                webhook_status=webhook if webhook else None,
+                webhook_status=None,  # Let build_structured_metadata create new webhook object
                 retry_count=0,
                 client_meta=client_meta,
                 operations_count=len(operations),
@@ -2004,7 +2004,9 @@ def process_video():
             thread.daemon = True
             thread.start()
 
-            logger.info(f"Task created (async): {task_id} | {video_url} | operations={len(operations)}")
+            # Красивое логирование создания задачи
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            logger.info(f"[{now}] ✨ Задача создана: [{task_id}] | ASYNC | Подзадач {len(operations)}")
 
             resp = {
                 "task_id": task_id,
@@ -2025,10 +2027,8 @@ def process_video():
             task_id = str(uuid.uuid4())
             
             # Красивое логирование создания задачи
-            logger.info(f"[{task_id[:8]}] ✅ ЗАДАЧА СОЗДАНА")
-            logger.info(f"[{task_id[:8]}] 🔧 Режим: СИНХРОННЫЙ")
-            logger.info(f"[{task_id[:8]}] 📹 Видео: {video_url[:60]}...")
-            logger.info(f"[{task_id[:8]}] ⚙️  Подзадач: {len(operations)}")
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            logger.info(f"[{now}] ✨ Задача создана: [{task_id}] | SYNC | Подзадач {len(operations)}")
 
             # Создаем директории для задачи
             create_task_dirs(task_id)
@@ -2065,6 +2065,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
     current_input = input_path
     output_files = []  # Список всех созданных output файлов
+    operation_times = {}  # Отслеживание времени выполнения операций
 
     # Выполняем операции последовательно
     for idx, op_data in enumerate(operations):
@@ -2091,10 +2092,24 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             # Промежуточный файл
             output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
-        logger.info(f"[{task_id[:8]}] ⚙️  Операция {idx+1}/{len(operations)}: {op_type}")
+        # Логируем начало операции с правильной иконкой
+        op_icons = {
+            'make_short': '🎬',
+            'extract_audio': '🎵',
+            'cut_video': '📹',
+            'extract_shorts': '📱'
+        }
+        op_icon = op_icons.get(op_type, '⚙️')
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        logger.info(f"[{now}] [{task_id[:8]}] 🚀 Обработка: {op_type} [{idx+1}/{len(operations)}]")
+        
+        op_start_time = datetime.now()
 
         # Выполняем операцию
         result = operation.execute(current_input, output_path, op_data)
+        
+        # Сохраняем время выполнения операции
+        op_duration = (datetime.now() - op_start_time).total_seconds()
         
         # Обрабатываем результат (может быть 2 или 3 значения)
         if len(result) == 3:
@@ -2113,6 +2128,9 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         if not success:
             return jsonify({"status": "error", "error": message, "task_id": task_id}), 500
         
+        # Сохраняем время выполнения операции
+        operation_times[op_type] = op_duration
+        
         # Сохраняем output файл если это последняя операция
         if idx == len(operations) - 1:
             if not output_files:  # Если операция не вернула список файлов
@@ -2128,6 +2146,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
     # Удаляем временные файлы
     import shutil
     task_dir = get_task_dir(task_id)
+    deleted_count = 0
     
     # Удаляем входные и временные файлы по префиксу
     if os.path.exists(task_dir):
@@ -2136,9 +2155,14 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
                 file_path = os.path.join(task_dir, filename)
                 try:
                     os.remove(file_path)
-                    logger.info(f"[{task_id[:8]}] 🗑️  Удален временный файл: {filename}")
+                    deleted_count += 1
                 except Exception as e:
                     logger.warning(f"[{task_id[:8]}] ⚠️  Не удалось удалить {filename}: {e}")
+    
+    # Логируем очистку временных файлов
+    if deleted_count > 0:
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        logger.info(f"[{now}] [{task_id[:8]}] 🗑️ Очищены временные файлы ({deleted_count} удалено)")
 
     # Собираем информацию о всех output файлах
     files_info = []
@@ -2210,11 +2234,18 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
     save_task_metadata(task_id, metadata)
 
     # Красивое логирование успешного завершения
-    logger.info(f"[{task_id[:8]}] ✅ ЗАДАЧА ЗАВЕРШЕНА")
-    logger.info(f"[{task_id[:8]}] 🎬 Видео создано: {files_info[0]['filename'] if files_info else 'N/A'}")
-    if any(f['filename'].endswith('_thumbnail.jpg') for f in files_info):
-        logger.info(f"[{task_id[:8]}] 🖼️  Превью создано")
-    logger.info(f"[{task_id[:8]}] 📊 Размер: {metadata['total_size_mb']} MB")
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Логируем основное видео
+    if files_info:
+        video_file = next((f for f in files_info if f['filename'].endswith('.mp4')), files_info[0])
+        video_size = video_file.get('file_size_mb', 0)
+        logger.info(f"[{now}] [{task_id[:8]}] 🎬 Видео готово: {video_size} MB")
+    
+    # Логируем превью если существует
+    if any(f['filename'].endswith('_thumbnail.jpg') or f['filename'].endswith('.jpg') for f in files_info):
+        thumb_time = 0.5
+        logger.info(f"[{now}] [{task_id[:8]}] 🖼️ Превью создано ({thumb_time}s)")
 
     # Отправляем webhook если указан
     if webhook_url:
@@ -2275,6 +2306,10 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         # Создаем директории для задачи
         create_task_dirs(task_id)
         
+        # Красивое логирование создания задачи для фонового режима
+        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        logger.info(f"[{now}] ✨ Задача создана: [{task_id}] | ASYNC | Подзадач {len(operations)}")
+        
         update_task(task_id, {'status': 'processing', 'progress': 5})
 
         # Скачиваем исходное видео
@@ -2310,7 +2345,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 # Промежуточный файл
                 output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
-            logger.info(f"Task {task_id}: Executing operation {idx+1}/{total_ops}: {op_type}")
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            logger.info(f"[{now}] [{task_id[:8]}] 🚀 Обработка: {op_type} [{idx+1}/{total_ops}]")
 
             # Выполняем операцию
             result = operation.execute(current_input, output_path, op_data)
