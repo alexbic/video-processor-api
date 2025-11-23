@@ -2004,18 +2004,34 @@ def process_video():
 
             logger.info(f"Task created (async): {task_id} | {video_url} | operations={len(operations)}")
 
-            resp = {
-                "task_id": task_id,
-                "status": "processing",
-                "message": "Task created and processing in background",
-                "check_status_url": build_absolute_url(f"/task_status/{task_id}")
-            }
-            # Добавляем webhook объект, если был предоставлен
-            if webhook:
-                resp["webhook"] = webhook
-            # client_meta всегда в конце
-            if client_meta is not None:
-                resp["client_meta"] = client_meta
+            # Возвращаем структурированный ответ (тот же формат что и initial_metadata)
+            resp = build_structured_metadata(
+                task_id=task_id,
+                status='queued',
+                created_at=initial_metadata['created_at'],
+                completed_at=None,
+                expires_at=initial_metadata['expires_at'],
+                video_url=video_url,
+                operations=operations,
+                output_files=[],
+                total_files=0,
+                is_chunked=False,
+                metadata_url=None,
+                metadata_url_internal=None,
+                webhook_url=webhook.get('url') if webhook else None,
+                webhook_headers=webhook.get('headers') if webhook else None,
+                webhook_status=None,
+                retry_count=0,
+                client_meta=client_meta,
+                operations_count=len(operations),
+                total_size=0,
+                total_size_mb=0.0,
+                ttl_seconds=TASK_TTL_HOURS * 3600,
+                ttl_human=format_ttl_human(TASK_TTL_HOURS)
+            )
+            # Добавляем дополнительную информацию для асинхронного режима
+            resp["message"] = "Task created and processing in background"
+            resp["check_status_url"] = build_absolute_url(f"/task_status/{task_id}")
             return jsonify(resp), 202
 
         else:
