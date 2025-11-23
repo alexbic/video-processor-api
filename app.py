@@ -724,7 +724,7 @@ def download_media_with_validation(url: str, dest_path: str, timeout: int = 300)
                 return False, f"Local path is not a file: {local_path}"
             
             file_size = os.path.getsize(local_path)
-            if file_size < 100 * 1024:  # < 100KB
+            if file_size < 50 * 1024:  # < 50KB
                 return False, f"Local file too small ({file_size} bytes). Likely not media."
             
             # Copy file with validation
