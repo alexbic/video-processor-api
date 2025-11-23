@@ -1195,7 +1195,8 @@ class CutVideoOperation(VideoOperation):
         if result.returncode != 0:
             return False, f"FFmpeg error: {result.stderr}"
 
-        return True, "Cut operation completed"
+        logger.info(f"🎬 Видео нарезано: {os.path.getsize(output_path) / (1024*1024):.2f} MB")
+        return True, "Video cut completed"
 
 
 class MakeShortOperation(VideoOperation):
@@ -1520,7 +1521,7 @@ class ExtractAudioOperation(VideoOperation):
                 # Автоматически вычисляем длительность чанка
                 chunk_duration_seconds = (max_chunk_size_mb / file_size_mb) * total_duration * 0.95  # 5% запас
 
-            logger.info(f"Splitting audio into chunks of {chunk_duration_seconds/60:.1f} minutes")
+            logger.info(f"🔊 Разбиение аудио: {chunk_duration_seconds/60:.1f} мин/чанк")
 
             # Разбиваем на чанки
             chunk_start = 0
@@ -1577,7 +1578,7 @@ class ExtractAudioOperation(VideoOperation):
             if os.path.exists(output_audio):
                 os.remove(output_audio)
 
-            logger.info(f"Created {len(chunk_files)} chunks")
+            logger.info(f"🎵 Аудио разделено: {len(chunk_files)} чанков")
 
             # Возвращаем список полных путей к чанкам
             return True, f"Audio extracted and split into {len(chunk_files)} chunks", chunk_files
@@ -2431,12 +2432,15 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         create_task_dirs(task_id)
         
         update_task(task_id, {'status': 'processing', 'progress': 5})
+        
+        # Логируем создание задачи
+        logger.info(f"✨ Задача создана: [{task_id[:8]}] | ASYNC | Подзадач {len(operations)}")
 
         # Скачиваем исходное видео
         input_filename = f"{uuid.uuid4()}.mp4"
         input_path = os.path.join(get_task_dir(task_id), f"input_{input_filename}")
 
-        logger.info(f"Task {task_id}: Downloading video from {video_url}")
+        logger.debug(f"Downloading video: {video_url}")
         ok, msg = download_media_with_validation(video_url, input_path)
         if not ok:
             raise Exception(msg)
@@ -2476,7 +2480,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 # Промежуточный файл
                 output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
-            logger.info(f"Task {task_id}: Executing operation {idx+1}/{total_ops}: {op_type}")
+            logger.info(f"🚀 Обработка: {op_type} [{idx+1}/{total_ops}]")
 
             # Выполняем операцию
             result = operation.execute(current_input, output_path, op_data)
@@ -2566,6 +2570,25 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 if filename in chunk_map:
                     entry.update(chunk_map[filename])
                 output_files_info.append(entry)
+
+        # Красивое логирование результатов
+        for file_info in output_files_info:
+            filename = file_info.get('filename', '')
+            file_size = file_info.get('file_size_mb', 0)
+            
+            if filename.endswith('.mp4'):
+                # Видео (основной файл или cut_video)
+                if '_thumbnail' not in filename:
+                    logger.info(f"🎬 Видео готово: {file_size} MB")
+            elif filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
+                # Аудио (extract_audio)
+                logger.info(f"🎵 Аудио готово: {file_size} MB")
+            elif filename.endswith(('.jpg', '.jpeg', '.png')):
+                # Изображение (превью)
+                logger.info(f"🖼️ Превью создано: {file_size} MB")
+            else:
+                # Другие файлы
+                logger.info(f"📁 Файл готов: {filename} ({file_size} MB)")
 
         # Сохраняем метаданные
         # Попробуем получить client_meta из сохраненной задачи
