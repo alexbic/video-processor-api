@@ -1215,24 +1215,85 @@ class MakeShortOperation(VideoOperation):
             }
         )
 
-    def _resolve_font_path(self, fontfile: str) -> str:
-        """Резолвит имя шрифта в полный путь для FFmpeg"""
+    def _get_available_fonts_list(self) -> list:
+        """Получает список всех доступных шрифтов из /app/fonts/"""
+        fonts = []
+        
+        app_fonts_dir = "/app/fonts"
+        if os.path.exists(app_fonts_dir):
+            for filename in sorted(os.listdir(app_fonts_dir)):
+                if filename.lower().endswith(('.ttf', '.ttc', '.otf')):
+                    font_path = os.path.join(app_fonts_dir, filename)
+                    fonts.append({"name": filename, "file": font_path})
+        
+        return fonts
+
+    def _resolve_font_path(self, fontfile) -> str:
+        """
+        Резолвение шрифта из /app/fonts/:
+        1. Ищет по имени файла в /app/fonts/ (основной случай)
+        2. Если не найдено - использует fallback (DejaVu Sans система)
+        
+        Args:
+            fontfile: Имя файла шрифта (например: "Arial.ttf") или только имя (например: "Arial")
+        
+        Returns:
+            Полный путь к файлу шрифта
+        """
+        FALLBACK_FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        
         if not fontfile:
-            return None
+            return FALLBACK_FONT
         
-        # Если уже полный путь - возвращаем как есть
+        # Проверяем, что это строка
+        if not isinstance(fontfile, str):
+            fontfile = str(fontfile)
+        
+        fontfile = fontfile.strip()
+        
+        # Если это полный путь - проверяем и возвращаем как есть
         if fontfile.startswith('/'):
-            return fontfile
+            if os.path.exists(fontfile):
+                return fontfile
+            else:
+                logger.warning(f"Font path not found: {fontfile}, using fallback")
+                return FALLBACK_FONT
         
-        # Если это просто имя файла - добавляем префикс контейнера
-        if '/' not in fontfile:
-            return f"/app/fonts/{fontfile}.ttf" if not fontfile.endswith(('.ttf', '.ttc', '.otf')) else f"/app/fonts/{fontfile}"
+        app_fonts_dir = "/app/fonts"
         
-        return fontfile
+        # Если это имя файла с расширением - ищем прямо в /app/fonts/
+        if fontfile.lower().endswith(('.ttf', '.ttc', '.otf')):
+            font_path = os.path.join(app_fonts_dir, fontfile)
+            if os.path.exists(font_path):
+                return font_path
+            else:
+                logger.warning(f"Font file not found in /app/fonts/: {fontfile}, using fallback")
+                return FALLBACK_FONT
+        
+        # Если передано только имя без расширения - ищем .ttf версию
+        font_path = os.path.join(app_fonts_dir, f"{fontfile}.ttf")
+        if os.path.exists(font_path):
+            return font_path
+        
+        # Пытаемся найти файл с любым расширением
+        if os.path.exists(app_fonts_dir):
+            for filename in os.listdir(app_fonts_dir):
+                name_without_ext = filename.rsplit('.', 1)[0]
+                if name_without_ext.lower() == fontfile.lower():
+                    return os.path.join(app_fonts_dir, filename)
+        
+        # Не найдено - используем fallback
+        logger.warning(f"Font '{fontfile}' not found in /app/fonts/, using DejaVu Sans fallback")
+        return FALLBACK_FONT
 
     def _process_text_item(self, text_item: dict) -> str:
         """Обрабатывает один текстовый элемент и возвращает drawtext строку для FFmpeg"""
         try:
+            # Проверяем, что это словарь
+            if not isinstance(text_item, dict):
+                logger.warning(f"text_item is not a dict: {type(text_item)}")
+                return None
+            
             text = text_item.get('text', '')
             if not text:
                 return None
@@ -1668,64 +1729,32 @@ def health_check():
 @require_api_key
 def list_fonts():
     """
-    Получить список доступных шрифтов (предустановленных)
-    Только встроенные шрифты. Кастомные шрифты - только в PRO версии.
+    Получить список доступных шрифтов из /app/fonts/
+    Возвращает только шрифты, которые зашиты в контейнер для использования при генерации шорцев
     """
     try:
-        # Предустановленные шрифты (встроенные в контейнер)
-        # Включает игровые шрифты из gaming templates + системные шрифты
-        system_fonts_list = [
-            # Игровые шрифты (из gaming templates v3)
-            {"name": "Russo One", "family": "display", "file": "/usr/share/fonts/truetype/custom/RussoOne-Regular.ttf"},
-            {"name": "Montserrat", "family": "sans-serif", "file": "/usr/share/fonts/truetype/montserrat/Montserrat-Regular.ttf"},
-            {"name": "Montserrat Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/montserrat/Montserrat-Bold.ttf"},
-            {"name": "PT Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/custom/PTSans-Regular.ttf"},
-            {"name": "PT Sans Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/custom/PTSans-Bold.ttf"},
-            {"name": "Oswald", "family": "condensed", "file": "/usr/share/fonts/truetype/custom/Oswald-Regular.ttf"},
-            {"name": "Oswald Bold", "family": "condensed", "file": "/usr/share/fonts/truetype/custom/Oswald-Bold.ttf"},
-            {"name": "Fixel Display", "family": "geometric", "file": "/usr/share/fonts/truetype/custom/FixelDisplay-Regular.ttf"},
-            {"name": "Fixel Text", "family": "geometric", "file": "/usr/share/fonts/truetype/custom/FixelText-Regular.ttf"},
-
-            # Системные шрифты
-            {"name": "DejaVu Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"},
-            {"name": "DejaVu Sans Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"},
-            {"name": "DejaVu Serif", "family": "serif", "file": "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"},
-            {"name": "Liberation Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"},
-            {"name": "Liberation Sans Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"},
-            {"name": "Liberation Serif", "family": "serif", "file": "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"},
-            {"name": "Liberation Mono", "family": "monospace", "file": "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf"},
-            {"name": "Noto Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"},
-            {"name": "Roboto", "family": "sans-serif", "file": "/usr/share/fonts/truetype/roboto/unhinted/RobotoTTF/Roboto-Regular.ttf"},
-            {"name": "Roboto Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/roboto/unhinted/RobotoTTF/Roboto-Bold.ttf"},
-            {"name": "Open Sans", "family": "sans-serif", "file": "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf"},
-            {"name": "Open Sans Bold", "family": "sans-serif", "file": "/usr/share/fonts/truetype/open-sans/OpenSans-Bold.ttf"}
-        ]
-
-        # Фильтруем только существующие шрифты
         available_fonts = []
-        for font in system_fonts_list:
-            if os.path.exists(font["file"]):
-                available_fonts.append(font)
-
-        # Добавляем динамически обнаруженные шрифты из /app/fonts/
+        
+        # Только шрифты из /app/fonts/
         app_fonts_dir = "/app/fonts"
         if os.path.exists(app_fonts_dir):
             for filename in sorted(os.listdir(app_fonts_dir)):
                 if filename.lower().endswith(('.ttf', '.ttc', '.otf')):
                     font_path = os.path.join(app_fonts_dir, filename)
-                    # Генерируем дружественное имя из имени файла
-                    font_name = filename.rsplit('.', 1)[0]  # Удаляем расширение
+                    # Название шрифта = имя файла без расширения
+                    font_name = filename.rsplit('.', 1)[0]
                     available_fonts.append({
                         "name": font_name,
-                        "family": "custom",
-                        "file": font_path
+                        "filename": filename,
+                        "file": font_path,
+                        "type": filename.lower().split('.')[-1]
                     })
 
         return jsonify({
             "status": "success",
             "total_fonts": len(available_fonts),
             "fonts": available_fonts,
-            "note": "Includes system fonts and custom fonts from /app/fonts/"
+            "note": "These are the custom fonts available for video generation in /app/fonts/"
         })
 
     except Exception as e:
