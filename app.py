@@ -2287,11 +2287,10 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
         # Следующая операция будет использовать этот файл как вход
         current_input = output_path
 
-    # Удаляем временные файлы
+    # Удаляем временные файлы ВСЕ ЗА ОДИН РАЗ (за циклом!)
     import shutil
     task_dir = get_task_dir(task_id)
     
-    # Удаляем входные и временные файлы по префиксу
     cleaned_count = 0
     if os.path.exists(task_dir):
         for filename in os.listdir(task_dir):
@@ -2303,7 +2302,11 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
                 except Exception as e:
                     logger.warning(f"Failed to delete {filename}: {e}")
 
-    # Собираем информацию о всех output файлах
+    # Логируем очистку один раз в конце
+    if cleaned_count > 0:
+        logger.info(f"[{task_id[:8]}] 🗑️ Очищены временные файлы: {cleaned_count} файл(ов)")
+
+    # Собираем информацию о всех output файлах И логируем их
     files_info = []
     total_size = 0
 
@@ -2324,6 +2327,8 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             chunk_map[fname] = {
                 'chunk': f"{idx + 1}:{total}"
             }
+    
+    # Логируем каждый файл СРАЗУ при обработке
     for file_path in output_files:
         if os.path.exists(file_path):
             os.chmod(file_path, 0o644)
@@ -2345,35 +2350,15 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             if filename in chunk_map:
                 entry.update(chunk_map[filename])
             files_info.append(entry)
-
-    # Красивое логирование результатов в правильном порядке
-    # Сначала видео файлы
-    for file_info in files_info:
-        filename = file_info.get('filename', '')
-        file_size = file_info.get('file_size_mb', 0)
-        
-        if filename.endswith('.mp4') and '_thumbnail' not in filename:
-            logger.info(f"[{task_id[:8]}] 🎬 Видео создано: {filename} ({file_size} MB)")
-    
-    # Потом превью
-    for file_info in files_info:
-        filename = file_info.get('filename', '')
-        file_size = file_info.get('file_size_mb', 0)
-        
-        if filename.endswith(('.jpg', '.jpeg', '.png')):
-            logger.info(f"[{task_id[:8]}] 🖼️ Превью создано: {filename} ({file_size} MB)")
-    
-    # Потом аудио
-    for file_info in files_info:
-        filename = file_info.get('filename', '')
-        file_size = file_info.get('file_size_mb', 0)
-        
-        if filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
-            logger.info(f"[{task_id[:8]}] 🎵 Аудио готово: {filename} ({file_size} MB)")
-    
-    # В конце - очистка
-    if cleaned_count > 0:
-        logger.info(f"[{task_id[:8]}] 🗑️ Очищены временные файлы: {cleaned_count} файл(ов)")
+            
+            # Логируем этот файл СРАЗУ
+            file_size_mb = entry.get('file_size_mb', 0)
+            if filename.endswith('.mp4') and '_thumbnail' not in filename:
+                logger.info(f"[{task_id[:8]}] 🎬 Видео создано: {filename} ({file_size_mb} MB)")
+            elif filename.endswith(('.jpg', '.jpeg', '.png')):
+                logger.info(f"[{task_id[:8]}] 🖼️ Превью создано: {filename} ({file_size_mb} MB)")
+            elif filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
+                logger.info(f"[{task_id[:8]}] 🎵 Аудио готово: {filename} ({file_size_mb} MB)")
 
     # Сохраняем metadata
     now = datetime.now()
