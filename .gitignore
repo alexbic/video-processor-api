@@ -63,3 +63,6 @@ testing/
 tasks/
 TESTING_RULES.md
 
+# Temporary test files
+test_*.json
+

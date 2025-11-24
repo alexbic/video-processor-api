@@ -1216,13 +1216,20 @@ class MakeShortOperation(VideoOperation):
         )
 
     def _get_available_fonts_list(self) -> list:
-        """Получает список всех доступных шрифтов из /app/fonts/"""
+        """Получает список всех доступных шрифтов из /app/fonts/
+        
+        Примечание: .ttc (TrueType Collection) файлы исключены, так как FFmpeg
+        не может работать с многошрифтовыми архивами. Поддерживаются только:
+        - .ttf (TrueType Font)
+        - .otf (OpenType Font)
+        """
         fonts = []
         
         app_fonts_dir = "/app/fonts"
         if os.path.exists(app_fonts_dir):
             for filename in sorted(os.listdir(app_fonts_dir)):
-                if filename.lower().endswith(('.ttf', '.ttc', '.otf')):
+                # Исключаем .ttc файлы - FFmpeg не может их обрабатывать
+                if filename.lower().endswith(('.ttf', '.otf')):
                     font_path = os.path.join(app_fonts_dir, filename)
                     fonts.append({"name": filename, "file": font_path})
         
@@ -2045,6 +2052,15 @@ def process_video():
                     "status": "error",
                     "error": f"Operation '{op_type}' validation failed: {error_msg}"
                 }), 400
+
+            # PUBLIC VERSION: Ограничение на количество text_items (max 2)
+            if op_type == 'make_short':
+                text_items = op.get('text_items', [])
+                if len(text_items) > 2:
+                    return jsonify({
+                        "status": "error",
+                        "error": f"Public version supports max 2 text items per operation. You have {len(text_items)} items. Upgrade to Pro for up to 10 text items."
+                    }), 400
 
         # Выполнение операций
         if execution == 'async':

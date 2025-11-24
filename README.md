@@ -5,7 +5,7 @@
 [![Docker Hub](https://img.shields.io/docker/v/alexbic/video-processor-api?label=Docker%20Hub&logo=docker)](https://hub.docker.com/r/alexbic/video-processor-api)
 [![GitHub](https://img.shields.io/badge/GitHub-alexbic/video--processor--api-blue?logo=github)](https://github.com/alexbic/video-processor-api)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.2.0-blue)](RELEASE_NOTES_v1.2.0.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)](docs/RELEASE_NOTES_v1.0.0.md)
 
 **English** | [Русский](README.ru.md)
 
@@ -13,29 +13,31 @@
 
 ## ✨ Features
 
-- 🎬 **Pipeline Processing** - chain multiple operations (letterbox → title → subtitles)
+- 🎬 **Pipeline Processing** - chain multiple operations sequentially (cut → make_short → extract_audio)
 - 📦 **Letterbox Mode** - convert horizontal videos to vertical format (1080x1920) with blurred background
-- 📝 **Dynamic Subtitles** - with custom fonts, colors, and positioning
-- 🎨 **Text Overlays** - titles with fade effects
-- 🖼️ **Auto Thumbnails** - automatic thumbnail generation from Shorts videos
-- ✂️ **Video Cutting** - by timecodes with Shorts conversion
-- 🎵 **Audio Extraction** - from video files
-- 📡 **Webhooks** - completion notifications with automatic background retry (every 15 min)
-- 🎯 **Custom Webhook Headers** - per-request authentication headers for webhooks
-- 🔄 **Webhook State Tracking** - unified webhook state in metadata.json
-- ⏰ **File Expiration Tracking** - `expires_at` field shows when files will be deleted
-- ⚡ **Async Processing** - background processing with status tracking
-- 🔠 **Custom Fonts** - support for uploading custom fonts (.ttf/.otf)
-- 🐳 **Redis Support** - multi-worker mode for high loads
-- 🛡️ **Input Validation** - automatic media file validation before processing
-- 🔗 **Full URLs** - absolute links in all responses for n8n/external integrations
+- 📝 **Universal Text Items System** - flexible text overlays with individual timing, positioning, and styling
+- 🎨 **Dynamic Subtitles** - word-level timing with custom fonts, colors, background boxes, and positioning
+- 🖼️ **Auto Thumbnails** - automatic JPEG thumbnail generation from processed videos (perfect for YouTube/TikTok)
+- ✂️ **Video Cutting** - precise cutting by timecodes with automatic Shorts conversion
+- 🎵 **Audio Extraction** - with automatic chunking for Whisper API (max 24MB per chunk)
+- 📡 **Webhooks** - completion notifications with exponential backoff retry and background resender (every 15 min)
+- 🎯 **Custom Webhook Headers** - per-request authentication headers for webhook security
+- 🔄 **Webhook State Tracking** - unified webhook state in metadata.json with delivery status
+- ⏰ **File Expiration Tracking** - `expires_at` field shows exact deletion time (ISO 8601)
+- ⚡ **Async Processing** - background processing with real-time status tracking
+- 🔠 **Custom Fonts** - support for custom .ttf/.otf fonts via volume mount
+- 🐳 **Built-in Redis** - embedded Redis server (256MB, localhost:6379) for task management
+- 🛡️ **Input Validation** - automatic media file validation before processing (Content-Type, signatures, size)
+- 🔗 **Smart URL Generation** - absolute URLs in all responses (public/internal modes)
 - 🧹 **Smart Cleanup** - orphaned tasks deleted after 1h, expired tasks after 3 days (hardcoded)
+- 🔄 **Automatic Recovery** - scans and retries stuck tasks on startup (max 3 retries)
+- 📦 **Client Metadata** - pass-through custom JSON data (max 16KB) for platform-specific content
 
 ---
 
 ## 🚀 Quick Start
 
-### Single Worker (without Redis)
+### Docker Run (Production Ready)
 
 ```bash
 docker pull alexbic/video-processor-api:latest
@@ -45,17 +47,22 @@ docker run -d -p 5001:5001 \
   alexbic/video-processor-api:latest
 ```
 
-### Multi-Worker with Redis (recommended for production)
+**Public version includes:**
+- ✅ Built-in Redis (256MB, localhost:6379)
+- ✅ 2 Gunicorn workers (hardcoded)
+- ✅ Automatic task cleanup (every hour)
+- ✅ 3-day file retention (hardcoded)
 
-See [docker-compose.redis-example.yml](docker-compose.redis-example.yml) for full configuration.
+### Docker Compose (Optional)
 
 ```bash
-docker-compose up -d redis video-processor
+docker-compose up -d
 ```
 
-API automatically detects Redis availability:
-- **With Redis**: Multi-worker mode (2+ workers)
-- **Without Redis**: Single-worker mode (fallback)
+**Configuration:**
+- Port: 5001:5001
+- Volume: `./tasks:/app/tasks` (task storage)
+- Optional: Custom fonts via `/app/fonts/custom` volume mount
 
 ---
 
@@ -239,50 +246,79 @@ curl -X POST http://localhost:5001/process_video \
     "operations": [
       {
         "type": "make_short",
-        "letterbox_config": {
-          "width": 1080,
-          "height": 1920,
-          "color": "black"
-        },
-        "title": {
-          "text": "My Shorts Video",
-          "font": "DejaVu Sans Bold",
-          "fontsize": 70,
-          "fontcolor": "white",
-          "x": "center",
-          "y": 100
-        },
-        "subtitles": {
-          "items": [
-            {"text": "First subtitle", "start": 0, "end": 3},
-            {"text": "Second subtitle", "start": 3, "end": 6}
-          ],
-          "font": "Roboto",
-          "fontsize": 64,
-          "fontcolor": "yellow"
-        },
+        "start_time": 10.5,
+        "end_time": 70.0,
+        "crop_mode": "letterbox",
+        "text_items": [
+          {
+            "text": "My Shorts Video",
+            "fontfile": "HelveticaNeue.ttc",
+            "fontsize": 70,
+            "fontcolor": "white",
+            "x": "(w-text_w)/2",
+            "y": 100,
+            "start": 0,
+            "end": 60,
+            "box": 1,
+            "boxcolor": "black@0.5",
+            "boxborderw": 10
+          },
+          {
+            "text": "Subscribe!",
+            "fontfile": "PTSans.ttc",
+            "fontsize": 48,
+            "fontcolor": "yellow",
+            "x": "(w-text_w)/2",
+            "y": "h-150",
+            "start": 0,
+            "end": 3
+          }
+        ],
         "generate_thumbnail": true,
         "thumbnail_timestamp": 0.5
       }
     ],
     "webhook": {
-      "url": "https://n8n.example.com/webhook/video-completed"
+      "url": "https://n8n.example.com/webhook/video-completed",
+      "headers": {
+        "X-API-Key": "your-secret-key"
+      }
+    },
+    "client_meta": {
+      "youtube_title": "Amazing Video #Shorts",
+      "tiktok_title": "Check this out!"
     }
   }'
 ```
 
 **Available operations:**
 - `cut_video` - cut video by timecodes
-- `make_short` - convert to Shorts format (letterbox + title + subtitles); supports `start_time`/`end_time` for automatic cutting; auto-generates thumbnails
-- `extract_audio` - extract audio track
+- `make_short` - convert to Shorts format with text overlays; supports `start_time`/`end_time` for automatic cutting; auto-generates thumbnails
+- `extract_audio` - extract audio track with automatic chunking for Whisper API
+
+**Text Items System (Universal):**
+The `text_items` array allows flexible text overlays with individual control:
+- **text** - Text content (required)
+- **fontfile** - Font filename from `/app/fonts/` (optional, defaults to DejaVu Sans)
+- **fontsize** - Font size in pixels (default: 60)
+- **fontcolor** - Color (default: white) - supports hex, named colors, and alpha (@0.5)
+- **x**, **y** - Position (supports expressions like `(w-text_w)/2` for centering)
+- **start**, **end** - Display time in seconds (default: 0-5)
+- **max_lines** - Maximum lines for text wrapping (default: 3)
+- **text_align** - Text alignment: left, center, right (default: center)
+- **box** - Background box (0 or 1, default: 0)
+- **boxcolor** - Box color with alpha support (default: black@0.5)
+- **boxborderw** - Box border width in pixels (default: 10)
+
+**Public version limit**: Max **2 text items** per operation
 
 **Thumbnail Generation:**
 The `make_short` operation automatically generates a thumbnail (JPEG image) from the rendered video:
 - **Default**: `generate_thumbnail: true` (enabled by default)
-- **Timestamp**: `thumbnail_timestamp: 0.5` (extracts frame at 0.5 seconds)
+- **Timestamp**: `thumbnail_timestamp: 0.5` (extracts frame at 0.5 seconds from cropped video)
 - **Quality**: High quality JPEG (q:v 2)
 - **Resolution**: Same as video (1080x1920 for Shorts)
-- **Use case**: Perfect for YouTube/TikTok custom thumbnails, showing the title overlay
+- **Use case**: Perfect for YouTube/TikTok custom thumbnails, showing the text overlays
 - **Disable**: Set `generate_thumbnail: false` to skip thumbnail creation
 
 ---
@@ -653,7 +689,7 @@ Response:
 
 ## 📖 Examples
 
-### Example 1: Shorts with automatic cutting (start_time/end_time)
+### Example 1: Shorts with automatic cutting and text overlays
 
 ```json
 {
@@ -665,20 +701,31 @@ Response:
       "start_time": 10.5,
       "end_time": 70.0,
       "crop_mode": "letterbox",
-      "title": {
-        "text": "My First Shorts",
-        "font": "DejaVu Sans Bold",
-        "fontsize": 70,
-        "fontcolor": "white"
-      },
-      "subtitles": {
-        "items": [
-          {"text": "First subtitle", "start": 0, "end": 3}
-        ],
-        "font": "Roboto",
-        "fontsize": 64,
-        "fontcolor": "yellow"
-      }
+      "text_items": [
+        {
+          "text": "My First Shorts",
+          "fontfile": "HelveticaNeue.ttc",
+          "fontsize": 70,
+          "fontcolor": "white",
+          "x": "(w-text_w)/2",
+          "y": 100,
+          "start": 0,
+          "end": 60,
+          "box": 1,
+          "boxcolor": "black@0.5"
+        },
+        {
+          "text": "Subscribe for more!",
+          "fontfile": "PTSans.ttc",
+          "fontsize": 48,
+          "fontcolor": "yellow",
+          "x": "(w-text_w)/2",
+          "y": "h-200",
+          "start": 0,
+          "end": 3
+        }
+      ],
+      "generate_thumbnail": true
     }
   ]
 }
@@ -686,11 +733,13 @@ Response:
 
 **Note:** `start_time` and `end_time` can be numbers (seconds) or strings (`"00:01:30"`). When both parameters are specified, the fragment will be cut automatically.
 
-**Field format:**
-- `title` — object with `text` field and font settings
-- `subtitles` — object with `items` field (array of subtitles) and font settings
+**Text Items System:**
+- Each item in `text_items` is independent with its own timing, positioning, and styling
+- **Public version**: Max 2 text items per operation
+- **Pro version**: Max 10 text items per operation
+- Time (`start`/`end`) is relative to the cropped video (after `start_time`/`end_time` cut)
 
-### Example 2: Simple Shorts conversion (without cutting)
+### Example 2: Simple Shorts conversion (letterbox only, no text)
 
 ```json
 {
@@ -699,17 +748,17 @@ Response:
   "operations": [
     {
       "type": "make_short",
-      "letterbox_config": {
-        "width": 1080,
-        "height": 1920,
-        "color": "black"
-      }
+      "crop_mode": "letterbox",
+      "generate_thumbnail": true,
+      "thumbnail_timestamp": 0.5
     }
   ]
 }
 ```
 
-### Example 3: Shorts with title and subtitles
+**Note:** Even without text items, the API will generate a thumbnail by default.
+
+### Example 3: Shorts with two text overlays (title + call-to-action)
 
 ```json
 {
@@ -718,31 +767,44 @@ Response:
   "operations": [
     {
       "type": "make_short",
-      "letterbox_config": {"width": 1080, "height": 1920, "color": "#1a1a1a"},
-      "title": {
-        "text": "Amazing Content",
-        "font": "DejaVu Sans Bold",
-        "fontsize": 80,
-        "fontcolor": "yellow",
-        "box": true,
-        "boxcolor": "black@0.5"
-      },
-      "subtitles": {
-        "items": [
-          {"text": "Welcome to our channel", "start": 0, "end": 3},
-          {"text": "Subscribe for more", "start": 3, "end": 6}
-        ],
-        "font": "Roboto",
-        "fontsize": 64,
-        "fontcolor": "white"
-      }
+      "crop_mode": "letterbox",
+      "text_items": [
+        {
+          "text": "Amazing Content",
+          "fontfile": "HelveticaNeue.ttc",
+          "fontsize": 80,
+          "fontcolor": "yellow",
+          "x": "(w-text_w)/2",
+          "y": 100,
+          "start": 0,
+          "end": 60,
+          "box": 1,
+          "boxcolor": "black@0.6",
+          "boxborderw": 15
+        },
+        {
+          "text": "Subscribe for more!",
+          "fontfile": "PTSans.ttc",
+          "fontsize": 64,
+          "fontcolor": "white",
+          "x": "(w-text_w)/2",
+          "y": "h-200",
+          "start": 0,
+          "end": 5
+        }
+      ]
     }
   ],
   "webhook": {
-    "url": "https://n8n.example.com/webhook/completed"
+    "url": "https://n8n.example.com/webhook/completed",
+    "headers": {
+      "X-API-Key": "secret-key"
+    }
   }
 }
 ```
+
+**Note:** This example uses the maximum 2 text items allowed in the public version.
 
 ### Example 4: Video cutting
 
@@ -1090,9 +1152,11 @@ Hint: to parse `chunk`, split the string by `:` → `i` and `n`.
 
 ---
 
-## 🔧 Configuration
+## ⚙️ Configuration
 
-### Environment Variables
+### Environment Variables (Public Version)
+
+**Configurable Variables:**
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -1100,6 +1164,28 @@ Hint: to parse `chunk`, split the string by `:` → `i` and `n`.
 | `PUBLIC_BASE_URL` | `None` | External base URL for download links (e.g., `https://domain.com/api`). Only used when `API_KEY` is set. Ignored in Internal mode. |
 | `INTERNAL_BASE_URL` | `http://video-processor:5001` | Internal Docker network URL for background tasks. Used when generating URLs in webhooks/metadata without request context. |
 | `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). |
+
+**Hardcoded Parameters (Public Version):**
+
+The following parameters are **hardcoded** in the public version. They can be configured in the Pro Edition.
+
+| Parameter | Public Value | Pro Edition |
+|-----------|--------------|-------------|
+| `TASK_TTL_HOURS` | 72 (3 days) | 1-720 hours configurable |
+| `WORKERS` | 2 | 1-10+ configurable |
+| `REDIS_HOST` | `localhost` | External Redis support |
+| `REDIS_PORT` | 6379 | Configurable |
+| `REDIS_MAXMEMORY` | 256MB | Unlimited with external Redis |
+| `CLEANUP_INTERVAL_SECONDS` | 3600 (1 hour) | Configurable |
+| `WEBHOOK_BACKGROUND_INTERVAL_SECONDS` | 900 (15 min) | Configurable |
+| `MAX_TASK_RETRIES` | 3 | Configurable |
+| `RETRY_DELAY_SECONDS` | 60 | Configurable |
+| `MAX_CLIENT_META_BYTES` | 16384 (16 KB) | Configurable |
+| `MAX_CLIENT_META_DEPTH` | 5 | Configurable |
+| `MAX_CLIENT_META_KEYS` | 200 | Configurable |
+| `MAX_TEXT_ITEMS_PER_OPERATION` | 2 | 10 in Pro Edition |
+
+**Upgrade to Pro:** support@alexbic.net
 
 ### Docker Volumes
 

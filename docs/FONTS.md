@@ -1,6 +1,85 @@
 # Шрифты в Video Processor API
 
-## Встроенные системные шрифты
+## Доступные шрифты
+
+**10 оптимизированных шрифтов**, гарантированно работающих с FFmpeg.
+
+### Финальный набор (10 шрифтов):
+1. **HelveticaNeue** - премиум Sans-Serif
+2. **LucidaGrande** - элегантный Sans-Serif
+3. **COPPERPLATE** - декоративный стиль
+4. **Charter** - современный Serif
+5. **PTSans** - русский шрифт
+6. **Monaco** - Monospace
+7. **MarkerFelt** - креативный стиль
+8. **Palatino** - классический Serif
+9. **STIXTwoText-Italic** - научный шрифт
+10. **Menlo** - Monospace
+
+---
+
+## Использование в API
+
+### Получить список доступных шрифтов
+
+```bash
+curl http://localhost:5001/fonts
+```
+
+### Пример запроса с одним из доступных шрифтов
+
+```bash
+curl -X POST http://localhost:5001/process_video \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_url": "https://example.com/video.mp4",
+    "operations": [{
+      "type": "make_short",
+      "text_items": [{
+        "text": "Мой Shorts",
+        "fontfile": "HelveticaNeue.ttc",
+        "fontsize": 70,
+        "fontcolor": "white",
+        "y": 250,
+        "x": "(w-text_w)/2"
+      }]
+    }]
+  }'
+```
+
+---
+
+## Рекомендации по выбору
+
+### Для социальных сетей (TikTok/Instagram Reels/YouTube Shorts):
+- **Заголовки:** HelveticaNeue, LucidaGrande
+- **Текст на экране:** PTSans, Charter
+- **Креатив:** MarkerFelt
+
+### Для профессионального контента:
+- **Основной текст:** Charter, Palatino
+- **Заголовки:** HelveticaNeue, LucidaGrande
+- **Технический контент:** Menlo, Monaco
+
+### Для образовательного контента:
+- **Математика:** STIXTwoText-Italic
+- **Общий текст:** PTSans, Charter
+- **Выделение:** COPPERPLATE
+
+---
+
+## Миграция с более старых версий
+
+Если вы используете шрифты, которых нет в v1.0.0:
+
+- **Avenir** → используйте **HelveticaNeue**
+- **Didot** → используйте **Charter** или **Palatino**
+- **Futura** → используйте **PTSans** или **Charter**
+- Другие → используйте **HelveticaNeue** (универсальный выбор)
+
+---
+
+## Встроенные системные шрифты (Legacy)
 
 При сборке Docker контейнера устанавливаются следующие популярные шрифты:
 
@@ -71,25 +150,30 @@
 
 ### Использование кастомного шрифта в запросе:
 
-**Вариант 1: Через font (имя файла без расширения):**
+**Через fontfile (рекомендуется):**
 ```json
 {
-  "title": {
-    "text": "Заголовок",
-    "font": "YourFont",
-    "fontsize": 60
-  }
+  "operations": [{
+    "type": "make_short",
+    "text_items": [{
+      "text": "Заголовок",
+      "fontfile": "YourFont.ttf",
+      "fontsize": 60,
+      "x": "(w-text_w)/2",
+      "y": 100
+    }]
+  }]
 }
 ```
 
-**Вариант 2: Через fontfile (полный путь):**
+**Полный путь (альтернатива):**
 ```json
 {
-  "title": {
+  "text_items": [{
     "text": "Заголовок",
     "fontfile": "/app/fonts/custom/YourFont.ttf",
     "fontsize": 60
-  }
+  }]
 }
 ```
 
@@ -108,28 +192,19 @@ curl http://video-processor:5001/fonts
 ```json
 {
   "status": "success",
-  "total_fonts": 15,
-  "fonts": {
-    "system_fonts": [
-      {
-        "name": "DejaVu Sans",
-        "family": "sans-serif",
-        "file": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-      },
-      {
-        "name": "Roboto",
-        "family": "sans-serif",
-        "file": "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf"
-      }
-    ],
-    "custom_fonts": [
-      {
-        "name": "YourFont",
-        "family": "custom",
-        "file": "/app/fonts/custom/YourFont.ttf"
-      }
-    ]
-  }
+  "total_fonts": 10,
+  "fonts": [
+    {
+      "name": "HelveticaNeue",
+      "family": "sans-serif",
+      "file": "/app/fonts/HelveticaNeue.ttc"
+    },
+    {
+      "name": "Charter",
+      "family": "serif",
+      "file": "/app/fonts/Charter.ttc"
+    }
+  ]
 }
 ```
 
@@ -137,75 +212,97 @@ curl http://video-processor:5001/fonts
 
 ## Примеры использования
 
-### Пример 1: Заголовок с DejaVu Sans Bold
+### Пример 1: Заголовок с HelveticaNeue
 ```json
 {
-  "inputs": [{"url": "https://example.com/video.mp4", "id": "main"}],
-  "title": {
-    "text": "Мой Shorts",
-    "font": "DejaVu Sans Bold",
-    "fontsize": 70,
-    "fontcolor": "yellow"
-  }
+  "video_url": "https://example.com/video.mp4",
+  "operations": [{
+    "type": "make_short",
+    "text_items": [{
+      "text": "Мой Shorts",
+      "fontfile": "HelveticaNeue.ttc",
+      "fontsize": 70,
+      "fontcolor": "yellow",
+      "x": "(w-text_w)/2",
+      "y": 100
+    }]
+  }]
 }
 ```
 
-### Пример 2: Субтитры с Roboto
+### Пример 2: Русский текст с PTSans
 ```json
 {
-  "subtitles": {
-    "items": [
-      {"text": "Первый субтитр", "start": 0, "end": 3}
-    ],
-    "font": "Roboto",
+  "text_items": [{
+    "text": "Привет мир!",
+    "fontfile": "PTSans.ttc",
     "fontsize": 64,
-    "fontcolor": "white"
-  }
+    "fontcolor": "white",
+    "x": "(w-text_w)/2",
+    "y": "h-200",
+    "start": 0,
+    "end": 5
+  }]
 }
 ```
 
-### Пример 3: Кастомный шрифт через fontfile
+### Пример 3: Кастомный шрифт с фоновой плашкой
 ```json
 {
-  "title": {
+  "text_items": [{
     "text": "Стильный заголовок",
     "fontfile": "/app/fonts/custom/CustomFont-Bold.ttf",
     "fontsize": 80,
-    "fontcolor": "#FF00FF"
-  }
+    "fontcolor": "#FF00FF",
+    "x": "(w-text_w)/2",
+    "y": 150,
+    "box": 1,
+    "boxcolor": "black@0.6",
+    "boxborderw": 15
+  }]
 }
 ```
 
-### Пример 4: Разные шрифты для title и subtitles
+### Пример 4: Два текстовых элемента с разными шрифтами
 ```json
 {
-  "title": {
-    "text": "Заголовок",
-    "font": "Open Sans Bold",
-    "fontsize": 70
-  },
-  "subtitles": {
-    "items": [{"text": "Субтитр", "start": 0, "end": 3}],
-    "font": "Roboto",
-    "fontsize": 64
-  }
+  "text_items": [
+    {
+      "text": "Заголовок",
+      "fontfile": "HelveticaNeue.ttc",
+      "fontsize": 70,
+      "fontcolor": "white",
+      "x": "(w-text_w)/2",
+      "y": 100,
+      "start": 0,
+      "end": 60
+    },
+    {
+      "text": "Подписывайся!",
+      "fontfile": "Charter.ttc",
+      "fontsize": 48,
+      "fontcolor": "yellow",
+      "x": "(w-text_w)/2",
+      "y": "h-200",
+      "start": 0,
+      "end": 3
+    }
+  ]
 }
 ```
+
+**Note:** Public version supports max **2 text items** per operation.
 
 ---
 
-## Рекомендации по выбору шрифтов
+## Технические детали
 
-### Для TikTok/Reels/Shorts:
-- **Заголовки:** Open Sans Bold, Roboto Bold, Liberation Sans Bold
-- **Субтитры:** DejaVu Sans, Roboto, Noto Sans
-
-### Для профессионального контента:
-- **Заголовки:** Liberation Sans, DejaVu Sans
-- **Субтитры:** Roboto, Open Sans
-
-### Для креативного контента:
-- Используйте кастомные шрифты (загрузите свои .ttf файлы)
+- **Формат:** Смесь `.ttc` и `.ttf` файлов
+- **Кодировка:** UTF-8 (полная поддержка кириллицы)
+- **FFmpeg совместимость:** 100% (все 10 протестированы)
+- **Размер папки fonts:** ~8.8 MB
+- **Производительность:** Оптимизировано для быстрого рендеринга
+- **Тестирование:** Все шрифты протестированы с FFmpeg на специальном полигоне
 
 ---
 
@@ -223,5 +320,15 @@ Error: Font not found
 3. Перезапустите контейнер: `docker restart video-processor`
 
 **Текст отображается квадратиками:**
+- Используйте PTSans для русского текста
 - Используйте DejaVu Sans или Noto Sans (лучшая поддержка Unicode)
 - Убедитесь что шрифт поддерживает нужные символы (кириллицу, эмодзи и т.д.)
+
+---
+
+## История версий
+
+| Версия | Шрифтов | Статус | Примечание |
+|--------|---------|--------|-----------|
+| v1.2.0 | 41 | Legacy | Архив: старая версия |
+| v1.0.0 | 10 | **Текущая** | Финальный оптимизированный релиз |
