@@ -12,6 +12,7 @@ on:
       - 'requirements.txt'
       - 'Dockerfile'
       - '.dockerignore'
+      - 'README.md'
       - '.github/workflows/docker-build.yml'
   pull_request:
     branches:
