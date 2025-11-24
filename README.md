@@ -25,7 +25,7 @@
 - 🔄 **Webhook State Tracking** - unified webhook state in metadata.json with delivery status
 - ⏰ **File Expiration Tracking** - `expires_at` field shows exact deletion time (ISO 8601)
 - ⚡ **Async Processing** - background processing with real-time status tracking
-- 🔠 **Custom Fonts** - support for custom .ttf/.otf fonts via volume mount
+- 🔠 **10 Tested Fonts** - built-in fonts with full Cyrillic support (public version)
 - 🐳 **Built-in Redis** - embedded Redis server (256MB, localhost:6379) for task management
 - 🛡️ **Input Validation** - automatic media file validation before processing (Content-Type, signatures, size)
 - 🔗 **Smart URL Generation** - absolute URLs in all responses (public/internal modes)
@@ -62,7 +62,6 @@ docker-compose up -d
 **Configuration:**
 - Port: 5001:5001
 - Volume: `./tasks:/app/tasks` (task storage)
-- Optional: Custom fonts via `/app/fonts/custom` volume mount
 
 ---
 
@@ -172,10 +171,10 @@ Immediate echo:
 ### Endpoints Overview
 
 - `GET /health` — service status (versions, `storage_mode`, Redis availability) **[no authorization]**
-- `GET /fonts` — list of system and custom fonts **[requires API key]**
-- `POST /process_video` — start pipeline (sync/async; `operations`, optionally `webhook` object) **[requires API key]**
+- `GET /fonts` — list of available fonts (10 fonts in public version) **[no authorization]**
+- `POST /process_video` — start pipeline (sync/async; `operations`, optionally `webhook` object) **[requires API key in Public mode only]**
 - `GET /task_status/{task_id}` — task status (`queued`/`processing`/`completed`/`error`) **[no authorization]**
-- `GET /tasks` — recent tasks (for debugging) **[requires API key]**
+- `GET /tasks` — recent tasks (for debugging) **[requires API key in Public mode only]**
 - `GET /download/{task_id}/{filename}` — download completed file **[no authorization]**
 - `GET /download/{task_id}/metadata.json` — result metadata **[no authorization]**
 
@@ -222,12 +221,12 @@ curl http://localhost:5001/fonts
 }
 ```
 
-**Custom Fonts:**
-1. Place .ttf/.otf files in `/opt/n8n-docker/volumes/video_processor/fonts/`
-2. Restart the container
-3. Use via `"font": "YourFontName"`
+**Available Fonts (Public Version):**
+- 10 built-in fonts with full Cyrillic support
+- Use `GET /fonts` to see the complete list
+- Custom fonts available in Pro Edition only
 
-See [FONTS.md](FONTS.md) for details.
+See [FONTS.md](docs/FONTS.md) for font details and examples.
 
 ---
 
@@ -1189,10 +1188,17 @@ The following parameters are **hardcoded** in the public version. They can be co
 
 ### Docker Volumes
 
+**Public Version:**
 ```yaml
 volumes:
   - /path/to/tasks:/app/tasks          # Task-based storage (files + metadata.json)
-  - /path/to/fonts:/app/fonts/custom   # Custom fonts
+```
+
+**Pro Edition:**
+```yaml
+volumes:
+  - /path/to/tasks:/app/tasks          # Task-based storage (files + metadata.json)
+  - /path/to/fonts:/app/fonts/custom   # Custom fonts (Pro Edition only)
 ```
 
 **Task directory structure:**
@@ -1302,16 +1308,15 @@ volumes:
 - Without `API_KEY`, `PUBLIC_BASE_URL` is ignored (internal mode)
 - Verify reverse proxy/CDN configuration
 
-#### 8. Custom fonts not recognized
+#### 8. Font not found
 
-**Problem:** Font not found or default font used
+**Problem:** Font not available in public version
 
 **Solutions:**
-- Mount fonts directory: `-v /path/to/fonts:/app/fonts/custom`
-- Restart container after adding fonts
-- Use exact font name: `GET /fonts` to list available fonts
-- Supported formats: .ttf, .otf
-- See [FONTS.md](FONTS.md) for detailed guide
+- Public version includes 10 built-in fonts only
+- Use `GET /fonts` to see available fonts
+- Pro Edition supports custom fonts via volume mount
+- See [FONTS.md](docs/FONTS.md) for font list and examples
 
 #### 9. Client metadata validation errors
 
