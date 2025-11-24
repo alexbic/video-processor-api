@@ -1461,7 +1461,14 @@ class MakeShortOperation(VideoOperation):
         # Генерация превью если включено
         thumbnail_path = None
         if params.get('generate_thumbnail', True):
+            # Если видео было обрезано (есть start_time), то timestamp для превью 
+            # считается ОТНОСИТЕЛЬНО ОБРЕЗАННОГО видео
+            # Иначе используем абсолютный timestamp из параметров
             thumbnail_timestamp = params.get('thumbnail_timestamp', 0.5)
+            
+            # Если был start_time, это значит видео уже обрезано до start_time
+            # поэтому timestamp уже правильный (относительно обрезанного видео)
+            
             thumbnail_path = output_path.replace('.mp4', '_thumbnail.jpg')
 
             thumbnail_cmd = [
