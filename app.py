@@ -89,8 +89,8 @@ def build_absolute_url(path: str) -> str:
     3) Return path as-is (internal mode)
     """
     try:
-        # PUBLIC_BASE_URL используется только если API_KEY задан (публичный режим)
-        if API_KEY_ENABLED and PUBLIC_BASE_URL:
+        # PUBLIC_BASE_URL используется только в Public mode (API_KEY + PUBLIC_BASE_URL)
+        if API_KEY_ENABLED:
             return _join_url(PUBLIC_BASE_URL, path)
         # within request context
         if request and hasattr(request, 'host_url') and request.host_url:
@@ -104,7 +104,7 @@ def build_absolute_url_background(path: str) -> str:
 
     Falls back to internal service URL if PUBLIC_BASE_URL not set.
     """
-    if API_KEY_ENABLED and PUBLIC_BASE_URL:
+    if API_KEY_ENABLED:
         return _join_url(PUBLIC_BASE_URL, path)
     # Fallback: internal Docker network or localhost
     internal_base = INTERNAL_BASE_URL or 'http://video-processor:5001'
@@ -527,18 +527,18 @@ def log_startup_info():
             pass
         # Log API access mode
         if API_KEY_ENABLED:
-            if PUBLIC_BASE_URL:
-                logger.info(f"   Mode: PUBLIC API | Base URL: {PUBLIC_BASE_URL}")
-                logger.info("   Authentication: ENABLED")
-            else:
-                logger.info("   Mode: PUBLIC API (internal URLs)")
-                logger.info("   Authentication: ENABLED")
+            logger.info(f"   Mode: PUBLIC API | Base URL: {PUBLIC_BASE_URL}")
+            logger.info("   Authentication: ENABLED")
         else:
             logger.info("   Mode: INTERNAL (Docker network)")
-            if PUBLIC_BASE_URL:
-                logger.warning("⚠️  PUBLIC_BASE_URL ignored (API_KEY not set)")
-                logger.warning(f"   Set API_KEY to activate: {PUBLIC_BASE_URL}")
             logger.info("   Authentication: DISABLED")
+            # Предупреждение если задан только один из параметров
+            if API_KEY and not PUBLIC_BASE_URL:
+                logger.warning("⚠️  API_KEY set without PUBLIC_BASE_URL - running in INTERNAL mode")
+                logger.warning("   Set both API_KEY and PUBLIC_BASE_URL for PUBLIC mode")
+            elif PUBLIC_BASE_URL and not API_KEY:
+                logger.warning("⚠️  PUBLIC_BASE_URL set without API_KEY - running in INTERNAL mode")
+                logger.warning("   Set both API_KEY and PUBLIC_BASE_URL for PUBLIC mode")
         logger.info("=" * 60)
     finally:
         # Возвращаем старый форматтер
@@ -2368,8 +2368,8 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
                 "download_path": download_path,
                 "download_url_internal": build_internal_url_background(download_path)
             }
-            # Добавляем download_url только если есть публичный URL (API_KEY + PUBLIC_BASE_URL)
-            if API_KEY_ENABLED and PUBLIC_BASE_URL:
+            # Добавляем download_url только в Public mode (API_KEY + PUBLIC_BASE_URL)
+            if API_KEY_ENABLED:
                 entry["download_url"] = build_absolute_url_background(download_path)
             if filename in chunk_map:
                 entry.update(chunk_map[filename])
@@ -2606,8 +2606,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                     'download_path': f"/download/{task_id}/{filename}",
                     'download_url_internal': build_internal_url_background(f"/download/{task_id}/{filename}")
                 }
-                # Добавляем download_url только если есть публичный URL (API_KEY + PUBLIC_BASE_URL)
-                if API_KEY_ENABLED and PUBLIC_BASE_URL:
+                # Добавляем download_url только в Public mode (API_KEY + PUBLIC_BASE_URL)
+                if API_KEY_ENABLED:
                     entry['download_url'] = build_absolute_url_background(f"/download/{task_id}/{filename}")
                 if filename in chunk_map:
                     entry.update(chunk_map[filename])
