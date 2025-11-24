@@ -26,9 +26,10 @@ INTERNAL_BASE_URL = os.getenv('INTERNAL_BASE_URL')
 API_KEY = os.getenv('API_KEY')  # Bearer token для авторизации
 
 # Умная логика авторизации:
-# - Если API_KEY не задан - работаем в режиме внутренней сети, PUBLIC_BASE_URL игнорируется
-# - Если API_KEY задан - PUBLIC_BASE_URL активируется для генерации внешних ссылок
-API_KEY_ENABLED = bool(API_KEY)  # Авторизация включена только если API_KEY задан
+# - Если API_KEY И PUBLIC_BASE_URL заданы - Public mode (требует авторизацию)
+# - Если только API_KEY (без PUBLIC_BASE_URL) - Internal mode (без авторизации)
+# - Если ничего не задано - Internal mode (без авторизации)
+API_KEY_ENABLED = bool(API_KEY and PUBLIC_BASE_URL)  # Авторизация только если оба параметра заданы
 
 def require_api_key(f):
     """Декоратор для проверки API ключа через Bearer token"""

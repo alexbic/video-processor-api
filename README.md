@@ -73,31 +73,31 @@ API supports **smart dual-mode operation** with Bearer token authentication:
 
 **🔑 Two Operation Modes:**
 
-1️⃣ **Public API Mode** (when `API_KEY` is set):
+1️⃣ **Public API Mode** (when BOTH `API_KEY` AND `PUBLIC_BASE_URL` are set):
    - Protected endpoints require Bearer token authentication
-   - `PUBLIC_BASE_URL` should be configured for external access
    - Download URLs use public domain from `PUBLIC_BASE_URL`
    - Recommended for production with reverse proxy/CDN
+   - Both parameters must be configured together
 
-2️⃣ **Internal Docker Network Mode** (when `API_KEY` is NOT set):
+2️⃣ **Internal Docker Network Mode** (when `API_KEY` or `PUBLIC_BASE_URL` is NOT set):
    - All endpoints work without authentication
    - API operates within Docker network (e.g., with n8n)
-   - `PUBLIC_BASE_URL` is **ignored** (even if set)
    - Download URLs use internal Docker hostnames (`http://video-processor:5001`)
    - Ideal for trusted internal services
+   - Works when: neither parameter set, only `API_KEY` set, or only `PUBLIC_BASE_URL` set
 
 **Setup:**
 ```bash
 # Generate secure API key
 openssl rand -hex 32
 
-# Public API mode (requires authentication)
+# Public API mode (requires authentication) - BOTH parameters required
 export API_KEY="your-generated-key-here"
 export PUBLIC_BASE_URL="https://your-domain.com/video-api"
 
-# Internal Docker mode (no authentication)
-# Don't set API_KEY - PUBLIC_BASE_URL will be ignored
+# Internal Docker mode (no authentication) - unset both or either
 unset API_KEY
+unset PUBLIC_BASE_URL
 ```
 
 **Usage with API Key:**
@@ -109,9 +109,9 @@ curl -H "Authorization: Bearer your-api-key" \
 ```
 
 **Endpoint Protection:**
-- ✅ **Always public**: `/health`, `/task_status/{task_id}`, `/download/{task_id}/...`
-- 🔒 **Protected when API_KEY set**: `/process_video`, `/tasks`, `/fonts`
-- 🔐 **Task access**: `task_id` acts as temporary access token (UUID, 2h TTL)
+- ✅ **Always public**: `/health`, `/fonts`, `/task_status/{task_id}`, `/download/{task_id}/...`
+- 🔒 **Protected in Public mode** (when both `API_KEY` and `PUBLIC_BASE_URL` are set): `/process_video`, `/tasks`
+- 🔐 **Task access**: `task_id` acts as temporary access token (UUID, 72h TTL)
 
 ---
 
@@ -209,15 +209,22 @@ curl http://localhost:5001/fonts
 {
   "status": "success",
   "total_fonts": 10,
-  "fonts": {
-    "system_fonts": [
-      {"name": "DejaVu Sans", "family": "sans-serif"},
-      {"name": "DejaVu Sans Bold", "family": "sans-serif"},
-      {"name": "Roboto", "family": "sans-serif"},
-      ...
-    ],
-    "custom_fonts": []
-  }
+  "fonts": [
+    {
+      "name": "Charter",
+      "filename": "Charter.ttc",
+      "file": "/app/fonts/Charter.ttc",
+      "type": "ttc"
+    },
+    {
+      "name": "Copperplate",
+      "filename": "Copperplate.ttc",
+      "file": "/app/fonts/Copperplate.ttc",
+      "type": "ttc"
+    },
+    ...
+  ],
+  "note": "These are the custom fonts available for video generation in /app/fonts/"
 }
 ```
 
