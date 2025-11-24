@@ -2294,7 +2294,9 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
                     "status": "error",
                     "metadata": error_metadata
                 })
-            except Exception:
+                logger.info(f"[{task_id[:8]}] ✓ Redis synchronized with error metadata")
+            except Exception as e:
+                logger.warning(f"[{task_id[:8]}] Failed to sync Redis (non-critical): {e}")
                 pass
             
             return jsonify(error_metadata), 400
@@ -2426,7 +2428,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             "status": "completed",
             "metadata": metadata
         })
-        logger.debug(f"[{task_id[:8]}] ✓ Redis synchronized with metadata.json")
+        logger.info(f"[{task_id[:8]}] ✓ Redis synchronized with metadata.json")
     except Exception as e:
         logger.warning(f"[{task_id[:8]}] Failed to sync Redis (non-critical): {e}")
 
@@ -2472,9 +2474,10 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
     try:
         # Создаем директории для задачи
         create_task_dirs(task_id)
-        
+
         update_task(task_id, {'status': 'processing', 'progress': 5})
-        
+        logger.debug(f"[{task_id[:8]}] ✓ Redis updated: status=processing")
+
         # Логируем создание задачи
         logger.info(f"✨ Задача создана: [{task_id}] | ASYNC | Подзадач {len(operations)}")
 
@@ -2697,7 +2700,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 "status": "completed",
                 "metadata": metadata  # Полная структура для моментального ответа
             })
-            logger.debug(f"[{task_id[:8]}] ✓ Redis synchronized with metadata.json")
+            logger.info(f"[{task_id[:8]}] ✓ Redis synchronized with metadata.json")
         except Exception as e:
             logger.warning(f"[{task_id[:8]}] Failed to sync Redis (non-critical): {e}")
             # Не критично - metadata.json уже сохранён
