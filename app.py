@@ -1294,6 +1294,91 @@ class MakeShortOperation(VideoOperation):
         logger.warning(f"Font '{fontfile}' not found in /app/fonts/, using DejaVu Sans fallback")
         return FALLBACK_FONT
 
+    def _expand_text_items(self, text_items: list) -> list:
+        """
+        Раскрывает вложенные субтитры в плоский массив text_items.
+        
+        Если text_item содержит пустое поле 'text' и вложенный объект 'subtitles' с массивом 'items',
+        каждый элемент из subtitles.items расширяется в отдельный text_item с наследованием
+        всех параметров стиля от родительского item'а.
+        
+        Пример входящих данных:
+        [
+            { text: "Title", fontsize: 80, fontcolor: "#FFF", ... },
+            { 
+                text: "",  # пустой - используем subtitles
+                fontsize: 60, 
+                fontcolor: "#FF0",
+                subtitles: {
+                    items: [
+                        { text: "Sub 1", start: 0, end: 3 },
+                        { text: "Sub 2", start: 3, end: 6 }
+                    ]
+                }
+            }
+        ]
+        
+        На выходе: 3 элемента (title + 2 развёрнутых субтитра)
+        """
+        expanded = []
+        
+        for item in text_items:
+            if not isinstance(item, dict):
+                expanded.append(item)
+                continue
+            
+            # Обычный text_item с текстом
+            if item.get('text'):
+                expanded.append(item)
+                continue
+            
+            # Проверяем вложенные субтитры
+            subtitles_obj = item.get('subtitles', {})
+            if isinstance(subtitles_obj, dict) and 'items' in subtitles_obj:
+                subtitle_items = subtitles_obj['items']
+                if not isinstance(subtitle_items, list):
+                    expanded.append(item)  # Некорректный формат
+                    continue
+                
+                # Развёртываем каждый субтитр в отдельный text_item
+                for sub in subtitle_items:
+                    if not isinstance(sub, dict):
+                        continue
+                    
+                    sub_text = sub.get('text', '')
+                    if not sub_text:
+                        continue
+                    
+                    # Новый item с наследованными параметрами
+                    expanded_item = {
+                        'text': sub_text,
+                        'start': sub.get('start', item.get('start', 0)),
+                        'end': sub.get('end', item.get('end', 5)),
+                        
+                        # Наследуем стили от родителя
+                        'fontfile': sub.get('fontfile', item.get('fontfile')),
+                        'fontsize': sub.get('fontsize', item.get('fontsize', 60)),
+                        'fontcolor': sub.get('fontcolor', item.get('fontcolor', 'white')),
+                        'x': sub.get('x', item.get('x', '(w-text_w)/2')),
+                        'y': sub.get('y', item.get('y', 'h-200')),
+                        
+                        # Box параметры
+                        'box': sub.get('box', item.get('box', 0)),
+                        'boxcolor': sub.get('boxcolor', item.get('boxcolor', 'black@0.5')),
+                        'boxborderw': sub.get('boxborderw', item.get('boxborderw', 10)),
+                        
+                        # Дополнительные параметры
+                        'max_lines': sub.get('max_lines', item.get('max_lines', 3)),
+                        'text_align': sub.get('text_align', item.get('text_align', 'center')),
+                    }
+                    
+                    expanded.append(expanded_item)
+            else:
+                # Нет вложенных субтитров - добавляем как есть
+                expanded.append(item)
+        
+        return expanded
+
     def _process_text_item(self, text_item: dict) -> str:
         """Обрабатывает один текстовый элемент и возвращает drawtext строку для FFmpeg"""
         try:
@@ -1422,6 +1507,21 @@ class MakeShortOperation(VideoOperation):
         # === НОВАЯ СИСТЕМА: Универсальные текстовые элементы ===
         # Обрабатываем text_items если они указаны
         text_items = params.get('text_items', [])
+        
+        # Проверяем ограничение публичной версии ДО развёртывания
+        # (максимум 2 элемента на входе, независимо от вложенных субтитров)
+        if len(text_items) > 2:
+            return jsonify({
+                "status": "error",
+                "error": f"Public version supports max 2 text items per operation. You have {len(text_items)} items. Upgrade to Pro for unlimited text items."
+            }), 400
+        
+        # Теперь развёртываем вложенные субтитры в каждом item'е
+        text_items = self._expand_text_items(text_items)
+        logger.info(f"🔄 Text items after expansion: {len(text_items)} items")
+        for i, item in enumerate(text_items):
+            logger.info(f"  [{i}] text='{item.get('text', '')}' start={item.get('start')} end={item.get('end')} fontsize={item.get('fontsize')}")
+        
         if text_items:
             for text_item in text_items:
                 drawtext_filter = self._process_text_item(text_item)
