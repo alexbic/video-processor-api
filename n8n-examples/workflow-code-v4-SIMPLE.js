@@ -33,7 +33,8 @@ const GAMING_TEMPLATES = {
 			y: 200,
 			box: 1,
 			boxcolor: "#000033@0.92", // Темно-синий фон
-			boxborderw: 32
+			boxborderw: 32,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -41,7 +42,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#FF00FF", // Яркая фуксия
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -57,7 +59,8 @@ const GAMING_TEMPLATES = {
 			y: 195,
 			box: 1,
 			boxcolor: "#1a0000@0.94", // Почти черный с красным оттенком
-			boxborderw: 34
+			boxborderw: 34,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "LucidaGrande.ttc",
@@ -65,7 +68,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#00DDFF", // Ледяной циан
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -81,7 +85,8 @@ const GAMING_TEMPLATES = {
 			y: 205,
 			box: 1,
 			boxcolor: "#2d1b52@0.92", // Темно-фиолетовый
-			boxborderw: 30
+			boxborderw: 30,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -89,7 +94,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#BB88FF", // Светло-фиолетовый
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -113,7 +119,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#FF0033", // Ярко-красный
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -129,7 +136,8 @@ const GAMING_TEMPLATES = {
 			y: 197,
 			box: 1,
 			boxcolor: "#000000@0.94", // Черный
-			boxborderw: 32
+			boxborderw: 32,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -137,7 +145,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#0088FF", // Ярко-синий
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -161,7 +170,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#DDDDDD", // Светло-серый
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -177,7 +187,8 @@ const GAMING_TEMPLATES = {
 			y: 200,
 			box: 1,
 			boxcolor: "#001a00@0.94", // Темно-зеленый
-			boxborderw: 32
+			boxborderw: 32,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "Menlo.ttc",
@@ -185,7 +196,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#00FFFF", // Циан
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -201,7 +213,8 @@ const GAMING_TEMPLATES = {
 			y: 205,
 			box: 1,
 			boxcolor: "#00001a@0.93", // Темно-синий
-			boxborderw: 30
+			boxborderw: 30,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -209,7 +222,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#FFD700", // Золотой
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -233,7 +247,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#00FFFF", // Циан
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -257,7 +272,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#00FF88", // Неоново-зеленый
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -274,7 +290,8 @@ const GAMING_TEMPLATES = {
 			y: 207,
 			box: 1,
 			boxcolor: "#001a1a@0.93",
-			boxborderw: 30
+			boxborderw: 30,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -284,7 +301,8 @@ const GAMING_TEMPLATES = {
 			y: "h-330",
 			box: 1,
 			boxcolor: "#1a1a00@0.91",
-			boxborderw: 28
+			boxborderw: 28,
+			max_lines: 3
 		}
 	},
 
@@ -300,7 +318,8 @@ const GAMING_TEMPLATES = {
 			y: 202,
 			box: 1,
 			boxcolor: "#CC0000@0.95",
-			boxborderw: 32
+			boxborderw: 32,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "LucidaGrande.ttc",
@@ -310,7 +329,8 @@ const GAMING_TEMPLATES = {
 			y: "h-330",
 			box: 1,
 			boxcolor: "#000000@0.93",
-			boxborderw: 30
+			boxborderw: 30,
+			max_lines: 3
 		}
 	},
 
@@ -326,7 +346,8 @@ const GAMING_TEMPLATES = {
 			y: 217,
 			box: 1,
 			boxcolor: "#ECF0F1@0.94",
-			boxborderw: 30
+			boxborderw: 30,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "Charter.ttc",
@@ -336,7 +357,8 @@ const GAMING_TEMPLATES = {
 			y: "h-330",
 			box: 1,
 			boxcolor: "white@0.91",
-			boxborderw: 28
+			boxborderw: 28,
+			max_lines: 3
 		}
 	},
 
@@ -378,7 +400,8 @@ const GAMING_TEMPLATES = {
 			y: 207,
 			box: 1,
 			boxcolor: "#1a1a1a@0.93",
-			boxborderw: 30
+			boxborderw: 30,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -388,7 +411,8 @@ const GAMING_TEMPLATES = {
 			y: "h-330",
 			box: 1,
 			boxcolor: "#2d2d2d@0.91",
-			boxborderw: 28
+			boxborderw: 28,
+			max_lines: 3
 		}
 	},
 
@@ -430,7 +454,8 @@ const GAMING_TEMPLATES = {
 			y: 202,
 			box: 1,
 			boxcolor: "#8B0000@0.92",
-			boxborderw: 32
+			boxborderw: 32,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "LucidaGrande.ttc",
@@ -440,7 +465,8 @@ const GAMING_TEMPLATES = {
 			y: "h-330",
 			box: 1,
 			boxcolor: "#1a1a1a@0.91",
-			boxborderw: 30
+			boxborderw: 30,
+			max_lines: 3
 		}
 	},
 
@@ -456,7 +482,8 @@ const GAMING_TEMPLATES = {
 			y: 209,
 			box: 1,
 			boxcolor: "#00003a@0.92",
-			boxborderw: 30
+			boxborderw: 30,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -466,7 +493,8 @@ const GAMING_TEMPLATES = {
 			y: "h-330",
 			box: 1,
 			boxcolor: "#1a1a2e@0.91",
-			boxborderw: 28
+			boxborderw: 28,
+			max_lines: 3
 		}
 	},
 
@@ -482,7 +510,8 @@ const GAMING_TEMPLATES = {
 			y: 207,
 			box: 1,
 			boxcolor: "#1a0a1a@0.93",
-			boxborderw: 30
+			boxborderw: 30,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "Charter.ttc",
@@ -508,7 +537,8 @@ const GAMING_TEMPLATES = {
 			y: 214,
 			box: 1,
 			boxcolor: "white@0.94",
-			boxborderw: 30
+			boxborderw: 30,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -518,7 +548,8 @@ const GAMING_TEMPLATES = {
 			y: "h-330",
 			box: 1,
 			boxcolor: "#F5F5F5@0.92",
-			boxborderw: 28
+			boxborderw: 28,
+			max_lines: 3
 		}
 	},
 
@@ -533,7 +564,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#00FFFF",
 			x: "(w-text_w)/2",
 			y: 188,
-			box: 0
+			box: 0,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -541,7 +573,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#FF00FF",
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -555,7 +588,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#FF4400",
 			x: "(w-text_w)/2",
 			y: 185,
-			box: 0
+			box: 0,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "LucidaGrande.ttc",
@@ -563,7 +597,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#FFD700",
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -577,7 +612,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "white",
 			x: "(w-text_w)/2",
 			y: 180,
-			box: 0
+			box: 0,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -585,7 +621,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "white",
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -599,7 +636,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#FF69B4",
 			x: "(w-text_w)/2",
 			y: 188,
-			box: 0
+			box: 0,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "MarkerFelt.ttc",
@@ -607,7 +645,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#00FF88",
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -621,7 +660,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#FFD700",
 			x: "(w-text_w)/2",
 			y: 183,
-			box: 0
+			box: 0,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -629,7 +669,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#FF8C00",
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -643,7 +684,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#39FF14",
 			x: "(w-text_w)/2",
 			y: 186,
-			box: 0
+			box: 0,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "LucidaGrande.ttc",
@@ -651,7 +693,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#ADFF2F",
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -665,7 +708,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#DC143C",
 			x: "(w-text_w)/2",
 			y: 183,
-			box: 0
+			box: 0,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -673,7 +717,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#FF6347",
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -687,7 +732,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#00DDFF",
 			x: "(w-text_w)/2",
 			y: 188,
-			box: 0
+			box: 0,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -695,7 +741,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#87CEEB",
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -709,7 +756,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#AA55FF",
 			x: "(w-text_w)/2",
 			y: 186,
-			box: 0
+			box: 0,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "Charter.ttc",
@@ -717,7 +765,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#DA70D6",
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	},
 
@@ -731,7 +780,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "white",
 			x: "(w-text_w)/2",
 			y: 190,
-			box: 0
+			box: 0,
+			max_lines: 3
 		},
 		sub: {
 			fontfile: "PTSans.ttc",
@@ -739,7 +789,8 @@ const GAMING_TEMPLATES = {
 			fontcolor: "#FFFF00",
 			x: "(w-text_w)/2",
 			y: "h-330",
-			box: 0
+			box: 0,
+			max_lines: 3
 		}
 	}
 };
@@ -809,7 +860,8 @@ function createOperation(item, templateKey, tpl) {
 		end: 7.0, // ✅ Увеличено с 5 до 7 секунд
 		box: tpl.title.box,
 		boxcolor: tpl.title.boxcolor || undefined,
-		boxborderw: tpl.title.boxborderw || undefined
+		boxborderw: tpl.title.boxborderw || undefined,
+		max_lines: tpl.title.max_lines || 3
 	});
 
 	// Item 2: Subtitles (если есть) - ВЛОЖЕННЫЙ ФОРМАТ с коррекцией timing
@@ -838,6 +890,7 @@ function createOperation(item, templateKey, tpl) {
 			box: tpl.sub.box,
 			boxcolor: tpl.sub.boxcolor || undefined,
 			boxborderw: tpl.sub.boxborderw || undefined,
+			max_lines: tpl.sub.max_lines || 3,
 			// ✅ Вложенные субтитры с скорректированным timing
 			subtitles: {
 				items: correctedSubtitles
