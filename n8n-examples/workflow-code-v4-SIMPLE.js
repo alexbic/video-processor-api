@@ -744,6 +744,16 @@ const GAMING_TEMPLATES = {
 	}
 };
 
+// Функция перемешивания массива (Fisher-Yates shuffle)
+function shuffleArray(array) {
+	const shuffled = [...array];
+	for (let i = shuffled.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+	}
+	return shuffled;
+}
+
 // Функция выбора темплейта по фильтрам
 function selectTemplate(clientMeta) {
 	let filteredTemplates = Object.entries(GAMING_TEMPLATES);
@@ -769,8 +779,11 @@ function selectTemplate(clientMeta) {
 		}
 	}
 
-	// Случайный выбор из отфильтрованных
-	const [templateKey, tpl] = filteredTemplates[Math.floor(Math.random() * filteredTemplates.length)];
+	// ✅ ПОЛНОСТЬЮ СЛУЧАЙНЫЙ ВЫБОР: перемешиваем массив перед выбором
+	filteredTemplates = shuffleArray(filteredTemplates);
+
+	// Берём первый элемент из перемешанного массива
+	const [templateKey, tpl] = filteredTemplates[0];
 	return { templateKey, tpl, totalFiltered: filteredTemplates.length };
 }
 
@@ -784,7 +797,7 @@ function createOperation(item, templateKey, tpl) {
 	// Создаем text_items массив (максимум 2 элемента для публичной версии)
 	const textItems = [];
 
-	// Item 1: Title
+	// Item 1: Title (start=0, увеличенная продолжительность)
 	textItems.push({
 		text: shorts.title,
 		fontfile: tpl.title.fontfile,
@@ -793,14 +806,27 @@ function createOperation(item, templateKey, tpl) {
 		x: tpl.title.x,
 		y: tpl.title.y,
 		start: 0.0,
-		end: 5.0,
+		end: 7.0, // ✅ Увеличено с 5 до 7 секунд
 		box: tpl.title.box,
 		boxcolor: tpl.title.boxcolor || undefined,
 		boxborderw: tpl.title.boxborderw || undefined
 	});
 
-	// Item 2: Subtitles (если есть) - ВЛОЖЕННЫЙ ФОРМАТ
+	// Item 2: Subtitles (если есть) - ВЛОЖЕННЫЙ ФОРМАТ с коррекцией timing
 	if (shorts.subtitles && shorts.subtitles.length > 0) {
+		// ✅ Корректируем первый субтитр: start=0, end оставляем как есть
+		const correctedSubtitles = shorts.subtitles.map((sub, index) => {
+			if (index === 0) {
+				// Первый субтитр: start=0, end не меняем
+				return {
+					...sub,
+					start: 0.0
+				};
+			}
+			// Остальные субтитры без изменений
+			return sub;
+		});
+
 		// Используем динамические субтитры как вложенный объект
 		textItems.push({
 			text: "", // Пустой текст, так как используются динамические subtitles
@@ -812,9 +838,9 @@ function createOperation(item, templateKey, tpl) {
 			box: tpl.sub.box,
 			boxcolor: tpl.sub.boxcolor || undefined,
 			boxborderw: tpl.sub.boxborderw || undefined,
-			// ✅ Вложенные субтитры с timing
+			// ✅ Вложенные субтитры с скорректированным timing
 			subtitles: {
-				items: shorts.subtitles
+				items: correctedSubtitles
 			}
 		});
 	}
