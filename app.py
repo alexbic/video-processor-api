@@ -1026,7 +1026,7 @@ def _post_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None,
             webhook_state["attempts"] += 1
             webhook_state["last_attempt"] = datetime.now().isoformat()
 
-            logger.info(f"[{task_id[:8]}] Sending webhook to {webhook_url} (attempt {attempt + 1}/{max_retries})")
+            logger.info(f"[{task_id[:8]}] 🚦 Sending webhook to {webhook_url} (attempt {attempt + 1}/{max_retries})")
 
             response = requests.post(
                 webhook_url,
@@ -1044,18 +1044,18 @@ def _post_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None,
             webhook_state["next_retry"] = None
             save_webhook_state(task_id, webhook_state)
 
-            logger.info(f"[{task_id[:8]}] Webhook delivered successfully (status {response.status_code})")
+            logger.info(f"[{task_id[:8]}] 🚦 Webhook delivered successfully (HTTP {response.status_code}) → {webhook_url}")
             return
 
         except requests.exceptions.RequestException as e:
             error_msg = str(e)
             webhook_state["last_error"] = error_msg
-            logger.warning(f"[{task_id[:8]}] Webhook attempt {attempt + 1}/{max_retries} failed: {error_msg}")
+            logger.warning(f"[{task_id[:8]}] 🚦 Webhook attempt {attempt + 1}/{max_retries} failed: {error_msg} → {webhook_url}")
 
             if attempt < max_retries - 1:
                 # Exponential backoff: 1s, 2s, 4s
                 sleep_time = 2 ** attempt
-                logger.info(f"[{task_id[:8]}] Retrying in {sleep_time}s...")
+                logger.info(f"[{task_id[:8]}] 🚦 Retrying in {sleep_time}s...")
                 time.sleep(sleep_time)
             else:
                 # Все попытки провалились - вычисляем next_retry для background resender
@@ -1067,7 +1067,7 @@ def _post_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None,
                 webhook_state["next_retry"] = next_retry_dt.isoformat()
                 webhook_state["status"] = "failed"
 
-                logger.error(f"[{task_id[:8]}] All {max_retries} webhook attempts failed. Next retry at {webhook_state['next_retry']}")
+                logger.error(f"[{task_id[:8]}] 🚦 All {max_retries} webhook attempts failed. Next retry: {webhook_state['next_retry']}")
 
     # Сохраняем финальное состояние
     save_webhook_state(task_id, webhook_state)
@@ -1696,7 +1696,7 @@ class ExtractAudioOperation(VideoOperation):
                 # Автоматически вычисляем длительность чанка
                 chunk_duration_seconds = (max_chunk_size_mb / file_size_mb) * total_duration * 0.95  # 5% запас
 
-            logger.info(f"🔊 Разбиение аудио: {chunk_duration_seconds/60:.1f} мин/чанк")
+            logger.info(f"🔊 Audio chunking: {chunk_duration_seconds/60:.1f} min/chunk")
 
             # Разбиваем на чанки
             chunk_start = 0
@@ -2304,7 +2304,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
     output_files = []  # Список всех созданных output файлов
 
     # Логируем создание задачи
-    logger.info(f"✨ Задача создана: [{task_id}] | SYNC | Подзадач {len(operations)}")
+    logger.info(f"✨ Task created: [{task_id}] | SYNC | URL: {video_url} | Operations: {len(operations)}")
     
     # Выполняем операции последовательно
     for idx, op_data in enumerate(operations):
@@ -2332,7 +2332,8 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
         # Логируем начало операции
-        logger.info(f"[{task_id[:8]}] 🚀 Обработка: {op_type} [{idx+1}/{len(operations)}]")
+        input_filename = os.path.basename(current_input)
+        logger.info(f"[{task_id[:8]}] 🚀 Processing: {op_type} [{idx+1}/{len(operations)}] | Input: {input_filename}")
         op_start_time = datetime.now()
 
         # Выполняем операцию
@@ -2430,7 +2431,7 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
 
     # Логируем очистку один раз в конце
     if cleaned_count > 0:
-        logger.info(f"[{task_id[:8]}] 🗑️ Очищены временные файлы: {cleaned_count} файл(ов)")
+        logger.info(f"[{task_id[:8]}] 🗑️ Cleaned temporary files: {cleaned_count} file(s) (input_*, temp_*)")
 
     # Собираем информацию о всех output файлах И логируем их
     files_info = []
@@ -2480,11 +2481,11 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
             # Логируем этот файл СРАЗУ
             file_size_mb = entry.get('file_size_mb', 0)
             if filename.endswith('.mp4') and '_thumbnail' not in filename:
-                logger.info(f"[{task_id[:8]}] 🎬 Видео создано: {filename} ({file_size_mb} MB)")
+                logger.info(f"[{task_id[:8]}] 🎬 Video created: {filename} ({file_size_mb} MB)")
             elif filename.endswith(('.jpg', '.jpeg', '.png')):
-                logger.info(f"[{task_id[:8]}] 🖼️ Превью создано: {filename} ({file_size_mb} MB)")
+                logger.info(f"[{task_id[:8]}] 🖼️ Thumbnail created: {filename} ({file_size_mb} MB)")
             elif filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
-                logger.info(f"[{task_id[:8]}] 🎵 Аудио готово: {filename} ({file_size_mb} MB)")
+                logger.info(f"[{task_id[:8]}] 🎵 Audio ready: {filename} ({file_size_mb} MB)")
 
     # Сохраняем metadata
     now = datetime.now()
@@ -2579,7 +2580,7 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         logger.debug(f"[{task_id[:8]}] ✓ Redis updated: status=processing")
 
         # Логируем создание задачи
-        logger.info(f"✨ Задача создана: [{task_id}] | ASYNC | Подзадач {len(operations)}")
+        logger.info(f"✨ Task created: [{task_id}] | ASYNC | URL: {video_url} | Operations: {len(operations)}")
 
         # Скачиваем исходное видео
         input_filename = f"{uuid.uuid4()}.mp4"
@@ -2625,7 +2626,8 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
                 # Промежуточный файл
                 output_path = os.path.join(get_task_dir(task_id), f"temp_{idx}_{uuid.uuid4()}.mp4")
 
-            logger.info(f"[{task_id[:8]}] 🚀 Обработка: {op_type} [{idx+1}/{total_ops}]")
+            input_filename = os.path.basename(current_input)
+            logger.info(f"[{task_id[:8]}] 🚀 Processing: {op_type} [{idx+1}/{total_ops}] | Input: {input_filename}")
 
             # Выполняем операцию
             result = operation.execute(current_input, output_path, op_data)
@@ -2721,25 +2723,25 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
         for file_info in output_files_info:
             filename = file_info.get('filename', '')
             file_size = file_info.get('file_size_mb', 0)
-            
+
             if filename.endswith('.mp4') and '_thumbnail' not in filename:
-                logger.info(f"[{task_id[:8]}] 🎬 Видео создано: {filename} ({file_size} MB)")
-        
+                logger.info(f"[{task_id[:8]}] 🎬 Video created: {filename} ({file_size} MB)")
+
         # Потом превью
         for file_info in output_files_info:
             filename = file_info.get('filename', '')
             file_size = file_info.get('file_size_mb', 0)
-            
+
             if filename.endswith(('.jpg', '.jpeg', '.png')):
-                logger.info(f"[{task_id[:8]}] 🖼️ Превью создано: {filename} ({file_size} MB)")
-        
+                logger.info(f"[{task_id[:8]}] 🖼️ Thumbnail created: {filename} ({file_size} MB)")
+
         # Потом аудио
         for file_info in output_files_info:
             filename = file_info.get('filename', '')
             file_size = file_info.get('file_size_mb', 0)
-            
+
             if filename.endswith(('.mp3', '.wav', '.aac', '.flac')):
-                logger.info(f"[{task_id[:8]}] 🎵 Аудио готово: {filename} ({file_size} MB)")
+                logger.info(f"[{task_id[:8]}] 🎵 Audio ready: {filename} ({file_size} MB)")
 
         # Сохраняем метаданные
         # Попробуем получить client_meta из сохраненной задачи
