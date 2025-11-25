@@ -1026,7 +1026,8 @@ def _post_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None,
             webhook_state["attempts"] += 1
             webhook_state["last_attempt"] = datetime.now().isoformat()
 
-            logger.info(f"[{task_id[:8]}] 🚦 Sending webhook to {webhook_url} (attempt {attempt + 1}/{max_retries})")
+            if attempt > 0:
+                logger.debug(f"[{task_id[:8]}] Webhook retry {attempt + 1}/{max_retries}")
 
             response = requests.post(
                 webhook_url,
@@ -1044,18 +1045,18 @@ def _post_webhook(webhook_url: str, payload: dict, webhook_headers: dict | None,
             webhook_state["next_retry"] = None
             save_webhook_state(task_id, webhook_state)
 
-            logger.info(f"[{task_id[:8]}] 🚦 Webhook delivered successfully (HTTP {response.status_code}) → {webhook_url}")
+            logger.info(f"[{task_id[:8]}] 🚦 Webhook delivered ({response.status_code}) → {webhook_url}")
             return
 
         except requests.exceptions.RequestException as e:
             error_msg = str(e)
             webhook_state["last_error"] = error_msg
-            logger.warning(f"[{task_id[:8]}] 🚦 Webhook attempt {attempt + 1}/{max_retries} failed: {error_msg} → {webhook_url}")
+            logger.warning(f"[{task_id[:8]}] 🚦 Webhook failed ({webhook_state.get('last_status', 'error')}): {error_msg} → {webhook_url}")
 
             if attempt < max_retries - 1:
                 # Exponential backoff: 1s, 2s, 4s
                 sleep_time = 2 ** attempt
-                logger.info(f"[{task_id[:8]}] 🚦 Retrying in {sleep_time}s...")
+                logger.debug(f"[{task_id[:8]}] Webhook retrying in {sleep_time}s...")
                 time.sleep(sleep_time)
             else:
                 # Все попытки провалились - вычисляем next_retry для background resender
