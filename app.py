@@ -1518,9 +1518,9 @@ class MakeShortOperation(VideoOperation):
         
         # Теперь развёртываем вложенные субтитры в каждом item'е
         text_items = self._expand_text_items(text_items)
-        logger.info(f"🔄 Text items after expansion: {len(text_items)} items")
+        logger.debug(f"🔄 Text items after expansion: {len(text_items)} items")
         for i, item in enumerate(text_items):
-            logger.info(f"  [{i}] text='{item.get('text', '')}' start={item.get('start')} end={item.get('end')} fontsize={item.get('fontsize')}")
+            logger.debug(f"  [{i}] text='{item.get('text', '')}' start={item.get('start')} end={item.get('end')} fontsize={item.get('fontsize')}")
         
         if text_items:
             for text_item in text_items:
