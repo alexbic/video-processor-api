@@ -1,13 +1,6 @@
-// 🎮 Gaming Templates v4.0 - НОВАЯ версия с разбором Title
-// ПРАВИЛЬНЫЙ ФОРМАТ: каждый субтитр = отдельный text_item
-// (НЕ вложенный subtitles.items, а развёрнутый массив)
-// 
-// РАЗНИЦА ОТ LEGACY:
-// - Title разбивается на отдельные атомы (если содержит несколько строк)
-// - Каждый atom становится отдельным text_item
-// - Идеально для создания многоуровневых заголовков
-//
-// Для старого поведения (Title как есть) используйте: workflow-code-v4-LEGACY.js
+// 🎮 Gaming Templates v4.0 - LEGACY VERSION
+// СТАРЫЙ ФОРМАТ: Title как есть + Subtitles как один text_item
+// (каждый элемент в массиве subtitles объединяется в один текст)
 
 // ✅ ДОСТУПНЫЕ ШРИФТЫ В ПУБЛИЧНОЙ ВЕРСИИ (10 штук):
 // 1. Charter.ttc - Modern Serif
@@ -779,7 +772,7 @@ function selectTemplate(clientMeta) {
 }
 
 // =====================================================
-// ПРАВИЛЬНАЯ ФУНКЦИЯ: раскрывает каждый субтитр в text_item
+// LEGACY ФУНКЦИЯ: Title как есть + Subtitles как единый text_item
 // =====================================================
 function createOperation(item, templateKey, tpl) {
 	const data = item.json;
@@ -790,7 +783,7 @@ function createOperation(item, templateKey, tpl) {
 	// Создаем массив text_items
 	const textItems = [];
 
-	// Item 1: Title (заголовок всегда)
+	// Item 1: Title - просто передаем как есть (БЕЗ разбора на атомы)
 	textItems.push({
 		text: shorts.title,
 		fontfile: tpl.title.fontfile,
@@ -798,35 +791,43 @@ function createOperation(item, templateKey, tpl) {
 		fontcolor: tpl.title.fontcolor,
 		x: tpl.title.x,
 		y: tpl.title.y,
-		start: 0.0,
-		end: 999,  // До конца видео
 		box: tpl.title.box,
 		boxcolor: tpl.title.boxcolor || undefined,
 		boxborderw: tpl.title.boxborderw || undefined
 	});
 
-	// Items 2+: КАЖДЫЙ СУБТИТР - отдельный text_item с одинаковыми параметрами
-	// но разными текстом и временем
+	// Item 2: SUBTITLES - объединяем все субтитры в ОДИН text_item
+	// БЕЗ разбора на отдельные элементы
 	if (shorts.subtitles && shorts.subtitles.length > 0) {
-		shorts.subtitles.forEach((subtitleObj) => {
-			// Поддерживаем оба формата: простой текст или объект с timing
-			const subtitleText = subtitleObj.text || subtitleObj;
-			const startTime = subtitleObj.start !== undefined ? subtitleObj.start : 0;
-			const endTime = subtitleObj.end !== undefined ? subtitleObj.end : (startTime + 5);
+		// Собираем все текст в один стринг, разделяя переносами
+		const allSubtitlesText = shorts.subtitles
+			.map(sub => sub.text || sub)
+			.join('\n');
 
-			textItems.push({
-				text: subtitleText,
-				fontfile: tpl.sub.fontfile,
-				fontsize: tpl.sub.fontsize,
-				fontcolor: tpl.sub.fontcolor,
-				x: tpl.sub.x,
-				y: tpl.sub.y,
-				start: startTime,
-				end: endTime,
-				box: tpl.sub.box,
-				boxcolor: tpl.sub.boxcolor || undefined,
-				boxborderw: tpl.sub.boxborderw || undefined
-			});
+		// Если есть timing информация, используем первый и последний
+		let startTime = 0;
+		let endTime = 5;
+		
+		if (Array.isArray(shorts.subtitles) && shorts.subtitles.length > 0) {
+			const firstSub = shorts.subtitles[0];
+			const lastSub = shorts.subtitles[shorts.subtitles.length - 1];
+			
+			if (firstSub.start !== undefined) startTime = firstSub.start;
+			if (lastSub.end !== undefined) endTime = lastSub.end;
+		}
+
+		textItems.push({
+			text: allSubtitlesText,
+			fontfile: tpl.sub.fontfile,
+			fontsize: tpl.sub.fontsize,
+			fontcolor: tpl.sub.fontcolor,
+			x: tpl.sub.x,
+			y: tpl.sub.y,
+			start: startTime,
+			end: endTime,
+			box: tpl.sub.box,
+			boxcolor: tpl.sub.boxcolor || undefined,
+			boxborderw: tpl.sub.boxborderw || undefined
 		});
 	}
 
