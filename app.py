@@ -12,6 +12,33 @@ import json
 import sys
 from functools import wraps
 from bootstrap import wait_for_redis, log_tcp_port
+from api_commons import (
+    # Error codes - Authentication
+    ERROR_MISSING_AUTH_TOKEN,
+    ERROR_INVALID_API_KEY,
+    # Error codes - Validation
+    ERROR_MISSING_REQUIRED_FIELD,
+    ERROR_INVALID_JSON,
+    ERROR_INVALID_WEBHOOK_URL,
+    ERROR_INVALID_WEBHOOK_HEADERS,
+    ERROR_INVALID_CLIENT_META,
+    ERROR_INVALID_OPERATION,
+    # Error codes - Tasks
+    ERROR_TASK_NOT_FOUND,
+    ERROR_FILE_NOT_FOUND,
+    ERROR_INVALID_PATH,
+    # Error codes - Processing
+    ERROR_OPERATION_FAILED,
+    ERROR_FFMPEG_ERROR,
+    ERROR_UNKNOWN,
+    ERROR_INTERNAL_SERVER,
+    # Error response functions
+    create_simple_error,
+    create_task_error,
+    create_internal_error,
+    # Utility functions
+    format_ttl_human as api_format_ttl_human
+)
 
 app = Flask(__name__)
 app.json.sort_keys = False
@@ -43,30 +70,27 @@ def require_api_key(f):
         auth_header = request.headers.get('Authorization', '')
         
         if not auth_header:
-            return jsonify({
-                'status': 'error',
-                'error': 'Missing Authorization header',
-                'message': 'Please provide API key via "Authorization: Bearer YOUR_API_KEY"'
-            }), 401
-        
+            return jsonify(create_simple_error(
+                "Missing Authorization header",
+                ERROR_MISSING_AUTH_TOKEN
+            )), 401
+
         # Проверяем формат Bearer token
         parts = auth_header.split()
         if len(parts) != 2 or parts[0].lower() != 'bearer':
-            return jsonify({
-                'status': 'error',
-                'error': 'Invalid Authorization header format',
-                'message': 'Expected format: "Authorization: Bearer YOUR_API_KEY"'
-            }), 401
-        
+            return jsonify(create_simple_error(
+                "Invalid Authorization header format (expected: 'Authorization: Bearer YOUR_API_KEY')",
+                ERROR_MISSING_AUTH_TOKEN
+            )), 401
+
         token = parts[1]
-        
+
         # Проверяем совпадение ключа
         if token != API_KEY:
-            return jsonify({
-                'status': 'error',
-                'error': 'Invalid API key',
-                'message': 'The provided API key is incorrect'
-            }), 403
+            return jsonify(create_simple_error(
+                "Invalid API key",
+                ERROR_INVALID_API_KEY
+            )), 403
         
         return f(*args, **kwargs)
     return decorated_function
@@ -254,16 +278,22 @@ def format_ttl_human(hours: int) -> str:
 TASKS_DIR = "/app/tasks"
 os.makedirs(TASKS_DIR, exist_ok=True)
 
+# ============================================
+# TASK RECOVERY CONFIGURATION
+# ============================================
+# Глобальный флаг блокировки endpoint во время startup recovery
+RECOVERY_IN_PROGRESS = True
+# Маркер-файл для предотвращения повторного запуска recovery в одном контейнере
+RECOVERY_MARKER = '/tmp/video_processor_recovery_done'
 # Recovery настройки (HARDCODED for public version)
 RECOVERY_ENABLED = True  # os.getenv('RECOVERY_ENABLED', 'true').lower() in ('true', '1', 'yes')
-RECOVERY_INTERVAL_MINUTES = 0  # int(os.getenv('RECOVERY_INTERVAL_MINUTES', '0'))  # 0 = только при старте
 MAX_TASK_RETRIES = 3  # int(os.getenv('MAX_TASK_RETRIES', '3'))
 RETRY_DELAY_SECONDS = 60  # int(os.getenv('RETRY_DELAY_SECONDS', '60'))
-RECOVERY_PUBLIC_ENABLED = False  # os.getenv('RECOVERY_PUBLIC_ENABLED', 'false').lower() in ('true', '1', 'yes')
 
 # Webhook настройки (HARDCODED for public version)
 WEBHOOK_HEADERS = None  # os.getenv('WEBHOOK_HEADERS', None)  # Глобальные webhook заголовки (опционально)
 DEFAULT_WEBHOOK_URL = None  # os.getenv('DEFAULT_WEBHOOK_URL', None)  # Дефолтный webhook URL (опционально)
+WEBHOOK_BACKGROUND_INTERVAL_SECONDS = 900.0  # 15 минут для фонового resender
 
 # Вспомогательные функции для работы с задачами
 def get_task_dir(task_id: str) -> str:
@@ -1890,16 +1920,22 @@ def download_file(file_path):
         
         # Проверка безопасности - файл должен быть внутри TASKS_DIR
         if not os.path.abspath(full_path).startswith(os.path.abspath(TASKS_DIR)):
-            return jsonify({"status": "error", "error": "Invalid file path"}), 403
-        
+            return jsonify(create_simple_error(
+                "Invalid file path",
+                ERROR_INVALID_PATH
+            )), 403
+
         if os.path.exists(full_path) and os.path.isfile(full_path):
             # conditional=True позволяет поддерживать диапазоны (Range) и эффективное кеширование
             return send_file(full_path, as_attachment=True, conditional=True)
         else:
-            return jsonify({"status": "error", "error": "File not found"}), 404
+            return jsonify(create_simple_error(
+                "File not found",
+                ERROR_FILE_NOT_FOUND
+            )), 404
     except Exception as e:
         logger.error(f"Download error: {e}")
-        return jsonify({"status": "error", "error": str(e)}), 500
+        return jsonify(create_internal_error(str(e))), 500
 
 # ============================================
 # АСИНХРОННАЯ ОБРАБОТКА
@@ -2036,6 +2072,14 @@ def process_video():
       "webhook_url": "https://..." # опционально
     }
     """
+    # Блокируем endpoint пока идет recovery
+    if RECOVERY_IN_PROGRESS:
+        return jsonify({
+            "status": "error",
+            "error": "Service is recovering interrupted tasks. Please retry in a few seconds.",
+            "error_code": "RECOVERY_IN_PROGRESS"
+        }), 503
+
     try:
         cleanup_old_files()
 
@@ -2559,6 +2603,205 @@ def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, 
     # Return the same metadata that was saved to metadata.json
     # This ensures sync response = /task_status response = metadata.json content
     return jsonify(metadata)
+
+
+# ============================================
+# TASK RECOVERY SYSTEM
+# ============================================
+
+def _recover_interrupted_tasks_once():
+    """
+    Восстановление прерванных задач при старте контейнера (один раз).
+    Блокирует /process_video endpoint до завершения recovery.
+
+    Архитектура:
+    - Запускается СИНХРОННО при старте приложения (НЕ в daemon thread)
+    - Использует глобальный флаг RECOVERY_IN_PROGRESS для блокировки endpoint
+    - Создает recovery marker файл для предотвращения повторного запуска
+    - Читает metadata.json для каждой задачи (source of truth)
+    - Перезапускает задачи со статусом != 'completed', 'error', 'failed'
+
+    Предотвращение race condition:
+    - Endpoint /process_video возвращает 503 пока RECOVERY_IN_PROGRESS=True
+    - Recovery завершается ПЕРЕД тем как Gunicorn начнет принимать запросы
+
+    Retry logic:
+    - Проверяет retry_count < MAX_TASK_RETRIES
+    - Увеличивает retry_count в metadata перед перезапуском
+    - Задачи с MAX_TASK_RETRIES попытками помечаются как 'failed'
+
+    Referential integrity:
+    - Читает metadata.json (source of truth) для каждой задачи
+    - Извлекает video_url, operations, webhook из input секции
+    - Пропускает задачи без metadata.json (считаются corrupted)
+    """
+    global RECOVERY_IN_PROGRESS
+
+    if not RECOVERY_ENABLED:
+        logger.info("⏭️ Recovery: DISABLED in configuration")
+        RECOVERY_IN_PROGRESS = False
+        return
+
+    # Проверяем marker файл (предотвращение повторного запуска в одном контейнере)
+    if os.path.exists(RECOVERY_MARKER):
+        logger.info("✅ Recovery: already completed in this container session")
+        RECOVERY_IN_PROGRESS = False
+        return
+
+    logger.info("🔄 Recovery: scanning for interrupted tasks...")
+
+    if not os.path.exists(TASKS_DIR):
+        logger.info("✅ Recovery: no tasks directory found (fresh container)")
+        RECOVERY_IN_PROGRESS = False
+        return
+
+    # Сканируем все задачи в TASKS_DIR
+    try:
+        task_ids = [d for d in os.listdir(TASKS_DIR) if os.path.isdir(os.path.join(TASKS_DIR, d))]
+    except Exception as e:
+        logger.error(f"❌ Recovery: failed to scan tasks directory: {e}")
+        RECOVERY_IN_PROGRESS = False
+        return
+
+    logger.info(f"🔍 Recovery: found {len(task_ids)} task directories")
+
+    interrupted = []
+    corrupted = []
+
+    for task_id in task_ids:
+        # Читаем metadata.json (source of truth)
+        metadata_path = os.path.join(TASKS_DIR, task_id, "metadata.json")
+
+        if not os.path.exists(metadata_path):
+            logger.warning(f"⚠️ Recovery: [{task_id[:8]}] no metadata.json - skipping (corrupted)")
+            corrupted.append(task_id)
+            continue
+
+        try:
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+        except Exception as e:
+            logger.warning(f"⚠️ Recovery: [{task_id[:8]}] failed to read metadata.json: {e} - skipping")
+            corrupted.append(task_id)
+            continue
+
+        status = metadata.get('status')
+        retry_count = metadata.get('retry_count', 0)
+
+        # Пропускаем задачи в терминальных состояниях
+        if status in ['completed', 'error', 'failed']:
+            continue
+
+        # Проверяем retry count
+        if retry_count >= MAX_TASK_RETRIES:
+            logger.warning(f"⚠️ Recovery: [{task_id[:8]}] max retries ({MAX_TASK_RETRIES}) reached - marking as failed")
+            # Обновляем metadata.json на failed
+            metadata['status'] = 'failed'
+            metadata['failed_at'] = datetime.now().isoformat()
+            metadata['error'] = f"Max retries ({MAX_TASK_RETRIES}) exceeded during recovery"
+            try:
+                save_task_metadata(task_id, metadata)
+                update_task(task_id, {'status': 'failed'})
+            except Exception as e:
+                logger.error(f"❌ Recovery: [{task_id[:8]}] failed to mark as failed: {e}")
+            continue
+
+        # Извлекаем параметры из metadata.json
+        input_data = metadata.get('input', {})
+        video_url = input_data.get('video_url')
+        operations = input_data.get('operations', [])
+
+        if not video_url or not operations:
+            logger.warning(f"⚠️ Recovery: [{task_id[:8]}] missing video_url or operations - skipping")
+            corrupted.append(task_id)
+            continue
+
+        # Извлекаем webhook данные
+        webhook_url = metadata.get('webhook', {}).get('url')
+        webhook_headers = metadata.get('webhook', {}).get('headers')
+        client_meta = metadata.get('client_meta')
+
+        interrupted.append({
+            'task_id': task_id,
+            'video_url': video_url,
+            'operations': operations,
+            'webhook': {
+                'url': webhook_url,
+                'headers': webhook_headers,
+                'client_meta': client_meta
+            } if webhook_url or webhook_headers or client_meta else None,
+            'retry_count': retry_count,
+            'previous_status': status
+        })
+
+    if not interrupted:
+        logger.info(f"✅ Recovery: no interrupted tasks found ({len(task_ids)} total, {len(corrupted)} corrupted)")
+        # Создаем marker файл
+        try:
+            with open(RECOVERY_MARKER, 'w') as f:
+                f.write(f"Recovery completed at {datetime.now().isoformat()}\n")
+        except Exception as e:
+            logger.warning(f"⚠️ Recovery: failed to create marker file: {e}")
+        RECOVERY_IN_PROGRESS = False
+        return
+
+    logger.info(f"🔄 Recovery: restarting {len(interrupted)} interrupted task(s)...")
+
+    restarted_count = 0
+    failed_count = 0
+
+    for task_info in interrupted:
+        task_id = task_info['task_id']
+        video_url = task_info['video_url']
+        operations = task_info['operations']
+        webhook = task_info['webhook']
+        retry_count = task_info['retry_count']
+        previous_status = task_info['previous_status']
+
+        try:
+            # Обновляем retry_count в metadata ПЕРЕД перезапуском
+            metadata_path = os.path.join(TASKS_DIR, task_id, "metadata.json")
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+
+            metadata['retry_count'] = retry_count + 1
+            metadata['status'] = 'pending'
+            metadata['restarted_at'] = datetime.now().isoformat()
+            metadata['previous_status'] = previous_status
+
+            save_task_metadata(task_id, metadata)
+
+            # Перезапускаем задачу в новом потоке
+            thread = threading.Thread(
+                target=process_video_pipeline_background,
+                args=(task_id, video_url, operations, webhook),
+                daemon=True,
+                name=f'recovery-{task_id[:8]}'
+            )
+            thread.start()
+
+            restarted_count += 1
+            logger.info(f"✅ Recovery: [{task_id[:8]}] restarted (attempt {retry_count + 1}/{MAX_TASK_RETRIES})")
+
+        except Exception as e:
+            failed_count += 1
+            logger.error(f"❌ Recovery: [{task_id[:8]}] failed to restart: {e}")
+
+    logger.info(f"✅ Recovery: COMPLETED. Restarted: {restarted_count}, Failed: {failed_count}, Corrupted: {len(corrupted)}")
+
+    # Создаем marker файл
+    try:
+        with open(RECOVERY_MARKER, 'w') as f:
+            f.write(f"Recovery completed at {datetime.now().isoformat()}\n")
+            f.write(f"Restarted: {restarted_count}\n")
+            f.write(f"Failed: {failed_count}\n")
+            f.write(f"Corrupted: {len(corrupted)}\n")
+    except Exception as e:
+        logger.warning(f"⚠️ Recovery: failed to create marker file: {e}")
+
+    # Разблокируем endpoint
+    RECOVERY_IN_PROGRESS = False
+    logger.info("✅ Recovery: API endpoint accepting requests now.")
 
 
 def process_video_pipeline_background(task_id: str, video_url: str, operations: list, webhook: dict = None):
@@ -3348,21 +3591,37 @@ def _webhook_resender_loop():
 
 
 
-# Запускаем resender только в первом gunicorn worker (аналогично youtube-downloader-api)
+# ============================================
+# STARTUP INITIALIZATION (Gunicorn Workers)
+# ============================================
 
-# Запускаем resender только в первом gunicorn worker (аналогично youtube-downloader-api)
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=False)
-
-# Запускаем resender только в первом gunicorn worker (аналогично youtube-downloader-api)
-marker_file = '/tmp/vpapi_resender_started'
+# Запускаем recovery СИНХРОННО при старте первого worker'а
+# ВАЖНО: Recovery блокирует RECOVERY_IN_PROGRESS флаг до завершения
+# Это предотвращает race condition когда запросы приходят до восстановления задач
+recovery_marker_file = '/tmp/vpapi_recovery_started'
 try:
-    if not os.path.exists(marker_file):
-        with open(marker_file, 'w') as f:
+    if not os.path.exists(recovery_marker_file):
+        with open(recovery_marker_file, 'w') as f:
+            f.write(str(os.getpid()))
+        logger.info(f"🔄 Starting SYNCHRONOUS recovery in process {os.getpid()}...")
+        _recover_interrupted_tasks_once()
+        logger.info(f"✅ Recovery completed in process {os.getpid()}")
+except Exception as e:
+    logger.error(f"❌ Recovery failed: {e}")
+    RECOVERY_IN_PROGRESS = False  # Разблокируем endpoint даже при ошибке
+
+# Запускаем webhook resender в фоновом потоке (только первый worker)
+resender_marker_file = '/tmp/vpapi_resender_started'
+try:
+    if not os.path.exists(resender_marker_file):
+        with open(resender_marker_file, 'w') as f:
             f.write(str(os.getpid()))
         _resender_thread = threading.Thread(target=_webhook_resender_loop, name='webhook-resender', daemon=True)
         _resender_thread.start()
-        logger.debug(f"Resender thread started in process {os.getpid()}")
+        logger.debug(f"Webhook resender thread started in process {os.getpid()}")
 except Exception as e:
     logger.warning(f"Failed to start resender thread: {e}")
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5001, debug=False)

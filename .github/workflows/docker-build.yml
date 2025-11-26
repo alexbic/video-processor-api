@@ -9,6 +9,8 @@ on:
       - 'v*.*.*'
     paths:
       - 'app.py'
+      - 'api_commons.py'
+      - 'bootstrap.py'
       - 'requirements.txt'
       - 'Dockerfile'
       - '.dockerignore'
@@ -20,6 +22,8 @@ on:
       - master
     paths:
       - 'app.py'
+      - 'api_commons.py'
+      - 'bootstrap.py'
       - 'requirements.txt'
       - 'Dockerfile'
       - '.dockerignore'
