@@ -2008,7 +2008,7 @@ def get_task_status(task_id):
 
     except Exception as e:
         logger.error(f"Status check error: {e}")
-        return jsonify({"status": "error", "error": str(e)}), 500
+        return jsonify(create_simple_error(str(e), ERROR_INTERNAL_SERVER)), 500
 
 @app.route('/tasks', methods=['GET'])
 @require_api_key
@@ -2037,7 +2037,7 @@ def list_all_tasks():
         })
     except Exception as e:
         logger.error(f"List tasks error: {e}")
-        return jsonify({"status": "error", "error": str(e)}), 500
+        return jsonify(create_simple_error(str(e), ERROR_INTERNAL_SERVER)), 500
 
 @app.route('/process_video', methods=['POST'])
 @require_api_key
@@ -2074,7 +2074,7 @@ def process_video():
 
         data = request.json
         if not data:
-            return jsonify({"status": "error", "error": "JSON data required"}), 400
+            return jsonify(create_simple_error("JSON data required", ERROR_INVALID_JSON)), 400
 
         # Базовые параметры
         video_url = data.get('video_url')
@@ -2156,13 +2156,10 @@ def process_video():
             }), 400
 
         if not video_url:
-            return jsonify({"status": "error", "error": "video_url is required"}), 400
+            return jsonify(create_simple_error("video_url is required", ERROR_MISSING_REQUIRED_FIELD)), 400
 
         if not operations:
-            return jsonify({
-                "status": "error",
-                "error": "operations list is required"
-            }), 400
+            return jsonify(create_simple_error("operations list is required", ERROR_MISSING_REQUIRED_FIELD)), 400
 
         # Валидация операций
         for op in operations:
@@ -2298,7 +2295,7 @@ def process_video():
 
     except Exception as e:
         logger.error(f"Process video error: {e}")
-        return jsonify({"status": "error", "error": str(e)}), 500
+        return jsonify(create_simple_error(str(e), ERROR_INTERNAL_SERVER)), 500
 
 
 def process_video_pipeline_sync(task_id: str, video_url: str, operations: list, webhook: dict = None, client_meta: dict | None = None) -> dict:
