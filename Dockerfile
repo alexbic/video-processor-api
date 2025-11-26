@@ -52,6 +52,7 @@ RUN echo '[supervisord]' > /etc/supervisor/conf.d/supervisord.conf && \
 
 # ===== СЛОЙ 6: Приложение (часто меняется - ПОСЛЕДНИЙ!) =====
 COPY app.py .
+COPY api_commons.py .
 COPY bootstrap.py .
 COPY gunicorn_config.py .
 
