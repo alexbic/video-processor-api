@@ -3403,7 +3403,7 @@ try:
     if not os.path.exists(recovery_marker_file):
         with open(recovery_marker_file, 'w') as f:
             f.write(str(os.getpid()))
-        logger.info(f"🔄 Starting SYNCHRONOUS recovery in process {os.getpid()}...")
+        logger.info(f"🔄 Starting task recovery in process {os.getpid()}...")
         _recover_interrupted_tasks_once()
         logger.info(f"✅ Recovery completed in process {os.getpid()}")
 except Exception as e:
