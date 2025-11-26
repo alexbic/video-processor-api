@@ -31,6 +31,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "HelveticaNeue.ttc",
 			fontsize: 85,
 			fontcolor: "#00FFFF", // Яркий циан
+			bordercolor: "#0080FF",
+			borderw: 0,
 			x: "(w-text_w)/2",
 			y: 200,
 			box: 1,
@@ -41,6 +43,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "PTSans.ttc",
 			fontsize: 75,
 			fontcolor: "#FF00FF", // Яркая фуксия
+			bordercolor: "#800080",
+			borderw: 12,
 			x: "(w-text_w)/2",
 			y: "h-330",
 			box: 0
@@ -55,6 +59,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "HelveticaNeue.ttc",
 			fontsize: 87,
 			fontcolor: "#FF3300", // Огненно-красный
+			bordercolor: "#FF6347",
+			borderw: 8,
 			x: "(w-text_w)/2",
 			y: 195,
 			box: 1,
@@ -65,6 +71,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "LucidaGrande.ttc",
 			fontsize: 77,
 			fontcolor: "#00DDFF", // Ледяной циан
+			bordercolor: "#005F73",
+			borderw: 14,
 			x: "(w-text_w)/2",
 			y: "h-330",
 			box: 0
@@ -79,6 +87,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "Palatino.ttc",
 			fontsize: 83,
 			fontcolor: "#FFD700", // Золотой
+			bordercolor: "#B8860B",
+			borderw: 6,
 			x: "(w-text_w)/2",
 			y: 205,
 			box: 1,
@@ -89,6 +99,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "PTSans.ttc",
 			fontsize: 74,
 			fontcolor: "#BB88FF", // Светло-фиолетовый
+			bordercolor: "#4B0082",
+			borderw: 11,
 			x: "(w-text_w)/2",
 			y: "h-330",
 			box: 0
@@ -103,6 +115,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "HelveticaNeue.ttc",
 			fontsize: 86,
 			fontcolor: "#39FF14", // Неоново-зеленый
+			bordercolor: "#00FF00",
+			borderw: 7,
 			x: "(w-text_w)/2",
 			y: 198,
 			box: 1,
@@ -113,6 +127,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "LucidaGrande.ttc",
 			fontsize: 76,
 			fontcolor: "#FF0033", // Ярко-красный
+			bordercolor: "#8B0000",
+			borderw: 13,
 			x: "(w-text_w)/2",
 			y: "h-330",
 			box: 0
@@ -127,6 +143,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "HelveticaNeue.ttc",
 			fontsize: 86,
 			fontcolor: "#FFFF00", // Электрический желтый
+			bordercolor: "#FFD700",
+			borderw: 5,
 			x: "(w-text_w)/2",
 			y: 197,
 			box: 1,
@@ -137,6 +155,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "PTSans.ttc",
 			fontsize: 76,
 			fontcolor: "#0088FF", // Ярко-синий
+			bordercolor: "#00008B",
+			borderw: 12,
 			x: "(w-text_w)/2",
 			y: "h-330",
 			box: 0
@@ -151,6 +171,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "Palatino.ttc",
 			fontsize: 84,
 			fontcolor: "#CC0000", // Кроваво-красный
+			bordercolor: "#DC143C",
+			borderw: 8,
 			x: "(w-text_w)/2",
 			y: 202,
 			box: 1,
@@ -161,6 +183,8 @@ const GAMING_TEMPLATES = {
 			fontfile: "LucidaGrande.ttc",
 			fontsize: 74,
 			fontcolor: "#DDDDDD", // Светло-серый
+			bordercolor: "#696969",
+			borderw: 10,
 			x: "(w-text_w)/2",
 			y: "h-330",
 			box: 0
