@@ -584,18 +584,8 @@ def _log_startup_once():
 
         log_startup_info()
 
-        # Запускаем recovery при старте (в фоновом потоке с задержкой)
-        def delayed_recovery():
-            import time
-            time.sleep(5)  # Даем серверу запуститься
-            recover_stuck_tasks()
-
-            # Если настроена периодичность - запускаем планировщик
-            if RECOVERY_INTERVAL_MINUTES > 0:
-                schedule_recovery()
-
-        recovery_thread = threading.Thread(target=delayed_recovery, daemon=True)
-        recovery_thread.start()
+        # Recovery теперь запускается СИНХРОННО при старте контейнера (см. конец файла)
+        # Старый delayed_recovery удален - используем _recover_interrupted_tasks_once()
 
     except FileExistsError:
         # Уже логировали в этом контейнере — пропускаем
@@ -1838,10 +1828,9 @@ def health_check():
             },
             "recovery": {
                 "enabled": RECOVERY_ENABLED,
-                "interval_minutes": RECOVERY_INTERVAL_MINUTES,
                 "max_retries": MAX_TASK_RETRIES,
                 "retry_delay_seconds": RETRY_DELAY_SECONDS,
-                "public_recovery_enabled": RECOVERY_PUBLIC_ENABLED
+                "mode": "synchronous_startup"
             },
             "webhook": {
                 "background_interval_seconds": WEBHOOK_BACKGROUND_INTERVAL_SECONDS,
@@ -3148,205 +3137,16 @@ def process_video_pipeline_background(task_id: str, video_url: str, operations: 
             send_webhook(webhook_url, error_payload, webhook_headers, task_id)
 
 
-def recover_stuck_tasks():
-    """Сканирует задачи и перезапускает зависшие (recovery механизм)"""
-    if not RECOVERY_ENABLED:
-        logger.info("Recovery disabled (RECOVERY_ENABLED=false)")
-        return
-    
-    sys.stdout.write("=" * 60 + "\n")
-    logger.info("Starting task recovery scan...")
-    current_time = datetime.now()
-    recovered = 0
-    failed = 0
-    expired = 0
-    scanned = 0
-    skipped_status = 0
-    skipped_with_output = 0
-    skipped_webhook_failed = 0
-    empty_dirs_removed = 0
-    
-    try:
-        for task_id in os.listdir(TASKS_DIR):
-            scanned += 1
-            task_dir = get_task_dir(task_id)
-            metadata_path = os.path.join(task_dir, "metadata.json")
-
-            if not os.path.exists(metadata_path):
-                # Пустая директория без метаданных - удаляем
-                try:
-                    if os.path.isdir(task_dir):
-                        import shutil
-                        shutil.rmtree(task_dir, ignore_errors=True)
-                        logger.info(f"Removed empty task directory: {task_id}")
-                        empty_dirs_removed += 1
-                except Exception as e:
-                    logger.warning(f"Failed to remove empty dir {task_id}: {e}")
-                continue
-
-            try:
-                metadata = load_task_metadata(task_id)
-                if not metadata:
-                    continue
-
-                status = metadata.get('status')
-
-                # Если задача завершена, но вебхук не доставлен — считаем отдельно
-                if status == 'completed':
-                    webhook = metadata.get('webhook')
-                    # webhook может быть dict или None
-                    if webhook and webhook.get('status') != 'delivered':
-                        skipped_webhook_failed += 1
-                        logger.debug(f"Task {task_id}: Completed but webhook not delivered (webhook_status={webhook.get('status')})")
-                    skipped_status += 1
-                    logger.debug(f"Task {task_id}: Skip (status={status})")
-                    continue
-
-                # Диагностика: считаем пропущенные по статусу
-                # В recovery теперь включаем 'pending' (задачи могли упасть до смены статуса)
-                if status not in ('processing', 'queued', 'pending'):
-                    skipped_status += 1
-                    logger.debug(f"Task {task_id}: Skip (status={status})")
-                    continue
-                
-                # Проверяем истек ли TTL
-                expires_at_str = metadata.get('expires_at')
-                if not expires_at_str:
-                    # Старая задача без expires_at - добавляем на основе created_at
-                    created_at = datetime.fromisoformat(metadata.get('created_at', current_time.isoformat()))
-                    expires_at = created_at + timedelta(hours=TASK_TTL_HOURS)
-                else:
-                    expires_at = datetime.fromisoformat(expires_at_str)
-                
-                # Если задача истекла → failed
-                if current_time > expires_at:
-                    metadata['status'] = 'failed'
-                    metadata['error'] = f'Task expired (TTL {TASK_TTL_HOURS}h exceeded)'
-                    metadata['failed_at'] = current_time.isoformat()
-                    save_task_metadata(task_id, metadata)
-                    update_task(task_id, {
-                        'status': 'failed',
-                        'error': metadata['error'],
-                        'failed_at': metadata['failed_at']
-                    })
-                    logger.warning(f"Task {task_id}: Expired (TTL exceeded)")
-                    expired += 1
-                    continue
-                
-                # Проверяем есть ли уже output файлы (префиксы: short_, video_, audio_)
-                files = os.listdir(task_dir)
-                has_output = any(f.startswith(('short_', 'video_', 'audio_')) for f in files)
-                
-                if has_output:
-                    # Результат есть, но статус не обновлен
-                    skipped_with_output += 1
-                    logger.info(f"Task {task_id}: Has output but status={status}, skipping recovery")
-                    continue
-                
-                # Проверяем количество попыток
-                retry_count = metadata.get('retry_count', 0)
-                
-                if retry_count >= MAX_TASK_RETRIES:
-                    # Слишком много попыток
-                    metadata['status'] = 'failed'
-                    metadata['error'] = f'Max retries exceeded ({retry_count}/{MAX_TASK_RETRIES})'
-                    metadata['failed_at'] = current_time.isoformat()
-                    save_task_metadata(task_id, metadata)
-                    update_task(task_id, {
-                        'status': 'failed',
-                        'error': metadata['error'],
-                        'failed_at': metadata['failed_at']
-                    })
-                    logger.warning(f"Task {task_id}: Max retries exceeded ({retry_count})")
-                    failed += 1
-                    continue
-                
-                # Удаляем временные файлы перед retry
-                temp_deleted_count = 0
-                for filename in files:
-                    if filename.startswith('temp_'):
-                        try:
-                            os.remove(os.path.join(task_dir, filename))
-                            temp_deleted_count += 1
-                        except Exception as e:
-                            logger.warning(f"Task {task_id}: Failed to delete {filename}: {e}")
-                
-                if temp_deleted_count > 0:
-                    logger.debug(f"Task {task_id}: Deleted {temp_deleted_count} temp file(s)")
-                
-                # Проверяем есть ли входной файл и валиден ли он
-                has_valid_input = False
-                input_file = None
-                for filename in files:
-                    if filename.startswith('input_'):
-                        input_path = os.path.join(task_dir, filename)
-                        if os.path.exists(input_path) and os.path.getsize(input_path) > 1024:  # > 1KB
-                            has_valid_input = True
-                            input_file = input_path
-                            logger.debug(f"Task {task_id}: Found valid input file: {filename}")
-                            break
-                
-                # Перезапускаем задачу
-                logger.info(f"Task {task_id}: Recovering (retry {retry_count + 1}/{MAX_TASK_RETRIES})")
-                metadata['retry_count'] = retry_count + 1
-                metadata['last_retry_at'] = current_time.isoformat()
-                metadata['status'] = 'processing'
-                save_task_metadata(task_id, metadata)
-                
-                # Обновляем статус в хранилище
-                update_task(task_id, {
-                    'status': 'processing',
-                    'retry_count': retry_count + 1,
-                    'last_retry_at': metadata['last_retry_at']
-                })
-                
-                # Запускаем обработку в фоне
-                # Если входной файл есть и валиден - не перезагружаем
-                # Иначе process_video_pipeline_background сам загрузит
-                video_url = metadata.get('input', {}).get('video_url')
-                operations = metadata.get('input', {}).get('operations', [])
-                webhook = metadata.get('webhook')
-
-                if not has_valid_input:
-                    logger.info(f"Task {task_id}: No valid input file, will re-download")
-
-                thread = threading.Thread(
-                    target=process_video_pipeline_background,
-                    args=(task_id, video_url, operations, webhook),
-                    daemon=True
-                )
-                thread.start()
-                
-                recovered += 1
-                
-                # Добавляем задержку между попытками
-                if RETRY_DELAY_SECONDS > 0:
-                    import time
-                    time.sleep(RETRY_DELAY_SECONDS)
-                
-            except Exception as e:
-                logger.error(f"Task {task_id}: Recovery error - {e}")
-                failed += 1
-                
-    except Exception as e:
-        logger.error(f"Recovery scan error: {e}")
-    
-    logger.info(
-        "Recovery scan complete: "
-        f"scanned={scanned}, recovered={recovered}, expired={expired}, failed={failed}, "
-        f"skipped_status={skipped_status}, skipped_with_output={skipped_with_output}, "
-        f"skipped_webhook_failed={skipped_webhook_failed}, empty_dirs_removed={empty_dirs_removed}"
-    )
-    sys.stdout.write("=" * 60 + "\n")
-
-def schedule_recovery():
-    """Запускает recovery периодически если RECOVERY_INTERVAL_MINUTES > 0"""
-    if RECOVERY_INTERVAL_MINUTES > 0:
-        import time
-        logger.info(f"Recovery scheduler started (interval: {RECOVERY_INTERVAL_MINUTES} min)")
-        while True:
-            time.sleep(RECOVERY_INTERVAL_MINUTES * 60)
-            recover_stuck_tasks()
+# ============================================
+# OLD RECOVERY FUNCTIONS (DEPRECATED - DO NOT USE)
+# ============================================
+# Эти функции заменены на _recover_interrupted_tasks_once() (см. выше)
+# Оставлены для справки, но больше не вызываются
+#
+# Миграция v1.1.0 → v1.2.0:
+# - recover_stuck_tasks() → _recover_interrupted_tasks_once()
+# - schedule_recovery() → удалена (теперь синхронный recovery при старте)
+# - RECOVERY_INTERVAL_MINUTES → удалена (периодический recovery больше не используется)
 
 
 # ============================================
