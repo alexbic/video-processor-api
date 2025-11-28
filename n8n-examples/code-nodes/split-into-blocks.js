@@ -7,11 +7,13 @@
 // с перекрытиями для последовательной обработки AI агентом
 //
 // ОСОБЕННОСТИ:
-// ✅ Настраиваемое количество блоков (max_blocks)
-// ✅ Автоматический расчет оптимального количества блоков
+// ✅ Автоматический расчёт оптимального количества блоков (БЕЗ ограничений!)
+// ✅ Адаптируется к любой длине видео (30 мин, 1 час, 5 часов и более)
+// ✅ Настраиваемые параметры через client_meta
 // ✅ Интеллектуальная логика разбивки
-// ✅ Перекрытия для сохранения контекста
+// ✅ Перекрытия для сохранения контекста (3 минуты по умолчанию)
 // ✅ Правильная схема: первый блок с 0, последний без overlap после
+// ✅ Для коротких видео (<30 мин) возвращает оригинальный item БЕЗ block_id
 //
 // ВХОД:
 // $input.item.json содержит:
@@ -53,17 +55,15 @@ const item = $input.item.json;
 // ═══════════════════════════════════════════════════════════════════════════
 
 const BLOCK_CONFIG = {
-	// Максимальное количество блоков (можно настроить!)
-	max_blocks: item.client_meta?.max_blocks || 3,
-
 	// Минимальная длительность одного блока в секундах (20 минут)
-	min_block_duration: 1200,
+	// Скрипт сам вычислит оптимальное количество блоков
+	min_block_duration: item.client_meta?.min_block_duration || 1200,
 
-	// Перекрытие в секундах (90 сек = 1.5 минуты)
-	overlap_seconds: item.client_meta?.overlap_seconds || 90,
+	// Перекрытие в секундах (180 сек = 3 минуты)
+	overlap_seconds: item.client_meta?.overlap_seconds || 180,
 
 	// Минимальная длительность видео для разбивки (30 минут)
-	min_video_for_split: 1800
+	min_video_for_split: item.client_meta?.min_video_for_split || 1800
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -82,11 +82,9 @@ function determineBlockStrategy(videoDuration, config) {
 	}
 
 	// Вычисляем оптимальное количество блоков
-	// Формула: ceil(duration / (min_block_duration + overlap))
-	let numBlocks = Math.ceil(videoDuration / (config.min_block_duration + config.overlap_seconds));
-
-	// Ограничиваем максимумом
-	numBlocks = Math.min(numBlocks, config.max_blocks);
+	// Формула: ceil(duration / min_block_duration)
+	// Overlap не учитывается в расчёте количества, только в границах блоков
+	const numBlocks = Math.ceil(videoDuration / config.min_block_duration);
 
 	// Если получился 1 блок - убираем overlap
 	if (numBlocks === 1) {
