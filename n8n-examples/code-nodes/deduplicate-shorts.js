@@ -1,0 +1,232 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔧 N8N CODE NODE: Deduplicate Shorts After Block Processing
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// НАЗНАЧЕНИЕ:
+// Объединяет результаты обработки нескольких блоков и удаляет дубликаты
+//
+// ПРОБЛЕМА:
+// При обработке блоков с перекрытиями (overlap zones) возможны дубликаты:
+// - Block 1 создаёт shorts в зоне 1800-1890 (overlap AFTER)
+// - Block 2 создаёт тот же shorts в зоне 1710-1800 (overlap BEFORE)
+// Результат: один и тот же момент появляется дважды!
+//
+// РЕШЕНИЕ:
+// Алгоритм дедупликации по временному перекрытию:
+// 1. Сортируем все shorts по start_time
+// 2. Сравниваем каждый shorts с последующими
+// 3. Если перекрытие > 50% → считаем дубликатом
+// 4. Оставляем shorts с ЛУЧШИМ virality_score
+//
+// ВХОД:
+// Массив items, где каждый item содержит:
+// $input.item.json.shorts = [
+//   {
+//     title: "...",
+//     subtitle: "...",
+//     start_time: 1850.5,
+//     end_time: 1908.2,
+//     duration: 58,
+//     virality_score: 8.5,
+//     reasoning: "..."
+//   },
+//   ...
+// ]
+//
+// ВЫХОД:
+// Один item с объединённым и дедуплицированным массивом shorts:
+// {
+//   shorts: [...],
+//   stats: {
+//     total_before: 12,
+//     total_after: 10,
+//     duplicates_removed: 2
+//   }
+// }
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ШАГ 1: Собираем все shorts из всех блоков
+// ═══════════════════════════════════════════════════════════════════════════
+
+const allShorts = [];
+
+for (const item of $input.all()) {
+	const shorts = item.json.shorts || [];
+
+	// Добавляем block_id для отладки (если есть)
+	shorts.forEach(short => {
+		if (item.json.block_id) {
+			short.block_id = item.json.block_id;
+		}
+		allShorts.push(short);
+	});
+}
+
+console.log(`📊 Собрано shorts из блоков: ${allShorts.length}`);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ШАГ 2: Сортируем по start_time для эффективного сравнения
+// ═══════════════════════════════════════════════════════════════════════════
+
+allShorts.sort((a, b) => a.start_time - b.start_time);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ФУНКЦИЯ: Вычисление перекрытия двух временных интервалов
+// ═══════════════════════════════════════════════════════════════════════════
+
+function calculateOverlap(short1, short2) {
+	const start1 = short1.start_time;
+	const end1 = short1.end_time;
+	const start2 = short2.start_time;
+	const end2 = short2.end_time;
+
+	// Находим границы перекрытия
+	const overlapStart = Math.max(start1, start2);
+	const overlapEnd = Math.min(end1, end2);
+
+	// Если нет перекрытия
+	if (overlapStart >= overlapEnd) {
+		return 0;
+	}
+
+	// Длительность перекрытия
+	const overlapDuration = overlapEnd - overlapStart;
+
+	// Длительности shorts
+	const duration1 = end1 - start1;
+	const duration2 = end2 - start2;
+
+	// Процент перекрытия относительно МЕНЬШЕГО shorts
+	const minDuration = Math.min(duration1, duration2);
+	const overlapPercent = (overlapDuration / minDuration) * 100;
+
+	return overlapPercent;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ШАГ 3: Дедупликация с сохранением лучших вариантов
+// ═══════════════════════════════════════════════════════════════════════════
+
+const OVERLAP_THRESHOLD = 50; // Если перекрытие > 50% → дубликат
+const deduplicated = [];
+const duplicatesFound = [];
+
+for (let i = 0; i < allShorts.length; i++) {
+	const current = allShorts[i];
+
+	// Пропускаем, если уже помечен как дубликат
+	if (current._isDuplicate) {
+		continue;
+	}
+
+	let bestShort = current;
+	const duplicatesOfCurrent = [];
+
+	// Сравниваем с последующими shorts
+	for (let j = i + 1; j < allShorts.length; j++) {
+		const candidate = allShorts[j];
+
+		// Если кандидат уже помечен как дубликат - пропускаем
+		if (candidate._isDuplicate) {
+			continue;
+		}
+
+		// Оптимизация: если start_time кандидата далеко - дальше проверять нет смысла
+		if (candidate.start_time > current.end_time) {
+			break;
+		}
+
+		// Вычисляем перекрытие
+		const overlap = calculateOverlap(current, candidate);
+
+		// Если перекрытие > порога → это дубликат!
+		if (overlap > OVERLAP_THRESHOLD) {
+			console.log(`🔍 Найден дубликат:`);
+			console.log(`   - Short 1: ${current.start_time.toFixed(1)}s (block ${current.block_id || '?'}) - score: ${current.virality_score}`);
+			console.log(`   - Short 2: ${candidate.start_time.toFixed(1)}s (block ${candidate.block_id || '?'}) - score: ${candidate.virality_score}`);
+			console.log(`   - Перекрытие: ${overlap.toFixed(1)}%`);
+
+			duplicatesOfCurrent.push(candidate);
+			candidate._isDuplicate = true;
+
+			// Если у кандидата лучший score - обновляем лучший вариант
+			if (candidate.virality_score > bestShort.virality_score) {
+				console.log(`   ✅ Кандидат лучше (score ${candidate.virality_score} > ${bestShort.virality_score})`);
+				bestShort._isDuplicate = true;
+				bestShort = candidate;
+				candidate._isDuplicate = false;
+			} else {
+				console.log(`   ⏭️ Текущий лучше (score ${bestShort.virality_score} >= ${candidate.virality_score})`);
+			}
+		}
+	}
+
+	// Добавляем лучший вариант в результат
+	if (!bestShort._isDuplicate) {
+		// Убираем технические поля
+		delete bestShort._isDuplicate;
+		delete bestShort.block_id;
+
+		deduplicated.push(bestShort);
+
+		if (duplicatesOfCurrent.length > 0) {
+			duplicatesFound.push({
+				kept: bestShort,
+				removed: duplicatesOfCurrent.map(d => ({
+					start_time: d.start_time,
+					end_time: d.end_time,
+					virality_score: d.virality_score,
+					block_id: d.block_id
+				}))
+			});
+		}
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ШАГ 4: Финальная сортировка по virality_score (лучшие сверху)
+// ═══════════════════════════════════════════════════════════════════════════
+
+deduplicated.sort((a, b) => b.virality_score - a.virality_score);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// СТАТИСТИКА
+// ═══════════════════════════════════════════════════════════════════════════
+
+const stats = {
+	total_before: allShorts.length,
+	total_after: deduplicated.length,
+	duplicates_removed: allShorts.length - deduplicated.length,
+	overlap_threshold: OVERLAP_THRESHOLD
+};
+
+console.log(`\n📊 Статистика дедупликации:`);
+console.log(`   - До дедупликации: ${stats.total_before} shorts`);
+console.log(`   - После дедупликации: ${stats.total_after} shorts`);
+console.log(`   - Удалено дубликатов: ${stats.duplicates_removed}`);
+console.log(`   - Порог перекрытия: ${OVERLAP_THRESHOLD}%`);
+
+if (duplicatesFound.length > 0) {
+	console.log(`\n🔍 Найдено групп дубликатов: ${duplicatesFound.length}`);
+	duplicatesFound.forEach((group, idx) => {
+		console.log(`   Группа ${idx + 1}:`);
+		console.log(`     ✅ Сохранён: ${group.kept.start_time.toFixed(1)}s (score: ${group.kept.virality_score})`);
+		group.removed.forEach(dup => {
+			console.log(`     ❌ Удалён: ${dup.start_time.toFixed(1)}s (score: ${dup.virality_score}, block: ${dup.block_id || '?'})`);
+		});
+	});
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ВОЗВРАТ РЕЗУЛЬТАТА
+// ═══════════════════════════════════════════════════════════════════════════
+
+return [{
+	json: {
+		shorts: deduplicated,
+		stats: stats,
+		duplicates_details: duplicatesFound
+	}
+}];
