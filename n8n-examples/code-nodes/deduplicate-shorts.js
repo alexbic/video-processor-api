@@ -74,13 +74,30 @@
 const sourceVideoUrl = $json.source_video_url;
 const blockMap = new Map(); // block_id → { metadata, shorts }
 
-for (const item of $input.all()) {
+// DEBUG: Логируем количество входных items
+const inputItems = $input.all();
+const debugInfo = {
+	input_items_count: inputItems.length,
+	blocks_details: []
+};
+
+for (const item of inputItems) {
 	const blockMetadata = item.json.block_metadata || { block_id: 1 };
 	const blockId = blockMetadata.block_id || 1;
 	const shorts = item.json.shorts || [];
 	const blockStart = blockMetadata.block_start || 0;
 	const mainZoneStart = blockMetadata.main_zone_start || blockStart;
 	const mainZoneEnd = blockMetadata.main_zone_end || blockMetadata.block_end;
+
+	// DEBUG: Логируем детали блока
+	debugInfo.blocks_details.push({
+		block_id: blockId,
+		block_start: blockStart,
+		main_zone_start: mainZoneStart,
+		main_zone_end: mainZoneEnd,
+		shorts_received: shorts.length,
+		shorts_before_filter: shorts.map(s => ({ start: s.start, end: s.end }))
+	});
 
 	// Пересчитываем shorts на абсолютные координаты И фильтруем по main_zone
 	const processedShorts = shorts
@@ -98,8 +115,18 @@ for (const item of $input.all()) {
 				end: absoluteEnd
 			};
 		})
-		// Фильтруем: берём shorts, которые НАЧИНАЮТСЯ в main_zone
-		.filter(short => short.start >= mainZoneStart && short.start < mainZoneEnd);
+		// Фильтруем: берём shorts которые НАЧИНАЮТСЯ в main_zone
+		// ВАЖНО: Если main_zone не определена или = blockStart, берём все shorts
+		.filter(short => {
+			if (mainZoneStart === blockStart && mainZoneEnd === blockMetadata.block_end) {
+				// Нет явной main_zone → берём все
+				return true;
+			}
+			return short.start >= mainZoneStart && short.start < mainZoneEnd;
+		});
+
+	// DEBUG: Добавляем информацию о фильтрации
+	debugInfo.blocks_details[debugInfo.blocks_details.length - 1].shorts_after_filter = processedShorts.length;
 
 	blockMap.set(blockId, {
 		metadata: blockMetadata,
@@ -238,6 +265,7 @@ return [{
 	json: {
 		source_video_url: sourceVideoUrl,
 		shorts: deduplicated,
-		stats: stats
+		stats: stats,
+		debug: debugInfo  // Добавляем debug информацию для диагностики
 	}
 }];
