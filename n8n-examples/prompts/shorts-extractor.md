@@ -329,16 +329,13 @@ HARD EXCLUSIONS:
   * Example: if input has `"block_id": 2`, your output MUST have `"block_id": 2`
 
 🔗 INPUT BLOCK METADATA (IF BLOCK MODE):
-```json
-{
-  "block_id": 2,                    // number: 1, 2, 3, ... (which block this is)
-  "total_blocks": 3,                // number: total blocks in video
-  "block_start": 1710,              // number: block start in seconds (with overlap before)
-  "block_end": 3690,                // number: block end in seconds (with overlap after)
-  "main_zone_start": 1800,          // number: main zone start (no overlap before)
-  "main_zone_end": 3600             // number: main zone end (no overlap after)
-}
-```
+SOURCE_VIDEO_URL: {{ $json.source_video_url || "not provided" }}
+BLOCK_ID: {{ $json.block_id || "not provided" }}
+TOTAL_BLOCKS: {{ $json.total_blocks || "not provided" }}
+BLOCK_START: {{ $json.block_start || "not provided" }}
+BLOCK_END: {{ $json.block_end || "not provided" }}
+MAIN_ZONE_START: {{ $json.main_zone_start || "not provided" }}
+MAIN_ZONE_END: {{ $json.main_zone_end || "not provided" }}
 
 ⚠️ OUTPUT FORMAT - CRITICAL:
 - Return PURE JSON ONLY (start with { and end with })
