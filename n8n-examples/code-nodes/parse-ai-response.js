@@ -23,57 +23,43 @@ let cleanJson = null;
 // СТРАТЕГИЯ 1: Попытка парсинга чистого JSON (новый формат, приоритет)
 // ══════════════════════════════════════════════════════════════════════════
 try {
-    cleanJson = JSON.parse(rawOutput);
-    console.log("✅ Успешно распарсен чистый JSON (без markdown)");
+	cleanJson = JSON.parse(rawOutput);
 } catch (directParseError) {
-    console.log("⚠️ Чистый JSON не распарсился, пробуем markdown формат...");
 
-    // ══════════════════════════════════════════════════════════════════════
-    // СТРАТЕГИЯ 2: Извлечение из markdown блока ```json...```
-    // (для обратной совместимости со старыми промтами)
-    // ══════════════════════════════════════════════════════════════════════
-    const markdownMatch = rawOutput.match(/```json\s*([\s\S]*?)\s*```/);
+	// ══════════════════════════════════════════════════════════════════════
+	// СТРАТЕГИЯ 2: Извлечение из markdown блока ```json...```
+	// (для обратной совместимости со старыми промтами)
+	// ══════════════════════════════════════════════════════════════════════
+	const markdownMatch = rawOutput.match(/```json\s*([\s\S]*?)\s*```/);
 
-    if (markdownMatch && markdownMatch[1]) {
-        try {
-            cleanJson = JSON.parse(markdownMatch[1]);
-            console.log("✅ Успешно извлечен JSON из markdown блока");
-        } catch (markdownParseError) {
-            console.error("❌ Ошибка парсинга JSON из markdown:", markdownParseError);
-            cleanJson = {
-                error: 'Failed to parse JSON content from markdown block',
-                raw_output: rawOutput,
-                parse_error: markdownParseError.message
-            };
-        }
-    } else {
-        // ══════════════════════════════════════════════════════════════════
-        // СТРАТЕГИЯ 3: Если ни один формат не подошёл - возвращаем ошибку
-        // ══════════════════════════════════════════════════════════════════
-        console.error("❌ Не найден ни чистый JSON, ни markdown блок");
-        console.error("Первые 200 символов ответа:", rawOutput.substring(0, 200));
-
-        cleanJson = {
-            error: 'Invalid AI response format',
-            details: 'Response is neither valid JSON nor markdown JSON block',
-            raw_output: rawOutput,
-            direct_parse_error: directParseError.message
-        };
-    }
+	if (markdownMatch && markdownMatch[1]) {
+		try {
+			cleanJson = JSON.parse(markdownMatch[1]);
+		} catch (markdownParseError) {
+			cleanJson = {
+				error: 'Failed to parse JSON content from markdown block',
+				raw_output: rawOutput,
+				parse_error: markdownParseError.message
+			};
+		}
+	} else {
+		// ══════════════════════════════════════════════════════════════════
+		// СТРАТЕГИЯ 3: Если ни один формат не подошёл - возвращаем ошибку
+		// ══════════════════════════════════════════════════════════════════
+		cleanJson = {
+			error: 'Invalid AI response format',
+			details: 'Response is neither valid JSON nor markdown JSON block',
+			raw_output: rawOutput,
+			direct_parse_error: directParseError.message
+		};
+	}
 }
 
 // ══════════════════════════════════════════════════════════════════════════
 // ВАЛИДАЦИЯ РЕЗУЛЬТАТА
 // ══════════════════════════════════════════════════════════════════════════
 if (cleanJson && !cleanJson.error) {
-    // Проверяем базовую структуру ответа
-    if (Array.isArray(cleanJson)) {
-        console.log(`✅ Распарсен массив с ${cleanJson.length} элементами`);
-    } else if (cleanJson.shorts && Array.isArray(cleanJson.shorts)) {
-        console.log(`✅ Распарсен объект с ${cleanJson.shorts.length} shorts`);
-    } else {
-        console.warn("⚠️ Нестандартная структура JSON (нет массива shorts)");
-    }
+	// Проверяем базовую структуру ответа (валидация происходит в потоке данных)
 }
 
 // ══════════════════════════════════════════════════════════════════════════

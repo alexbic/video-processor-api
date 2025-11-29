@@ -77,7 +77,7 @@ function determineBlockStrategy(videoDuration, config) {
 			numBlocks: 1,
 			overlap: 0,
 			blockSize: videoDuration,
-			reason: `Видео ${Math.round(videoDuration/60)} мин - обработка целиком (короче ${Math.round(config.min_video_for_split/60)} мин)`
+			reason: `Видео ${Math.round(videoDuration / 60)} мин - обработка целиком (короче ${Math.round(config.min_video_for_split / 60)} мин)`
 		};
 	}
 
@@ -92,7 +92,7 @@ function determineBlockStrategy(videoDuration, config) {
 			numBlocks: 1,
 			overlap: 0,
 			blockSize: videoDuration,
-			reason: `Видео ${Math.round(videoDuration/60)} мин - умещается в 1 блок`
+			reason: `Видео ${Math.round(videoDuration / 60)} мин - умещается в 1 блок`
 		};
 	}
 
@@ -102,7 +102,7 @@ function determineBlockStrategy(videoDuration, config) {
 		numBlocks: numBlocks,
 		overlap: config.overlap_seconds,
 		blockSize: blockSize,
-		reason: `Видео ${Math.round(videoDuration/60)} мин → ${numBlocks} блоков по ~${Math.round(blockSize/60)} мин`
+		reason: `Видео ${Math.round(videoDuration / 60)} мин → ${numBlocks} блоков по ~${Math.round(blockSize / 60)} мин`
 	};
 }
 
@@ -136,16 +136,9 @@ const fullText = item.text_llm || '';
 // Определяем стратегию
 const strategy = determineBlockStrategy(videoDuration, BLOCK_CONFIG);
 
-console.log(`📊 Стратегия разбивки: ${strategy.reason}`);
-console.log(`   - Количество блоков: ${strategy.numBlocks}`);
-console.log(`   - Перекрытие: ${strategy.overlap} сек`);
-console.log(`   - Размер блока: ~${Math.round(strategy.blockSize/60)} мин`);
-
 // ⚠️ ВАЖНО: Если только 1 блок - возвращаем ОРИГИНАЛЬНЫЙ ITEM БЕЗ block_id
 // Это позволит AI агенту понять, что видео обрабатывается целиком, а не по блокам
 if (strategy.numBlocks === 1) {
-	console.log(`✅ Видео обрабатывается целиком (БЕЗ блочной структуры)`);
-
 	// Возвращаем оригинальный item без полей блоков
 	return [item];
 }
@@ -194,17 +187,10 @@ for (let i = 0; i < strategy.numBlocks; i++) {
 		client_meta: item.client_meta || {}
 	});
 
-	console.log(`   Block ${i+1}/${strategy.numBlocks}:`);
-	console.log(`     - Block range: ${Math.round(blockStart/60)}m → ${Math.round(blockEnd/60)}m`);
-	console.log(`     - Main zone: ${Math.round(mainZoneStart/60)}m → ${Math.round(mainZoneEnd/60)}m`);
-	console.log(`     - Words count: ${blockWords.length}`);
-	console.log(`     - Text length: ${blockText.length} chars`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ВОЗВРАТ РЕЗУЛЬТАТА
 // ═══════════════════════════════════════════════════════════════════════════
-
-console.log(`✅ Создано ${blocks.length} блоков для последовательной обработки`);
 
 return blocks;

@@ -19,28 +19,32 @@
 // 4. Оставляем shorts с ЛУЧШИМ virality_score
 //
 // ВХОД:
-// Массив items, где каждый item содержит:
-// $input.item.json.shorts = [
-//   {
-//     title: "...",
-//     subtitle: "...",
-//     start_time: 1850.5,
-//     end_time: 1908.2,
-//     duration: 58,
-//     virality_score: 8.5,
-//     reasoning: "..."
-//   },
-//   ...
-// ]
+// {
+//   source_video_url: "http://youtube-downloader:5000/download/a3b82705-11f8-404a-86b8-16553ae4397d/video_20251127_230049.mp4",
+//   shorts: [
+//     {
+//       start: 637.19,
+//       end: 686.29,
+//       title: "Победа на 1 ХП!",
+//       subtitles: [
+//         { text: "Так, ну-ка давайте", start: 0, end: 0.76 },
+//         { text: "попробуем добить", start: 0.76, end: 1.8 }
+//       ]
+//     },
+//     ...
+//   ]
+// }
 //
 // ВЫХОД:
-// Один item с объединённым и дедуплицированным массивом shorts:
+// Один item с объединённым и дедуплицированным массивом shorts + статистика:
 // {
+//   source_video_url: "...",
 //   shorts: [...],
 //   stats: {
 //     total_before: 12,
 //     total_after: 10,
-//     duplicates_removed: 2
+//     duplicates_removed: 2,
+//     overlap_threshold: 50
 //   }
 // }
 //
@@ -50,21 +54,18 @@
 // ШАГ 1: Собираем все shorts из всех блоков
 // ═══════════════════════════════════════════════════════════════════════════
 
+const sourceVideoUrl = $json.source_video_url;
 const allShorts = [];
 
 for (const item of $input.all()) {
 	const shorts = item.json.shorts || [];
 
-	// Добавляем block_id для отладки (если есть)
 	shorts.forEach(short => {
-		if (item.json.block_id) {
-			short.block_id = item.json.block_id;
-		}
+		// Добавляем source_video_url к каждому shorts
+		short.source_video_url = sourceVideoUrl;
 		allShorts.push(short);
 	});
 }
-
-console.log(`📊 Собрано shorts из блоков: ${allShorts.length}`);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ШАГ 2: Сортируем по start_time для эффективного сравнения
@@ -77,10 +78,10 @@ allShorts.sort((a, b) => a.start_time - b.start_time);
 // ═══════════════════════════════════════════════════════════════════════════
 
 function calculateOverlap(short1, short2) {
-	const start1 = short1.start_time;
-	const end1 = short1.end_time;
-	const start2 = short2.start_time;
-	const end2 = short2.end_time;
+	const start1 = short1.start;
+	const end1 = short1.end;
+	const start2 = short2.start;
+	const end2 = short2.end;
 
 	// Находим границы перекрытия
 	const overlapStart = Math.max(start1, start2);
@@ -143,22 +144,15 @@ for (let i = 0; i < allShorts.length; i++) {
 
 		// Если перекрытие > порога → это дубликат!
 		if (overlap > OVERLAP_THRESHOLD) {
-			console.log(`🔍 Найден дубликат:`);
-			console.log(`   - Short 1: ${current.start_time.toFixed(1)}s (block ${current.block_id || '?'}) - score: ${current.virality_score}`);
-			console.log(`   - Short 2: ${candidate.start_time.toFixed(1)}s (block ${candidate.block_id || '?'}) - score: ${candidate.virality_score}`);
-			console.log(`   - Перекрытие: ${overlap.toFixed(1)}%`);
 
 			duplicatesOfCurrent.push(candidate);
 			candidate._isDuplicate = true;
 
-			// Если у кандидата лучший score - обновляем лучший вариант
-			if (candidate.virality_score > bestShort.virality_score) {
-				console.log(`   ✅ Кандидат лучше (score ${candidate.virality_score} > ${bestShort.virality_score})`);
+			// Если у кандидата БОЛЕЕ РАННИЙ start - берём его (первый появляется)
+			if (candidate.start < bestShort.start) {
 				bestShort._isDuplicate = true;
 				bestShort = candidate;
 				candidate._isDuplicate = false;
-			} else {
-				console.log(`   ⏭️ Текущий лучше (score ${bestShort.virality_score} >= ${candidate.virality_score})`);
 			}
 		}
 	}
@@ -167,7 +161,6 @@ for (let i = 0; i < allShorts.length; i++) {
 	if (!bestShort._isDuplicate) {
 		// Убираем технические поля
 		delete bestShort._isDuplicate;
-		delete bestShort.block_id;
 
 		deduplicated.push(bestShort);
 
@@ -175,10 +168,9 @@ for (let i = 0; i < allShorts.length; i++) {
 			duplicatesFound.push({
 				kept: bestShort,
 				removed: duplicatesOfCurrent.map(d => ({
-					start_time: d.start_time,
-					end_time: d.end_time,
-					virality_score: d.virality_score,
-					block_id: d.block_id
+					start: d.start,
+					end: d.end,
+					title: d.title
 				}))
 			});
 		}
@@ -186,10 +178,10 @@ for (let i = 0; i < allShorts.length; i++) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ШАГ 4: Финальная сортировка по virality_score (лучшие сверху)
+// ШАГ 4: Финальная сортировка по времени начала (хронологический порядок)
 // ═══════════════════════════════════════════════════════════════════════════
 
-deduplicated.sort((a, b) => b.virality_score - a.virality_score);
+deduplicated.sort((a, b) => a.start - b.start);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // СТАТИСТИКА
@@ -202,31 +194,14 @@ const stats = {
 	overlap_threshold: OVERLAP_THRESHOLD
 };
 
-console.log(`\n📊 Статистика дедупликации:`);
-console.log(`   - До дедупликации: ${stats.total_before} shorts`);
-console.log(`   - После дедупликации: ${stats.total_after} shorts`);
-console.log(`   - Удалено дубликатов: ${stats.duplicates_removed}`);
-console.log(`   - Порог перекрытия: ${OVERLAP_THRESHOLD}%`);
-
-if (duplicatesFound.length > 0) {
-	console.log(`\n🔍 Найдено групп дубликатов: ${duplicatesFound.length}`);
-	duplicatesFound.forEach((group, idx) => {
-		console.log(`   Группа ${idx + 1}:`);
-		console.log(`     ✅ Сохранён: ${group.kept.start_time.toFixed(1)}s (score: ${group.kept.virality_score})`);
-		group.removed.forEach(dup => {
-			console.log(`     ❌ Удалён: ${dup.start_time.toFixed(1)}s (score: ${dup.virality_score}, block: ${dup.block_id || '?'})`);
-		});
-	});
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
-// ВОЗВРАТ РЕЗУЛЬТАТА
+// ВОЗВРАТ РЕЗУЛЬТАТА (тот же формат, что от парсера + статистика)
 // ═══════════════════════════════════════════════════════════════════════════
 
 return [{
 	json: {
+		source_video_url: sourceVideoUrl,
 		shorts: deduplicated,
-		stats: stats,
-		duplicates_details: duplicatesFound
+		stats: stats
 	}
 }];
