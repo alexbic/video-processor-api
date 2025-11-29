@@ -71,6 +71,14 @@ if (cleanJson && !cleanJson.error) {
 		block_id: item.json.block_id,
 		total_blocks: item.json.total_blocks
 	};
+
+	// DEBUG: Логируем входные данные
+	cleanJson._debug_parse = {
+		received_block_id: item.json.block_id,
+		received_block_start: item.json.block_start,
+		received_block_end: item.json.block_end,
+		all_item_keys: Object.keys(item.json)
+	};
 }
 
 // ══════════════════════════════════════════════════════════════════════════

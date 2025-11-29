@@ -81,9 +81,19 @@ const debugInfo = {
 	blocks_details: []
 };
 
+// Счётчик для fallback block_id если он не приходит правильно
+let fallbackBlockId = 1;
+
 for (const item of inputItems) {
-	const blockMetadata = item.json.block_metadata || { block_id: 1 };
-	const blockId = blockMetadata.block_id || 1;
+	const blockMetadata = item.json.block_metadata || { block_id: fallbackBlockId };
+	let blockId = blockMetadata.block_id;
+	
+	// FALLBACK: Если block_id не определён или = 1, использует счётчик
+	if (!blockId || blockId === 1 && fallbackBlockId > 1) {
+		blockId = fallbackBlockId;
+	}
+	fallbackBlockId++;
+	
 	const shorts = item.json.shorts || [];
 	const blockStart = blockMetadata.block_start || 0;
 	const mainZoneStart = blockMetadata.main_zone_start || blockStart;
@@ -96,7 +106,8 @@ for (const item of inputItems) {
 		main_zone_start: mainZoneStart,
 		main_zone_end: mainZoneEnd,
 		shorts_received: shorts.length,
-		shorts_before_filter: shorts.map(s => ({ start: s.start, end: s.end }))
+		shorts_before_filter: shorts.map(s => ({ start: s.start, end: s.end })),
+		parse_debug: item.json._debug_parse  // Добавляем debug из parse-ai-response
 	});
 
 	// Пересчитываем shorts на абсолютные координаты И фильтруем по main_zone
