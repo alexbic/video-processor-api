@@ -1195,13 +1195,18 @@ class CutVideoOperation(VideoOperation):
 
     def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
         """Нарезка видео"""
+        logger.debug(f"📥 Starting CutVideoOperation execute: input_path={input_path}, output_path={output_path}")
+        logger.debug(f"📋 Input params: {json.dumps(params, indent=2, default=str)}")
+        
         # Валидация входного файла
         valid, msg = self.validate_input_file(input_path)
         if not valid:
+            logger.error(f"❌ Input validation failed: {msg}")
             return False, msg
         
         start_time = params['start_time']
         end_time = params['end_time']
+        logger.debug(f"⏱️  Cut parameters: start_time={start_time}s, end_time={end_time}s, duration={(end_time - start_time)}s")
 
         cmd = [
             'ffmpeg',
@@ -1212,11 +1217,23 @@ class CutVideoOperation(VideoOperation):
             '-y',
             output_path
         ]
+        
+        logger.debug(f"📹 ════════════════════════════════════════════════════════════")
+        logger.debug(f"📹 FFmpeg COMMAND for video cut:")
+        logger.debug(f"📹 {' '.join(cmd)}")
 
         result = subprocess.run(cmd, capture_output=True, text=True)
+        logger.debug(f"📊 FFmpeg return code: {result.returncode}")
+        if result.stdout:
+            logger.debug(f"📋 FFmpeg stdout: {result.stdout[:500]}")
+        if result.stderr:
+            logger.debug(f"⚠️  FFmpeg stderr: {result.stderr[:500]}")
+        
         if result.returncode != 0:
+            logger.error(f"❌ FFmpeg error: {result.stderr}")
             return False, f"FFmpeg error: {result.stderr}"
 
+        logger.info(f"✅ Video cut completed: {start_time}s to {end_time}s -> {output_path}")
         return True, "Video cut completed"
 
 
@@ -1708,9 +1725,13 @@ class ExtractAudioOperation(VideoOperation):
 
     def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str, str]:
         """Извлечение аудио из видео с опциональным chunking для Whisper API"""
+        logger.debug(f"📥 Starting ExtractAudioOperation execute: input_path={input_path}, output_path={output_path}")
+        logger.debug(f"📋 Input params: {json.dumps(params, indent=2, default=str)}")
+        
         # Валидация входного файла
         valid, msg = self.validate_input_file(input_path)
         if not valid:
+            logger.error(f"❌ Input validation failed: {msg}")
             return False, msg, input_path
         
         audio_format = params.get('format', 'mp3')
@@ -1718,11 +1739,14 @@ class ExtractAudioOperation(VideoOperation):
         chunk_duration_minutes = params.get('chunk_duration_minutes')
         max_chunk_size_mb = params.get('max_chunk_size_mb', 24)
         optimize_for_whisper = params.get('optimize_for_whisper', False)
+        
+        logger.debug(f"🔊 Audio extraction config: format={audio_format}, bitrate={bitrate}, optimize_for_whisper={optimize_for_whisper}, max_chunk_size_mb={max_chunk_size_mb}MB")
 
         # Генерируем собственное имя для аудиофайла в той же директории
         output_dir = os.path.dirname(output_path)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         output_audio = os.path.join(output_dir, f"audio_{timestamp}.{audio_format}")
+        logger.debug(f"📁 Output audio path: {output_audio}")
 
         # Извлекаем полное аудио
         if optimize_for_whisper:
@@ -1749,14 +1773,26 @@ class ExtractAudioOperation(VideoOperation):
                 '-y',
                 output_audio
             ]
+        
+        logger.debug(f"📹 ════════════════════════════════════════════════════════════")
+        logger.debug(f"📹 FFmpeg COMMAND for audio extraction:")
+        logger.debug(f"📹 {' '.join(cmd)}")
 
         result = subprocess.run(cmd, capture_output=True, text=True)
+        logger.debug(f"📊 FFmpeg return code: {result.returncode}")
+        if result.stdout:
+            logger.debug(f"📋 FFmpeg stdout: {result.stdout[:500]}")
+        if result.stderr:
+            logger.debug(f"⚠️  FFmpeg stderr: {result.stderr[:500]}")
+        
         if result.returncode != 0:
+            logger.error(f"❌ FFmpeg error during audio extraction: {result.stderr}")
             return False, f"FFmpeg error: {result.stderr}", output_audio
 
         os.chmod(output_audio, 0o644)
         file_size = os.path.getsize(output_audio)
         file_size_mb = file_size / (1024 * 1024)
+        logger.debug(f"📊 Audio file created: {file_size_mb:.2f}MB")
 
         # Получаем длительность аудио
         probe_cmd = [
@@ -1766,12 +1802,15 @@ class ExtractAudioOperation(VideoOperation):
             '-of', 'default=noprint_wrappers=1:nokey=1',
             output_audio
         ]
+        logger.debug(f"📊 Running ffprobe: {' '.join(probe_cmd)}")
         probe_result = subprocess.run(probe_cmd, capture_output=True, text=True)
         
         if probe_result.returncode != 0:
+            logger.error(f"❌ FFprobe error: {probe_result.stderr}")
             return False, f"FFprobe error: {probe_result.stderr}", output_audio
             
         total_duration = float(probe_result.stdout.strip())
+        logger.debug(f"⏱️  Audio duration: {total_duration:.2f}s ({total_duration/60:.2f} min)")
 
         # Проверяем нужно ли разбивать на чанки
         if chunk_duration_minutes or file_size_mb > max_chunk_size_mb:
@@ -1782,7 +1821,7 @@ class ExtractAudioOperation(VideoOperation):
                 # Автоматически вычисляем длительность чанка
                 chunk_duration_seconds = (max_chunk_size_mb / file_size_mb) * total_duration * 0.95  # 5% запас
 
-            logger.info(f"🔊 Audio chunking: {chunk_duration_seconds/60:.1f} min/chunk")
+            logger.info(f"🔊 Audio chunking enabled: {chunk_duration_seconds/60:.1f} min/chunk, file_size={file_size_mb:.2f}MB, max_chunk_size={max_chunk_size_mb}MB")
 
             # Разбиваем на чанки
             chunk_start = 0
@@ -1793,6 +1832,7 @@ class ExtractAudioOperation(VideoOperation):
                 chunk_end = min(chunk_start + chunk_duration_seconds, total_duration)
                 chunk_filename = f"audio_{timestamp}_chunk{chunk_index:03d}.{audio_format}"
                 chunk_path = os.path.join(output_dir, chunk_filename)
+                logger.debug(f"📦 Creating chunk {chunk_index}: {chunk_start:.2f}s - {chunk_end:.2f}s -> {chunk_path}")
 
                 # Извлекаем чанк
                 if optimize_for_whisper:
@@ -1821,14 +1861,17 @@ class ExtractAudioOperation(VideoOperation):
                     ]
 
                 chunk_result = subprocess.run(chunk_cmd, capture_output=True, text=True)
+                logger.debug(f"📊 Chunk {chunk_index} FFmpeg return code: {chunk_result.returncode}")
                 
                 if chunk_result.returncode != 0:
-                    logger.error(f"Chunk {chunk_index} error: {chunk_result.stderr}")
+                    logger.error(f"❌ Chunk {chunk_index} error: {chunk_result.stderr}")
                     chunk_start = chunk_end
                     chunk_index += 1
                     continue
 
                 os.chmod(chunk_path, 0o644)
+                chunk_size = os.path.getsize(chunk_path) / (1024 * 1024)
+                logger.debug(f"✅ Chunk {chunk_index} created: {chunk_size:.2f}MB")
                 # сохраняем полный путь, чтобы pipeline и metadata могли корректно обработать
                 chunk_files.append(chunk_path)
                 
@@ -1838,14 +1881,17 @@ class ExtractAudioOperation(VideoOperation):
             # Удаляем полный аудиофайл, оставляем только чанки
             if os.path.exists(output_audio):
                 os.remove(output_audio)
+                logger.debug(f"🗑️  Deleted full audio file: {output_audio}")
 
-            logger.debug(f"Split audio into {len(chunk_files)} chunks")
+            logger.debug(f"✅ Split audio into {len(chunk_files)} chunks")
 
             # Возвращаем список полных путей к чанкам
+            logger.info(f"✅ Audio extracted and split into {len(chunk_files)} chunks ({total_duration/60:.2f} min total)")
             return True, f"Audio extracted and split into {len(chunk_files)} chunks", chunk_files
 
         else:
             # Файл не требует разбиения
+            logger.info(f"✅ Audio extracted to {audio_format}: {file_size_mb:.2f}MB, {total_duration/60:.2f} min")
             return True, f"Audio extracted to {audio_format}", output_audio
 
 
