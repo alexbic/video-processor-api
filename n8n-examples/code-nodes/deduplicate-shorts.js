@@ -17,13 +17,11 @@
 //
 // ═══════════════════════════════════════════════════════════════════════════
 // РЕШЕНИЕ (ЭТАП 1):
-// Алгоритм сборки с дедупликацией по OVERLAP контента:
-// 1. Группируем shorts по block_id
-// 2. Для каждого short: пересчитываем на абсолютные координаты (block_start + relative)
-// 3. Фильтруем по main_zone каждого блока (берём только shorts, начинающиеся в main_zone)
-// 4. Сортируем блоки по block_id → собираем в правильном порядке
-// 5. Сортируем all shorts по абсолютному start → хронологический порядок
-// 6. ДЕДУПЛИКАЦИЯ: Находим shorts с 80%+ overlap
+// Алгоритм сборки с дедупликацией по OVERLAP:
+// 1. Собираем все shorts из всех блоков
+// 2. Shorts уже имеют АБСОЛЮТНЫЕ координаты (от AI агента)
+// 3. Сортируем по абсолютному start
+// 4. ДЕДУПЛИКАЦИЯ: Находим shorts с 80%+ overlap
 //    - Если overlap > 80% → это дубликаты одного момента
 //    - Из группы выбираем SHORT с МАКСИМАЛЬНОЙ virality_score
 //    - Остальные удаляем
@@ -68,11 +66,11 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ШАГ 1: Собираем shorts по блокам и пересчитываем на абсолютные координаты
+// ШАГ 1: Собираем все shorts из всех блоков (уже с абсолютными координатами)
 // ═══════════════════════════════════════════════════════════════════════════
 
 const sourceVideoUrl = $json.source_video_url;
-const blockMap = new Map(); // block_id → { metadata, shorts }
+const allShorts = [];
 
 // DEBUG: Логируем количество входных items
 const inputItems = $input.all();
@@ -81,100 +79,47 @@ const debugInfo = {
 	blocks_details: []
 };
 
-// Счётчик для fallback block_id если он не приходит правильно
-let fallbackBlockId = 1;
-
 for (const item of inputItems) {
-	const blockMetadata = item.json.block_metadata || { block_id: fallbackBlockId };
-	let blockId = blockMetadata.block_id;
-	
-	// FALLBACK: Если block_id не определён или = 1, использует счётчик
-	if (!blockId || blockId === 1 && fallbackBlockId > 1) {
-		blockId = fallbackBlockId;
-	}
-	fallbackBlockId++;
-	
 	const shorts = item.json.shorts || [];
-	const blockStart = blockMetadata.block_start || 0;
-	const mainZoneStart = blockMetadata.main_zone_start || blockStart;
-	const mainZoneEnd = blockMetadata.main_zone_end || blockMetadata.block_end;
+	const blockMetadata = item.json.block_metadata || {};
+	const blockId = blockMetadata.block_id || 1;
+	const blockStart = blockMetadata.block_start;
+	const mainZoneStart = blockMetadata.main_zone_start;
+	const mainZoneEnd = blockMetadata.main_zone_end;
 
-	// DEBUG: Логируем детали блока
+	// DEBUG: Логируем детали блока с РЕАЛЬНЫМИ значениями
 	debugInfo.blocks_details.push({
 		block_id: blockId,
 		block_start: blockStart,
 		main_zone_start: mainZoneStart,
 		main_zone_end: mainZoneEnd,
 		shorts_received: shorts.length,
-		shorts_before_filter: shorts.map(s => ({ start: s.start, end: s.end })),
-		parse_debug: item.json._debug_parse  // Добавляем debug из parse-ai-response
+		shorts_range: shorts.length > 0 ? {
+			min: Math.min(...shorts.map(s => s.start)),
+			max: Math.max(...shorts.map(s => s.start))
+		} : null,
+		virality_scores: shorts.map(s => s.client_meta?.virality_score || 0)
 	});
 
-	// Пересчитываем shorts на абсолютные координаты И фильтруем по main_zone
-	const processedShorts = shorts
-		.map(short => {
-			const absoluteStart = blockStart + short.start;
-			const absoluteEnd = blockStart + short.end;
-
-			return {
-				...short,
-				// Сохраняем оригинальные (относительные) координаты
-				original_start: short.start,
-				original_end: short.end,
-				// Устанавливаем абсолютные координаты
-				start: absoluteStart,
-				end: absoluteEnd
-			};
-		})
-		// Фильтруем: берём shorts которые НАЧИНАЮТСЯ в main_zone
-		// ВАЖНО: Если main_zone не определена или = blockStart, берём все shorts
-		.filter(short => {
-			if (mainZoneStart === blockStart && mainZoneEnd === blockMetadata.block_end) {
-				// Нет явной main_zone → берём все
-				return true;
-			}
-			return short.start >= mainZoneStart && short.start < mainZoneEnd;
-		});
-
-	// DEBUG: Добавляем информацию о фильтрации
-	debugInfo.blocks_details[debugInfo.blocks_details.length - 1].shorts_after_filter = processedShorts.length;
-
-	blockMap.set(blockId, {
-		metadata: blockMetadata,
-		shorts: processedShorts
-	});
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ШАГ 2: Сортируем блоки по block_id и собираем в правильном порядке
-// ═══════════════════════════════════════════════════════════════════════════
-
-const sortedBlockIds = Array.from(blockMap.keys()).sort((a, b) => a - b);
-const allShorts = [];
-
-for (const blockId of sortedBlockIds) {
-	const { metadata, shorts } = blockMap.get(blockId);
-
+	// Собираем все shorts (они уже с абсолютными координатами!)
 	shorts.forEach(short => {
-		// Добавляем метаданные
 		const finalShort = {
 			...short,
 			block_id: blockId,
 			source_video_url: sourceVideoUrl
 		};
-
 		allShorts.push(finalShort);
 	});
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ШАГ 3: Сортируем по абсолютному start (должны быть в хронологическом порядке)
+// ШАГ 2: Сортируем по абсолютному start
 // ═══════════════════════════════════════════════════════════════════════════
 
 allShorts.sort((a, b) => a.start - b.start);
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ФУНКЦИЯ: Расчёт процента overlap между двумя временными интервалами
+// ШАГ 3: Расчёт процента overlap между двумя временными интервалами
 // ═══════════════════════════════════════════════════════════════════════════
 
 function calculateOverlapPercent(short1, short2) {
@@ -209,8 +154,6 @@ function calculateOverlapPercent(short1, short2) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ШАГ 4: Дедупликация по OVERLAP (80%+ = дубликат)
-// Выбираем SHORT с максимальной virality_score из каждой группы
-// ═══════════════════════════════════════════════════════════════════════════
 
 const OVERLAP_THRESHOLD = 80; // 80% overlap = дубликат
 const deduplicated = [];
@@ -264,7 +207,7 @@ const stats = {
 	total_before: allShorts.length,
 	total_after: deduplicated.length,
 	duplicates_removed: allShorts.length - deduplicated.length,
-	blocks_processed: blockMap.size,
+	blocks_processed: inputItems.length,
 	overlap_threshold: OVERLAP_THRESHOLD
 };
 
