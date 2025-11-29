@@ -1423,6 +1423,10 @@ class MakeShortOperation(VideoOperation):
             max_lines = text_item.get('max_lines', 3)
             text_align = text_item.get('text_align', 'center')
             
+            # Параметры обводки текста (STROKE/OUTLINE)
+            borderw = text_item.get('borderw', 0)
+            bordercolor = text_item.get('bordercolor', 'black')
+            
             # Параметры плашки (опционально)
             box = text_item.get('box', 0)
             boxcolor = text_item.get('boxcolor', 'black@0.5')
@@ -1471,6 +1475,11 @@ class MakeShortOperation(VideoOperation):
                 font_path = self._resolve_font_path(fontfile)
                 fontfile_escaped = font_path.replace(':', '\\:').replace("'", "\\'")
                 drawtext_params.append(f"fontfile='{fontfile_escaped}'")
+            
+            # Добавляем обводку текста (borderw и bordercolor) если указана
+            if borderw > 0:
+                drawtext_params.append(f"borderw={borderw}")
+                drawtext_params.append(f"bordercolor={bordercolor}")
             
             # Добавляем плашку если включена
             if box:
