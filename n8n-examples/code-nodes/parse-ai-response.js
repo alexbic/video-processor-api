@@ -62,22 +62,29 @@ if (cleanJson && !cleanJson.error) {
 	// Проверяем базовую структуру ответа (валидация происходит в потоке данных)
 
 	// ВАЖНО: Сохраняем метаданные блока для дедубликатора
-	// Это нужно для пересчёта абсолютных временных меток
-	cleanJson.block_metadata = {
-		block_start: item.json.block_start || 0,
-		block_end: item.json.block_end,
-		main_zone_start: item.json.main_zone_start,
-		main_zone_end: item.json.main_zone_end,
-		block_id: item.json.block_id,
-		total_blocks: item.json.total_blocks
-	};
+	// Ищем metadata в разных местах (может быть на разных уровнях)
+	const metadata = 
+		item.json.block_metadata ||  // Сначала ищем в block_metadata
+		{
+			block_start: item.json.block_start ?? cleanJson.block_start ?? 0,
+			block_end: item.json.block_end ?? cleanJson.block_end,
+			main_zone_start: item.json.main_zone_start ?? cleanJson.main_zone_start,
+			main_zone_end: item.json.main_zone_end ?? cleanJson.main_zone_end,
+			block_id: item.json.block_id ?? cleanJson.block_id,
+			total_blocks: item.json.total_blocks ?? cleanJson.total_blocks
+		};
 
-	// DEBUG: Логируем входные данные
+	cleanJson.block_metadata = metadata;
+
+	// DEBUG: Логируем входные данные и где нашли metadata
 	cleanJson._debug_parse = {
-		received_block_id: item.json.block_id,
-		received_block_start: item.json.block_start,
-		received_block_end: item.json.block_end,
-		all_item_keys: Object.keys(item.json)
+		received_block_id: item.json.block_id ?? cleanJson.block_id,
+		received_block_start: item.json.block_start ?? cleanJson.block_start,
+		received_block_end: item.json.block_end ?? cleanJson.block_end,
+		all_item_keys: Object.keys(item.json),
+		all_json_keys: Object.keys(cleanJson),
+		metadata_source: item.json.block_metadata ? 'from block_metadata' : 'from item.json fields',
+		full_metadata: metadata
 	};
 }
 

@@ -80,12 +80,15 @@ const debugInfo = {
 };
 
 for (const item of inputItems) {
-	const shorts = item.json.shorts || [];
 	const blockMetadata = item.json.block_metadata || {};
 	const blockId = blockMetadata.block_id || 1;
 	const blockStart = blockMetadata.block_start;
 	const mainZoneStart = blockMetadata.main_zone_start;
 	const mainZoneEnd = blockMetadata.main_zone_end;
+
+	// DEBUG: Показываем ВСЕ ключи в JSON
+	const allKeys = Object.keys(item.json);
+	const shorts = item.json.shorts || [];
 
 	// DEBUG: Логируем детали блока с РЕАЛЬНЫМИ значениями
 	debugInfo.blocks_details.push({
@@ -93,11 +96,11 @@ for (const item of inputItems) {
 		block_start: blockStart,
 		main_zone_start: mainZoneStart,
 		main_zone_end: mainZoneEnd,
+		all_json_keys: allKeys,  // ВСЕ ключи в JSON
+		block_metadata_received: blockMetadata,  // Весь block_metadata для отладки
 		shorts_received: shorts.length,
-		shorts_range: shorts.length > 0 ? {
-			min: Math.min(...shorts.map(s => s.start)),
-			max: Math.max(...shorts.map(s => s.start))
-		} : null,
+		shorts_before_filter: shorts.map(s => ({ start: s.start, end: s.end })),
+		shorts_after_filter: shorts.length,
 		virality_scores: shorts.map(s => s.client_meta?.virality_score || 0)
 	});
 

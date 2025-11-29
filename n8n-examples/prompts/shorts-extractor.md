@@ -327,6 +327,45 @@ HARD EXCLUSIONS:
 - NO explanatory text before or after
 - NO comments inside JSON
 Order clips by predicted virality (best first):
+
+**IF processing BLOCK (`block_id` field exists in input):**
+```json
+{
+  "source_video_url": "{{ $json.client_meta.source.videoUrl }}",
+  "block_id": {{ $json.block_id }},
+  "block_start": {{ $json.block_start }},
+  "block_end": {{ $json.block_end }},
+  "main_zone_start": {{ $json.main_zone_start }},
+  "main_zone_end": {{ $json.main_zone_end }},
+  "shorts": [
+    {
+      "start": <number seconds from video start, e.g. 12.340>,
+      "end": <number seconds from video start, e.g. 37.900>,
+      "title": "<short catchy clip title (3-5 words in Russian)>",
+      "subtitles": [
+        {"text": "Привет всем", "start": 0.000, "end": 1.250},
+        {"text": "сегодня покажу", "start": 1.300, "end": 2.500},
+        {"text": "как сделать крутые Shorts", "start": 2.600, "end": 5.100}
+      ],
+      "client_meta": {
+        ...existing fields from input client_meta (if any)...,
+        "youtube_title": "<YouTube Shorts title in Russian, 30-50 chars, #Shorts at the end>",
+        "youtube_description": "<YouTube description in Russian with keywords, 1-3 hashtags>",
+        "tiktok_title": "<TikTok title in Russian, 20-40 chars, NO hashtags>",
+        "tiktok_description": "<TikTok description in Russian, 50-150 chars, hook + CTA + 3-5 hashtags>",
+        "instagram_description": "<Instagram caption in Russian, up to 150 chars, emotional hook + emojis + 3-5 hashtags>",
+        "duration": <<end>-<start> ISO 8601 duration format, e.g. PT1M39S>,
+        "duration_ms": <number miliseconds <end>-<start>, e.g. 99000>,
+        "virality_score": <float, e.g. 9.5>,
+        "virality_reason": "<short explanation in Russian, 1-3 sentences>"
+      }
+    }
+  ]
+}
+```
+
+**IF processing ENTIRE VIDEO (NO `block_id` field):**
+```json
 {
   "source_video_url": "{{ $json.client_meta.source.videoUrl }}",
   "shorts": [
@@ -354,6 +393,7 @@ Order clips by predicted virality (best first):
     }
   ]
 }
+```
 
 EXAMPLE SUBTITLE CONVERSION:
 If clip.start = 100.0 and word in WORDS_JSON is {"w": "привет", "s": 100.5, "e": 101.2}
