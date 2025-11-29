@@ -321,6 +321,25 @@ HARD EXCLUSIONS:
   * This ensures text appears immediately, without a blank screen at the beginning
   * Example: if the first subtitle was {"text": "Hello", "start": 0.2, "end": 1.5}, change it to {"text": "Hello", "start": 0.0, "end": 1.5}
 
+⚠️ MANDATORY: PRESERVE INPUT BLOCK METADATA
+- **IF input contains `block_id`, `block_start`, `block_end`, `main_zone_start`, `main_zone_end`:**
+  * MUST return these fields UNCHANGED in your JSON output
+  * These fields are REQUIRED for deduplication of clips across blocks
+  * NEVER modify or omit these values
+  * Example: if input has `"block_id": 2`, your output MUST have `"block_id": 2`
+
+🔗 INPUT BLOCK METADATA (IF BLOCK MODE):
+```json
+{
+  "block_id": 2,                    // number: 1, 2, 3, ... (which block this is)
+  "total_blocks": 3,                // number: total blocks in video
+  "block_start": 1710,              // number: block start in seconds (with overlap before)
+  "block_end": 3690,                // number: block end in seconds (with overlap after)
+  "main_zone_start": 1800,          // number: main zone start (no overlap before)
+  "main_zone_end": 3600             // number: main zone end (no overlap after)
+}
+```
+
 ⚠️ OUTPUT FORMAT - CRITICAL:
 - Return PURE JSON ONLY (start with { and end with })
 - NO ```json markdown blocks
@@ -329,14 +348,18 @@ HARD EXCLUSIONS:
 Order clips by predicted virality (best first):
 
 **IF processing BLOCK (`block_id` field exists in input):**
+
+You MUST include all block metadata fields in your output:
+
 ```json
 {
-  "source_video_url": "{{ $json.client_meta.source.videoUrl }}",
-  "block_id": {{ $json.block_id }},
-  "block_start": {{ $json.block_start }},
-  "block_end": {{ $json.block_end }},
-  "main_zone_start": {{ $json.main_zone_start }},
-  "main_zone_end": {{ $json.main_zone_end }},
+  "source_video_url": "http://youtube-downloader:5000/clips/...",
+  "block_id": 2,                    // MUST copy this from input
+  "total_blocks": 3,                // MUST copy this from input
+  "block_start": 1710,              // MUST copy this from input
+  "block_end": 3690,                // MUST copy this from input
+  "main_zone_start": 1800,          // MUST copy this from input
+  "main_zone_end": 3600,            // MUST copy this from input
   "shorts": [
     {
       "start": <number seconds from video start, e.g. 12.340>,
