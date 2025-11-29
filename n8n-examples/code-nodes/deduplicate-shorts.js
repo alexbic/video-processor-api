@@ -17,21 +17,18 @@
 //
 // ═══════════════════════════════════════════════════════════════════════════
 // РЕШЕНИЕ (ЭТАП 1):
-// Алгоритм сборки с правильными абсолютными координатами:
+// Алгоритм сборки с дедупликацией по OVERLAP контента:
 // 1. Группируем shorts по block_id
 // 2. Для каждого short: пересчитываем на абсолютные координаты (block_start + relative)
 // 3. Фильтруем по main_zone каждого блока (берём только shorts, начинающиеся в main_zone)
 // 4. Сортируем блоки по block_id → собираем в правильном порядке
 // 5. Сортируем all shorts по абсолютному start → хронологический порядок
-// 6. Удаляем ТОЧНЫЕ дубликаты (одинаковый start+end)
-// 
-// РЕЗУЛЬТАТ: Shorts с правильными АБСОЛЮТНЫМИ временными метками!
+// 6. ДЕДУПЛИКАЦИЯ: Находим shorts с 80%+ overlap
+//    - Если overlap > 80% → это дубликаты одного момента
+//    - Из группы выбираем SHORT с МАКСИМАЛЬНОЙ virality_score
+//    - Остальные удаляем
 //
-// СЛЕДУЮЩИЙ ШАГ (потом): Анализ дубликатов по КОНТЕНТУ (текст, тема, overlap %)
-// Когда у нас будут правильные временные метки, сможем найти shorts которые:
-// - Сильно пересекаются (напр. 80%+ overlap)
-// - Имеют похожий текст (близкие subtitles)
-// - Ловят один и тот же момент (разные AI интерпретации)
+// РЕЗУЛЬТАТ: Shorts с правильными абсолютными координатами + лучшие по вирусности!
 //
 // ═══════════════════════════════════════════════════════════════════════════
 //
@@ -58,12 +55,13 @@
 // ВЫХОД:
 // {
 //   source_video_url: "...",
-//   shorts: [...],  // собранные в правильном порядке, дубликаты в overlap удалены
+//   shorts: [...],  // дубликаты (80%+ overlap) удалены, останы лучшие по virality_score
 //   stats: {
 //     total_before: 20,
-//     total_after: 5,
-//     duplicates_removed: 15,
-//     blocks_processed: 4
+//     total_after: 8,
+//     duplicates_removed: 12,
+//     blocks_processed: 4,
+//     overlap_threshold: 80
 //   }
 // }
 //
@@ -138,28 +136,86 @@ for (const blockId of sortedBlockIds) {
 allShorts.sort((a, b) => a.start - b.start);
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ШАГ 4: Дедупликация по ТОЧНОМУ совпадению координат (временное пересечение)
-// ВНИМАНИЕ: Это ВРЕМЕННАЯ дедупликация!
-// Полная дедупликация по контенту (текст, тема) будет позже.
-// Здесь удаляем только АБСОЛЮТНО ИДЕНТИЧНЫЕ shorts (одинаковый start и end)
+// ФУНКЦИЯ: Расчёт процента overlap между двумя временными интервалами
 // ═══════════════════════════════════════════════════════════════════════════
 
+function calculateOverlapPercent(short1, short2) {
+	const start1 = short1.start;
+	const end1 = short1.end;
+	const start2 = short2.start;
+	const end2 = short2.end;
+
+	// Находим границы пересечения
+	const overlapStart = Math.max(start1, start2);
+	const overlapEnd = Math.min(end1, end2);
+
+	// Если нет пересечения
+	if (overlapStart >= overlapEnd) {
+		return 0;
+	}
+
+	// Длительность пересечения
+	const overlapDuration = overlapEnd - overlapStart;
+
+	// Длительности shorts
+	const duration1 = end1 - start1;
+	const duration2 = end2 - start2;
+
+	// Процент overlap относительно МЕНЬШЕГО shorts
+	// Если 80% меньшего совпадает с большим → дубликат
+	const minDuration = Math.min(duration1, duration2);
+	const overlapPercent = (overlapDuration / minDuration) * 100;
+
+	return overlapPercent;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ШАГ 4: Дедупликация по OVERLAP (80%+ = дубликат)
+// Выбираем SHORT с максимальной virality_score из каждой группы
+// ═══════════════════════════════════════════════════════════════════════════
+
+const OVERLAP_THRESHOLD = 80; // 80% overlap = дубликат
 const deduplicated = [];
-const seen = new Set();
+const processed = new Set(); // Индексы уже обработанных shorts
 
 for (let i = 0; i < allShorts.length; i++) {
-	const current = allShorts[i];
-	
-	// Уникальный ключ по абсолютным координатам
-	const key = `${current.start.toFixed(2)}_${current.end.toFixed(2)}`;
-	
-	// Если уже встречали эти ТОЧНЫЕ координаты → полный дубликат, пропускаем
-	if (seen.has(key)) {
+	// Пропускаем если уже обработан
+	if (processed.has(i)) {
 		continue;
 	}
-	
-	seen.add(key);
-	deduplicated.push(current);
+
+	const current = allShorts[i];
+	let bestShort = current;
+	let bestScore = current.client_meta?.virality_score || 0;
+	const duplicateGroup = [i]; // Индексы shorts в этой группе дубликатов
+
+	// Ищем все shorts с 80%+ overlap с текущим
+	for (let j = i + 1; j < allShorts.length; j++) {
+		if (processed.has(j)) {
+			continue;
+		}
+
+		const candidate = allShorts[j];
+		const overlap = calculateOverlapPercent(current, candidate);
+
+		// Если overlap > 80% → это дубликат
+		if (overlap > OVERLAP_THRESHOLD) {
+			duplicateGroup.push(j);
+
+			// Проверяем virality_score
+			const candidateScore = candidate.client_meta?.virality_score || 0;
+			if (candidateScore > bestScore) {
+				bestScore = candidateScore;
+				bestShort = candidate;
+			}
+		}
+	}
+
+	// Добавляем лучший short из группы
+	deduplicated.push(bestShort);
+
+	// Отмечаем всю группу как обработанную
+	duplicateGroup.forEach(idx => processed.add(idx));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -170,7 +226,8 @@ const stats = {
 	total_before: allShorts.length,
 	total_after: deduplicated.length,
 	duplicates_removed: allShorts.length - deduplicated.length,
-	blocks_processed: blockMap.size
+	blocks_processed: blockMap.size,
+	overlap_threshold: OVERLAP_THRESHOLD
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
