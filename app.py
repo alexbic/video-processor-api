@@ -1341,15 +1341,18 @@ class MakeShortOperation(VideoOperation):
         
         На выходе: 3 элемента (title + 2 развёрнутых субтитра)
         """
+        logger.debug(f"🔍 Expanding {len(text_items)} text items...")
         expanded = []
         
-        for item in text_items:
+        for item_idx, item in enumerate(text_items):
             if not isinstance(item, dict):
+                logger.debug(f"  ⚠️  Item {item_idx}: Not a dict, skipping")
                 expanded.append(item)
                 continue
             
             # Обычный text_item с текстом
             if item.get('text'):
+                logger.debug(f"  ✓ Item {item_idx}: Regular item with text='{item.get('text', '')[:30]}'")
                 expanded.append(item)
                 continue
             
@@ -1358,17 +1361,24 @@ class MakeShortOperation(VideoOperation):
             if isinstance(subtitles_obj, dict) and 'items' in subtitles_obj:
                 subtitle_items = subtitles_obj['items']
                 if not isinstance(subtitle_items, list):
+                    logger.warning(f"  ⚠️  Item {item_idx}: subtitles.items is not a list")
                     expanded.append(item)  # Некорректный формат
                     continue
                 
+                logger.debug(f"  📂 Item {item_idx}: Container with {len(subtitle_items)} subtitles (expanding...)")
+                
                 # Развёртываем каждый субтитр в отдельный text_item
-                for sub in subtitle_items:
+                for sub_idx, sub in enumerate(subtitle_items):
                     if not isinstance(sub, dict):
+                        logger.warning(f"    ⚠️  Subtitle {sub_idx}: Not a dict")
                         continue
                     
                     sub_text = sub.get('text', '')
                     if not sub_text:
+                        logger.debug(f"    ⚠️  Subtitle {sub_idx}: Empty text, skipping")
                         continue
+                    
+                    logger.debug(f"    📝 Expanding subtitle {sub_idx}: text='{sub_text[:30]}' borderw={item.get('borderw', 0)} bordercolor={item.get('bordercolor', 'N/A')}")
                     
                     # Новый item с наследованными параметрами
                     expanded_item = {
@@ -1426,6 +1436,7 @@ class MakeShortOperation(VideoOperation):
             # Параметры обводки текста (STROKE/OUTLINE)
             borderw = text_item.get('borderw', 0)
             bordercolor = text_item.get('bordercolor', 'black')
+            logger.debug(f"📋 Text item: text='{text[:50]}...' borderw={borderw} bordercolor={bordercolor}")
             
             # Параметры плашки (опционально)
             box = text_item.get('box', 0)
@@ -1480,6 +1491,7 @@ class MakeShortOperation(VideoOperation):
             if borderw > 0:
                 drawtext_params.append(f"borderw={borderw}")
                 drawtext_params.append(f"bordercolor={bordercolor}")
+                logger.debug(f"✨ Added text stroke: borderw={borderw}, bordercolor={bordercolor}")
             
             # Добавляем плашку если включена
             if box:
@@ -1488,7 +1500,9 @@ class MakeShortOperation(VideoOperation):
                 drawtext_params.append(f"boxborderw={boxborderw}")
             
             # Собираем финальную строку drawtext
-            return 'drawtext=' + ':'.join(drawtext_params)
+            drawtext_filter = 'drawtext=' + ':'.join(drawtext_params)
+            logger.debug(f"🎨 drawtext filter: {drawtext_filter}")
+            return drawtext_filter
             
         except Exception as e:
             logger.warning(f"Error processing text_item: {e}")
@@ -1497,6 +1511,9 @@ class MakeShortOperation(VideoOperation):
     def execute(self, input_path: str, output_path: str, params: dict, additional_inputs: dict = None) -> tuple[bool, str]:
         """Конвертация в Shorts формат (1080x1920)"""
         # Валидация входного файла
+        logger.debug(f"📥 Starting execute: input_path={input_path}, output_path={output_path}")
+        logger.debug(f"📋 Params: {params}")
+        
         valid, msg = self.validate_input_file(input_path)
         if not valid:
             return False, msg
@@ -1505,6 +1522,7 @@ class MakeShortOperation(VideoOperation):
         crop_mode = params.get('crop_mode', 'center')
         start_time = params.get('start_time')
         end_time = params.get('end_time')
+        logger.debug(f"🎬 Crop mode: {crop_mode}, start_time: {start_time}, end_time: {end_time}")
 
         # additional_inputs может содержать аудио дорожки, изображения и т.д.
         # Пока не используется в базовой реализации, но доступно для расширения
@@ -1519,6 +1537,7 @@ class MakeShortOperation(VideoOperation):
             'overlay_x': letterbox_config_raw.get('overlay_x', '(W-w)/2'),
             'overlay_y': letterbox_config_raw.get('overlay_y', '(H-h)/2')
         }
+        logger.debug(f"📦 Letterbox config: {letterbox_config}")
 
         # Определяем фильтр обрезки
         if crop_mode == 'letterbox':
@@ -1533,10 +1552,15 @@ class MakeShortOperation(VideoOperation):
             video_filter = "crop=ih*9/16:ih:0:ih-oh,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
         else:  # center
             video_filter = "crop=ih*9/16:ih,scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+        
+        logger.debug(f"🎨 Base video filter (crop): {video_filter}")
 
         # === НОВАЯ СИСТЕМА: Универсальные текстовые элементы ===
         # Обрабатываем text_items если они указаны
         text_items = params.get('text_items', [])
+        logger.debug(f"📝 Input text_items count: {len(text_items)}")
+        for i, item in enumerate(text_items):
+            logger.debug(f"  📌 [{i}] Input item: text='{item.get('text', '')}' borderw={item.get('borderw', 0)} bordercolor={item.get('bordercolor', 'N/A')}")
         
         # Проверяем ограничение публичной версии ДО развёртывания
         # (максимум 2 элемента на входе, независимо от вложенных субтитров)
@@ -1550,13 +1574,20 @@ class MakeShortOperation(VideoOperation):
         text_items = self._expand_text_items(text_items)
         logger.debug(f"🔄 Text items after expansion: {len(text_items)} items")
         for i, item in enumerate(text_items):
-            logger.debug(f"  [{i}] text='{item.get('text', '')}' start={item.get('start')} end={item.get('end')} fontsize={item.get('fontsize')}")
+            logger.debug(f"  ✨ [{i}] Expanded item: text='{item.get('text', '')}' borderw={item.get('borderw', 0)} bordercolor={item.get('bordercolor', 'black')} start={item.get('start')} end={item.get('end')}")
         
         if text_items:
-            for text_item in text_items:
+            logger.debug(f"📊 Processing {len(text_items)} text items...")
+            for idx, text_item in enumerate(text_items):
+                logger.debug(f"  🔨 Processing text_item[{idx}]: text='{text_item.get('text', '')[:30]}...' with borderw={text_item.get('borderw')}")
                 drawtext_filter = self._process_text_item(text_item)
                 if drawtext_filter:
+                    logger.debug(f"  ✅ Generated drawtext: {drawtext_filter[:100]}...")
                     video_filter += f",{drawtext_filter}"
+                else:
+                    logger.warning(f"  ❌ Failed to process text_item[{idx}]")
+        else:
+            logger.debug("⚠️  No text items to process")
 
         # Выполняем FFmpeg команду
         cmd = ['ffmpeg']
@@ -1592,7 +1623,23 @@ class MakeShortOperation(VideoOperation):
             output_path
         ])
 
+        # DEBUG: Log full FFmpeg command with all filters
+        logger.debug(f"📹 FFmpeg full command: {' '.join(cmd)}")
+        logger.debug(f"🎨 Complete video filter chain: {video_filter}")
+        if text_items:
+            logger.debug(f"📝 Text items count: {len(text_items)}")
+            for i, item in enumerate(text_items):
+                logger.debug(f"  [{i}] text='{item.get('text', '')}' borderw={item.get('borderw', 0)} bordercolor={item.get('bordercolor', 'black')}")
+
+        logger.info(f"🚀 Executing FFmpeg for: {output_path}")
         result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        logger.debug(f"📊 FFmpeg return code: {result.returncode}")
+        if result.stdout:
+            logger.debug(f"📋 FFmpeg stdout: {result.stdout[:500]}")
+        if result.stderr:
+            logger.debug(f"⚠️  FFmpeg stderr: {result.stderr[:500]}")
+        
         if result.returncode != 0:
             return False, f"FFmpeg error: {result.stderr}"
 
