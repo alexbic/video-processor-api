@@ -17,6 +17,7 @@
 //
 // ВХОД:
 // $input.item.json содержит:
+// - source_video_url: URL исходного видео (обязательно для AI-агента)
 // - text_llm: полная транскрипция видео
 // - words_llm: массив {w, s, e} с абсолютными таймкодами
 // - video_duration: длительность в секундах
@@ -29,6 +30,7 @@
 // Массив блоков для Loop Over Items:
 // [
 //   {
+//     source_video_url: "https://www.youtube.com/watch?v=...",
 //     block_id: 1,
 //     total_blocks: 3,
 //     block_start: 0,
@@ -172,6 +174,7 @@ for (let i = 0; i < strategy.numBlocks; i++) {
 	const blockWords = extractWordsForRange(words, blockStart, blockEnd);
 
 	blocks.push({
+		source_video_url: item.source_video_url,
 		block_id: i + 1,
 		total_blocks: strategy.numBlocks,
 		block_start: blockStart,
