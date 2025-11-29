@@ -1610,7 +1610,12 @@ class MakeShortOperation(VideoOperation):
             for idx, text_item in enumerate(text_items):
                 drawtext_filter = self._process_text_item(text_item)
                 if drawtext_filter:
-                    logger.debug(f"  ✅ Generated drawtext: {drawtext_filter[:100]}...")
+                    # Логируем конфиг до добавления фильтра
+                    item_config = f"fontsize={text_item.get('fontsize', 60)}, fontcolor={text_item.get('fontcolor', 'white')}, " \
+                                 f"borderw={text_item.get('borderw', 0)}, box={text_item.get('box', 0)}, " \
+                                 f"start={text_item.get('start_time', 0)}s, end={text_item.get('end_time', 0)}s"
+                    logger.debug(f"  [{idx}] 🎨 Drawtext filter: {drawtext_filter}")
+                    logger.debug(f"       📋 Config: {item_config}")
                     video_filter += f",{drawtext_filter}"
                 else:
                     logger.warning(f"  ❌ Failed to process text_item[{idx}]")
