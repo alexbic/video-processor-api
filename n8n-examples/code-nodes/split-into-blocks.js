@@ -135,14 +135,20 @@ const videoDuration = item.video_duration || 0;
 const words = item.words_llm || [];
 const fullText = item.text_llm || '';
 
+// Извлекаем source_video_url из верхнего уровня или из client_meta
+const sourceVideoUrl = item.source_video_url || item.client_meta?.source?.videoUrl || null;
+
 // Определяем стратегию
 const strategy = determineBlockStrategy(videoDuration, BLOCK_CONFIG);
 
 // ⚠️ ВАЖНО: Если только 1 блок - возвращаем ОРИГИНАЛЬНЫЙ ITEM БЕЗ block_id
 // Это позволит AI агенту понять, что видео обрабатывается целиком, а не по блокам
 if (strategy.numBlocks === 1) {
-	// Возвращаем оригинальный item без полей блоков
-	return [item];
+	// Возвращаем оригинальный item без полей блоков, но с source_video_url
+	return [{
+		...item,
+		source_video_url: sourceVideoUrl
+	}];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -174,7 +180,7 @@ for (let i = 0; i < strategy.numBlocks; i++) {
 	const blockWords = extractWordsForRange(words, blockStart, blockEnd);
 
 	blocks.push({
-		source_video_url: item.source_video_url,
+		source_video_url: sourceVideoUrl,
 		block_id: i + 1,
 		total_blocks: strategy.numBlocks,
 		block_start: blockStart,

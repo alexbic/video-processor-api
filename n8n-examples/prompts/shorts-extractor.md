@@ -350,7 +350,7 @@ You MUST include all block metadata fields in your output:
 
 ```json
 {
-  "source_video_url": "http://youtube-downloader:5000/clips/...",
+  "source_video_url": "http://youtube-downloader:5000/clips/...",  // MUST copy this from input
   "block_id": 2,                    // MUST copy this from input
   "total_blocks": 3,                // MUST copy this from input
   "block_start": 1710,              // MUST copy this from input
@@ -387,7 +387,7 @@ You MUST include all block metadata fields in your output:
 **IF processing ENTIRE VIDEO (NO `block_id` field):**
 ```json
 {
-  "source_video_url": "{{ $json.client_meta.source.videoUrl }}",
+  "source_video_url": "{{ $json.source_video_url }}",
   "shorts": [
     {
       "start": <number seconds from video start, e.g. 12.340>,
