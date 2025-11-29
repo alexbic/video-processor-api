@@ -63,7 +63,7 @@ if (cleanJson && !cleanJson.error) {
 
 	// ВАЖНО: Сохраняем метаданные блока для дедубликатора
 	// Ищем metadata в разных местах (может быть на разных уровнях)
-	const metadata = 
+	const metadata =
 		item.json.block_metadata ||  // Сначала ищем в block_metadata
 		{
 			block_start: item.json.block_start ?? cleanJson.block_start ?? 0,
