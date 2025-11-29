@@ -1430,9 +1430,11 @@ class MakeShortOperation(VideoOperation):
     def _process_text_item(self, text_item: dict) -> str:
         """Обрабатывает один текстовый элемент и возвращает drawtext строку для FFmpeg"""
         try:
-            # Логируем ВСЕ параметры которые пришли
-            logger.debug(f"🔨 _process_text_item() called with ALL parameters:")
-            logger.debug(f"    {json.dumps(text_item, indent=2, default=str)}")
+            # Логируем конфигурацию параметров (БЕЗ полного текста)
+            config_str = f"fontsize={text_item.get('fontsize', 60)}, fontcolor={text_item.get('fontcolor', 'white')}, " \
+                        f"borderw={text_item.get('borderw', 0)}, box={text_item.get('box', 0)}, " \
+                        f"start={text_item.get('start', 0)}s, end={text_item.get('end', 5)}s"
+            logger.debug(f"🔨 Processing text_item: {config_str}")
             
             # Проверяем, что это словарь
             if not isinstance(text_item, dict):
@@ -1581,7 +1583,10 @@ class MakeShortOperation(VideoOperation):
         text_items = params.get('text_items', [])
         logger.debug(f"📝 Input text_items count: {len(text_items)}")
         for i, item in enumerate(text_items):
-            logger.debug(f"  📌 [{i}] ALL INPUT PARAMETERS: {json.dumps(item, indent=2, default=str)}")
+            # Логируем только конфиг, не полный текст
+            item_config = f"fontsize={item.get('fontsize', 60)}, fontcolor={item.get('fontcolor', 'white')}, " \
+                         f"borderw={item.get('borderw', 0)}, box={item.get('box', 0)}"
+            logger.debug(f"  [{i}] {item_config}")
         
         # Проверяем ограничение публичной версии ДО развёртывания
         # (максимум 2 элемента на входе, независимо от вложенных субтитров)
@@ -1595,12 +1600,14 @@ class MakeShortOperation(VideoOperation):
         text_items = self._expand_text_items(text_items)
         logger.debug(f"🔄 Text items after expansion: {len(text_items)} items")
         for i, item in enumerate(text_items):
-            logger.debug(f"  ✨ [{i}] ALL EXPANDED PARAMETERS: {json.dumps(item, indent=2, default=str)}")
+            # Логируем только конфиг, не полный текст
+            item_config = f"fontsize={item.get('fontsize', 60)}, fontcolor={item.get('fontcolor', 'white')}, " \
+                         f"borderw={item.get('borderw', 0)}, box={item.get('box', 0)}"
+            logger.debug(f"  [{i}] {item_config}")
         
         if text_items:
             logger.debug(f"📊 Processing {len(text_items)} text items...")
             for idx, text_item in enumerate(text_items):
-                logger.debug(f"  🔨 Processing text_item[{idx}]: text='{text_item.get('text', '')[:30]}...' with borderw={text_item.get('borderw')}")
                 drawtext_filter = self._process_text_item(text_item)
                 if drawtext_filter:
                     logger.debug(f"  ✅ Generated drawtext: {drawtext_filter[:100]}...")
@@ -1645,17 +1652,10 @@ class MakeShortOperation(VideoOperation):
         ])
 
         # DEBUG: Log full FFmpeg command with all filters
-        logger.debug(f"📹 ════════════════════════════════════════════════════════════")
-        logger.debug(f"📹 FINAL FFmpeg COMMAND:")
-        logger.debug(f"📹 Command array: {cmd}")
-        logger.debug(f"📹 ────────────────────────────────────────────────────────────")
-        logger.debug(f"🎨 COMPLETE VIDEO FILTER CHAIN:")
-        logger.debug(f"🎨 {video_filter}")
-        logger.debug(f"📹 ════════════════════════════════════════════════════════════")
+        logger.debug(f"📹 FFmpeg command: {' '.join(cmd[:5])}... (output={output_path})")
+        logger.debug(f"🎨 Video filter chain: {video_filter}")
         if text_items:
-            logger.debug(f"📝 Text items processed count: {len(text_items)}")
-            for i, item in enumerate(text_items):
-                logger.debug(f"  ✅ [{i}] FINAL text_item state: {json.dumps(item, indent=2, default=str)}")
+            logger.debug(f"📝 Text items processed: {len(text_items)} items with various configs")
 
         logger.info(f"🚀 Executing FFmpeg for: {output_path}")
         result = subprocess.run(cmd, capture_output=True, text=True)
