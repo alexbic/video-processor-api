@@ -1413,6 +1413,10 @@ class MakeShortOperation(VideoOperation):
     def _process_text_item(self, text_item: dict) -> str:
         """Обрабатывает один текстовый элемент и возвращает drawtext строку для FFmpeg"""
         try:
+            # Логируем ВСЕ параметры которые пришли
+            logger.debug(f"🔨 _process_text_item() called with ALL parameters:")
+            logger.debug(f"    {json.dumps(text_item, indent=2, default=str)}")
+            
             # Проверяем, что это словарь
             if not isinstance(text_item, dict):
                 logger.warning(f"text_item is not a dict: {type(text_item)}")
@@ -1560,7 +1564,7 @@ class MakeShortOperation(VideoOperation):
         text_items = params.get('text_items', [])
         logger.debug(f"📝 Input text_items count: {len(text_items)}")
         for i, item in enumerate(text_items):
-            logger.debug(f"  📌 [{i}] Input item: text='{item.get('text', '')}' borderw={item.get('borderw', 0)} bordercolor={item.get('bordercolor', 'N/A')}")
+            logger.debug(f"  📌 [{i}] ALL INPUT PARAMETERS: {json.dumps(item, indent=2, default=str)}")
         
         # Проверяем ограничение публичной версии ДО развёртывания
         # (максимум 2 элемента на входе, независимо от вложенных субтитров)
@@ -1574,7 +1578,7 @@ class MakeShortOperation(VideoOperation):
         text_items = self._expand_text_items(text_items)
         logger.debug(f"🔄 Text items after expansion: {len(text_items)} items")
         for i, item in enumerate(text_items):
-            logger.debug(f"  ✨ [{i}] Expanded item: text='{item.get('text', '')}' borderw={item.get('borderw', 0)} bordercolor={item.get('bordercolor', 'black')} start={item.get('start')} end={item.get('end')}")
+            logger.debug(f"  ✨ [{i}] ALL EXPANDED PARAMETERS: {json.dumps(item, indent=2, default=str)}")
         
         if text_items:
             logger.debug(f"📊 Processing {len(text_items)} text items...")
@@ -1624,12 +1628,17 @@ class MakeShortOperation(VideoOperation):
         ])
 
         # DEBUG: Log full FFmpeg command with all filters
-        logger.debug(f"📹 FFmpeg full command: {' '.join(cmd)}")
-        logger.debug(f"🎨 Complete video filter chain: {video_filter}")
+        logger.debug(f"📹 ════════════════════════════════════════════════════════════")
+        logger.debug(f"📹 FINAL FFmpeg COMMAND:")
+        logger.debug(f"📹 Command array: {cmd}")
+        logger.debug(f"📹 ────────────────────────────────────────────────────────────")
+        logger.debug(f"🎨 COMPLETE VIDEO FILTER CHAIN:")
+        logger.debug(f"🎨 {video_filter}")
+        logger.debug(f"📹 ════════════════════════════════════════════════════════════")
         if text_items:
-            logger.debug(f"📝 Text items count: {len(text_items)}")
+            logger.debug(f"📝 Text items processed count: {len(text_items)}")
             for i, item in enumerate(text_items):
-                logger.debug(f"  [{i}] text='{item.get('text', '')}' borderw={item.get('borderw', 0)} bordercolor={item.get('bordercolor', 'black')}")
+                logger.debug(f"  ✅ [{i}] FINAL text_item state: {json.dumps(item, indent=2, default=str)}")
 
         logger.info(f"🚀 Executing FFmpeg for: {output_path}")
         result = subprocess.run(cmd, capture_output=True, text=True)
