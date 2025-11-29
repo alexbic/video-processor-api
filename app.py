@@ -3416,17 +3416,22 @@ def _webhook_resender_loop():
                 # Используем только metadata.json['webhook'] для состояния вебхука
                 webhook_state = metadata.get('webhook')
                 if not webhook_state:
-                    logger.debug(f"[{task_id[:8]}] No webhook state found in metadata.json")
+                    logger.debug(f"[{task_id[:8]}] ⚠️  No webhook configured for this task")
                     continue
-                logger.debug(f"[{task_id[:8]}] Using webhook state from metadata.json['webhook']")
+                
+                webhook_status = webhook_state.get('status', 'unknown')
+                attempt = webhook_state.get('attempts', 0)
+                logger.debug(f"[{task_id[:8]}] 🔄 Webhook state: task_status={status}, webhook_status={webhook_status}, attempt={attempt}")
 
                 # Пропускаем если уже доставлен
-                if webhook_state.get('status') == 'delivered':
+                if webhook_status == 'delivered':
+                    logger.debug(f"[{task_id[:8]}] ✅ Webhook already delivered, skipping")
                     continue
 
                 # URL вебхука: из state или из DEFAULT_WEBHOOK_URL
                 webhook_url = webhook_state.get('url') or DEFAULT_WEBHOOK_URL
                 if not webhook_url:
+                    logger.debug(f"[{task_id[:8]}] ⚠️  No webhook URL configured")
                     continue
 
                 # Проверяем next_retry время
@@ -3435,7 +3440,7 @@ def _webhook_resender_loop():
                     try:
                         next_retry_dt = datetime.fromisoformat(next_retry)
                         if datetime.now() < next_retry_dt:
-                            logger.debug(f"[{task_id[:8]}] Skipping (next_retry: {next_retry})")
+                            logger.debug(f"[{task_id[:8]}] ⏱️  Next retry scheduled: {next_retry}")
                             continue
                     except Exception:
                         pass
