@@ -315,6 +315,8 @@ curl -X POST http://localhost:5001/process_video \
 - **box** - Фоновая плашка (0 или 1, по умолчанию: 0)
 - **boxcolor** - Цвет плашки с поддержкой альфа (по умолчанию: black@0.5)
 - **boxborderw** - Ширина границы плашки в пикселях (по умолчанию: 10)
+- **borderw** - Ширина обводки текста в пикселях (по умолчанию: 0, отключено)
+- **bordercolor** - Цвет обводки текста (по умолчанию: black)
 
 **Ограничение публичной версии**: Максимум **2 текстовых элемента** на операцию
 
@@ -622,7 +624,7 @@ curl http://localhost:5001/task_status/abc123
 
 ## 📖 Примеры
 
-### Пример 1: Shorts с автоматической нарезкой (start_time/end_time)
+### Пример 1: Shorts с автоматической нарезкой и текстовыми оверлеями
 
 ```json
 {
@@ -634,26 +636,139 @@ curl http://localhost:5001/task_status/abc123
       "start_time": 10.5,
       "end_time": 70.0,
       "crop_mode": "letterbox",
-      "title": {
-        "text": "Мой первый Shorts",
-        "font": "DejaVu Sans Bold",
-        "fontsize": 70,
-        "fontcolor": "white"
-      },
-      "subtitles": {
-        "items": [
-          {"text": "Первый субтитр", "start": 0, "end": 3}
-        ],
-        "font": "Roboto",
-        "fontsize": 64,
-        "fontcolor": "yellow"
-      }
+      "text_items": [
+        {
+          "text": "Мой первый Shorts",
+          "fontfile": "HelveticaNeue.ttc",
+          "fontsize": 70,
+          "fontcolor": "white",
+          "x": "(w-text_w)/2",
+          "y": 100,
+          "start": 0,
+          "end": 60,
+          "box": 1,
+          "boxcolor": "black@0.5"
+        },
+        {
+          "text": "Подписывайтесь!",
+          "fontfile": "PTSans.ttc",
+          "fontsize": 48,
+          "fontcolor": "yellow",
+          "x": "(w-text_w)/2",
+          "y": "h-200",
+          "start": 0,
+          "end": 3
+        }
+      ],
+      "generate_thumbnail": true
     }
   ]
 }
 ```
 
-### Пример 2: Извлечение аудио с chunking для Whisper API
+**Примечание:** `start_time`/`end_time` - числа (секунды) или строки (`"00:01:30"`). Время в `text_items` относительно обрезанного видео.
+
+### Пример 2: Простая конвертация в Shorts (только letterbox, без текста)
+
+```json
+{
+  "video_url": "https://example.com/landscape.mp4",
+  "execution": "sync",
+  "operations": [
+    {
+      "type": "make_short",
+      "crop_mode": "letterbox",
+      "generate_thumbnail": true,
+      "thumbnail_timestamp": 0.5
+    }
+  ]
+}
+```
+
+### Пример 3: Динамические субтитры с поточечным таймингом слов
+
+```json
+{
+  "video_url": "https://example.com/video.mp4",
+  "execution": "sync",
+  "operations": [
+    {
+      "type": "make_short",
+      "crop_mode": "letterbox",
+      "text_items": [
+        {
+          "text": "Заголовок",
+          "fontfile": "HelveticaNeue.ttc",
+          "fontsize": 80,
+          "fontcolor": "white",
+          "x": "(w-text_w)/2",
+          "y": 100,
+          "start": 0,
+          "end": 60,
+          "box": 1,
+          "boxcolor": "black@0.5"
+        },
+        {
+          "text": "",
+          "fontfile": "PTSans.ttc",
+          "fontsize": 60,
+          "fontcolor": "yellow",
+          "borderw": 3,
+          "bordercolor": "black",
+          "x": "(w-text_w)/2",
+          "y": "h-200",
+          "subtitles": {
+            "items": [
+              {"text": "Первое слово", "start": 0, "end": 1.5},
+              {"text": "Второе слово", "start": 1.5, "end": 3},
+              {"text": "Третье слово", "start": 3, "end": 4.5}
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Пример 4: Нарезка видео
+
+```json
+{
+  "video_url": "https://example.com/long-video.mp4",
+  "execution": "sync",
+  "operations": [
+    {
+      "type": "cut_video",
+      "start_time": "00:01:30",
+      "end_time": "00:02:00"
+    }
+  ]
+}
+```
+
+### Пример 5: Pipeline - несколько операций
+
+```json
+{
+  "video_url": "https://example.com/video.mp4",
+  "execution": "async",
+  "operations": [
+    {
+      "type": "cut_video",
+      "start_time": "00:00:10",
+      "end_time": "00:01:00"
+    },
+    {
+      "type": "make_short",
+      "letterbox_config": {"width": 1080, "height": 1920},
+      "title": {"text": "Эпизод 1", "fontsize": 70}
+    }
+  ]
+}
+```
+
+### Пример 6: Извлечение аудио с chunking для Whisper API
 
 ```json
 {
