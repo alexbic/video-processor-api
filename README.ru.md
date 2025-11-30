@@ -563,34 +563,34 @@ curl http://localhost:5001/task_status/abc123
   "operations": [
     {
       "type": "make_short",
-      "start_time": 10.5,
-      "end_time": 70.0,
-      "crop_mode": "letterbox",
+      "start_time": 10.5,              // Нарезка с 10.5 секунд
+      "end_time": 70.0,                // до 70 секунд
+      "crop_mode": "letterbox",       // Горизонтальное в вертикальное с размытием
       "text_items": [
-        {
+        {                              // Заголовок (отображается 60 сек)
           "text": "Мой первый Shorts",
           "fontfile": "HelveticaNeue.ttc",
           "fontsize": 70,
           "fontcolor": "white",
-          "x": "(w-text_w)/2",
-          "y": 100,
+          "x": "(w-text_w)/2",        // Центр по горизонтали
+          "y": 100,                    // 100px от верха
           "start": 0,
           "end": 60,
-          "box": 1,
-          "boxcolor": "black@0.5"
+          "box": 1,                    // Фоновая плашка включена
+          "boxcolor": "black@0.5"     // Полупрозрачный чёрный
         },
-        {
+        {                              // Призыв к действию (только первые 3 сек)
           "text": "Подписывайтесь!",
           "fontfile": "PTSans.ttc",
           "fontsize": 48,
           "fontcolor": "yellow",
           "x": "(w-text_w)/2",
-          "y": "h-200",
+          "y": "h-200",                // 200px от низа
           "start": 0,
           "end": 3
         }
       ],
-      "generate_thumbnail": true
+      "generate_thumbnail": true       // Авто-генерация JPEG превью
     }
   ]
 }
@@ -603,13 +603,13 @@ curl http://localhost:5001/task_status/abc123
 ```json
 {
   "video_url": "https://example.com/landscape.mp4",
-  "execution": "sync",
+  "execution": "sync",              // Ожидать завершения
   "operations": [
     {
       "type": "make_short",
-      "crop_mode": "letterbox",
-      "generate_thumbnail": true,
-      "thumbnail_timestamp": 0.5
+      "crop_mode": "letterbox",   // Только letterbox, без текста
+      "generate_thumbnail": true,  // Создать превью
+      "thumbnail_timestamp": 0.5   // Кадр на 0.5 сек
     }
   ]
 }
@@ -626,7 +626,7 @@ curl http://localhost:5001/task_status/abc123
       "type": "make_short",
       "crop_mode": "letterbox",
       "text_items": [
-        {
+        {                                // Статичный заголовок (вверху)
           "text": "Заголовок",
           "fontfile": "HelveticaNeue.ttc",
           "fontsize": 80,
@@ -635,19 +635,22 @@ curl http://localhost:5001/task_status/abc123
           "y": 100,
           "start": 0,
           "end": 60,
-          "box": 1,
+          "box": 1,                      // Фоновая плашка
           "boxcolor": "black@0.5"
         },
-        {
-          "text": "",
+        {                                // Контейнер динамических субтитров (внизу)
+          "text": "",                    // Пусто - используем subtitles.items
           "fontfile": "PTSans.ttc",
           "fontsize": 60,
           "fontcolor": "yellow",
-          "borderw": 3,
+          "borderw": 3,                  // Обводка текста
           "bordercolor": "black",
+          "box": 1,                      // Фоновая плашка
+          "boxcolor": "black@0.7",
+          "boxborderw": 8,               // Ширина границы плашки
           "x": "(w-text_w)/2",
           "y": "h-200",
-          "subtitles": {
+          "subtitles": {                 // Пословный тайминг
             "items": [
               {"text": "Первое слово", "start": 0, "end": 1.5},
               {"text": "Второе слово", "start": 1.5, "end": 3},
@@ -670,8 +673,8 @@ curl http://localhost:5001/task_status/abc123
   "operations": [
     {
       "type": "cut_video",
-      "start_time": "00:01:30",
-      "end_time": "00:02:00"
+      "start_time": "00:01:30",    // С 1 мин 30 сек
+      "end_time": "00:02:00"       // До 2 мин (30 сек итого)
     }
   ]
 }
@@ -682,14 +685,14 @@ curl http://localhost:5001/task_status/abc123
 ```json
 {
   "video_url": "https://example.com/video.mp4",
-  "execution": "async",
+  "execution": "async",           // Обработка в фоне
   "operations": [
-    {
+    {                               // Шаг 1: Нарезка видео
       "type": "cut_video",
       "start_time": "00:00:10",
       "end_time": "00:01:00"
     },
-    {
+    {                               // Шаг 2: Конвертация в Shorts
       "type": "make_short",
       "letterbox_config": {"width": 1080, "height": 1920},
       "title": {"text": "Эпизод 1", "fontsize": 70}

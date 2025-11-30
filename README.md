@@ -636,34 +636,34 @@ Response:
   "operations": [
     {
       "type": "make_short",
-      "start_time": 10.5,
-      "end_time": 70.0,
-      "crop_mode": "letterbox",
+      "start_time": 10.5,              // Cut from 10.5 seconds
+      "end_time": 70.0,                // to 70 seconds
+      "crop_mode": "letterbox",       // Convert horizontal to vertical with blur
       "text_items": [
-        {
+        {                              // Title text (stays for 60 sec)
           "text": "My First Shorts",
           "fontfile": "HelveticaNeue.ttc",
           "fontsize": 70,
           "fontcolor": "white",
-          "x": "(w-text_w)/2",
-          "y": 100,
+          "x": "(w-text_w)/2",        // Centered horizontally
+          "y": 100,                    // 100px from top
           "start": 0,
           "end": 60,
-          "box": 1,
-          "boxcolor": "black@0.5"
+          "box": 1,                    // Background box enabled
+          "boxcolor": "black@0.5"     // Semi-transparent black
         },
-        {
+        {                              // Call-to-action (first 3 sec only)
           "text": "Subscribe for more!",
           "fontfile": "PTSans.ttc",
           "fontsize": 48,
           "fontcolor": "yellow",
           "x": "(w-text_w)/2",
-          "y": "h-200",
+          "y": "h-200",                // 200px from bottom
           "start": 0,
           "end": 3
         }
       ],
-      "generate_thumbnail": true
+      "generate_thumbnail": true       // Auto-generate JPEG thumbnail
     }
   ]
 }
@@ -676,13 +676,13 @@ Response:
 ```json
 {
   "video_url": "https://example.com/landscape.mp4",
-  "execution": "sync",
+  "execution": "sync",              // Wait for completion
   "operations": [
     {
       "type": "make_short",
-      "crop_mode": "letterbox",
-      "generate_thumbnail": true,
-      "thumbnail_timestamp": 0.5
+      "crop_mode": "letterbox",   // Only letterbox, no text
+      "generate_thumbnail": true,  // Create thumbnail
+      "thumbnail_timestamp": 0.5   // Take frame at 0.5 sec
     }
   ]
 }
@@ -699,7 +699,7 @@ Response:
       "type": "make_short",
       "crop_mode": "letterbox",
       "text_items": [
-        {
+        {                                // Static title (top)
           "text": "Title",
           "fontfile": "HelveticaNeue.ttc",
           "fontsize": 80,
@@ -708,19 +708,22 @@ Response:
           "y": 100,
           "start": 0,
           "end": 60,
-          "box": 1,
+          "box": 1,                      // Background box
           "boxcolor": "black@0.5"
         },
-        {
-          "text": "",
+        {                                // Dynamic subtitles container (bottom)
+          "text": "",                    // Empty - using subtitles.items instead
           "fontfile": "PTSans.ttc",
           "fontsize": 60,
           "fontcolor": "yellow",
-          "borderw": 3,
+          "borderw": 3,                  // Text outline (stroke)
           "bordercolor": "black",
+          "box": 1,                      // Background box
+          "boxcolor": "black@0.7",
+          "boxborderw": 8,               // Box border width
           "x": "(w-text_w)/2",
           "y": "h-200",
-          "subtitles": {
+          "subtitles": {                 // Word-level timing
             "items": [
               {"text": "First word", "start": 0, "end": 1.5},
               {"text": "Second word", "start": 1.5, "end": 3},
@@ -743,8 +746,8 @@ Response:
   "operations": [
     {
       "type": "cut_video",
-      "start_time": "00:01:30",
-      "end_time": "00:02:00"
+      "start_time": "00:01:30",    // From 1 min 30 sec
+      "end_time": "00:02:00"       // To 2 min (30 sec total)
     }
   ]
 }
@@ -755,14 +758,14 @@ Response:
 ```json
 {
   "video_url": "https://example.com/video.mp4",
-  "execution": "async",
+  "execution": "async",           // Process in background
   "operations": [
-    {
+    {                               // Step 1: Cut video
       "type": "cut_video",
       "start_time": "00:00:10",
       "end_time": "00:01:00"
     },
-    {
+    {                               // Step 2: Convert to Shorts
       "type": "make_short",
       "letterbox_config": {"width": 1080, "height": 1920},
       "title": {"text": "Episode 1", "fontsize": 70}
