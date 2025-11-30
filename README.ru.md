@@ -556,6 +556,13 @@ curl http://localhost:5001/task_status/abc123
 
 ### Пример 1: Shorts с автоматической нарезкой и текстовыми оверлеями
 
+**Что делает:**
+- Нарезает видео с 10.5 до 70 секунд (59.5 сек итого)
+- Конвертирует горизонтальное в вертикальное (1080x1920) с размытым фоном
+- Добавляет заголовок (отображается 60 сек) с полупрозрачной чёрной плашкой
+- Добавляет призыв к действию (показывается только первые 3 сек)
+- Автоматически генерирует JPEG превью
+
 ```json
 {
   "video_url": "https://example.com/long-video.mp4",
@@ -563,59 +570,71 @@ curl http://localhost:5001/task_status/abc123
   "operations": [
     {
       "type": "make_short",
-      "start_time": 10.5,              // Нарезка с 10.5 секунд
-      "end_time": 70.0,                // до 70 секунд
-      "crop_mode": "letterbox",       // Горизонтальное в вертикальное с размытием
+      "start_time": 10.5,
+      "end_time": 70.0,
+      "crop_mode": "letterbox",
       "text_items": [
-        {                              // Заголовок (отображается 60 сек)
+        {
           "text": "Мой первый Shorts",
           "fontfile": "HelveticaNeue.ttc",
           "fontsize": 70,
           "fontcolor": "white",
-          "x": "(w-text_w)/2",        // Центр по горизонтали
-          "y": 100,                    // 100px от верха
+          "x": "(w-text_w)/2",
+          "y": 100,
           "start": 0,
           "end": 60,
-          "box": 1,                    // Фоновая плашка включена
-          "boxcolor": "black@0.5"     // Полупрозрачный чёрный
+          "box": 1,
+          "boxcolor": "black@0.5"
         },
-        {                              // Призыв к действию (только первые 3 сек)
+        {
           "text": "Подписывайтесь!",
           "fontfile": "PTSans.ttc",
           "fontsize": 48,
           "fontcolor": "yellow",
           "x": "(w-text_w)/2",
-          "y": "h-200",                // 200px от низа
+          "y": "h-200",
           "start": 0,
           "end": 3
         }
       ],
-      "generate_thumbnail": true       // Авто-генерация JPEG превью
+      "generate_thumbnail": true
     }
   ]
 }
 ```
 
-**Примечание:** `start_time`/`end_time` - числа (секунды) или строки (`"00:01:30"`). Время в `text_items` относительно обрезанного видео.
+**Примечание:** `start_time`/`end_time` принимают числа (секунды) или строки (`"00:01:30"`). Время в `text_items` относительно обрезанного видео.
 
 ### Пример 2: Простая конвертация в Shorts (только letterbox, без текста)
+
+**Что делает:**
+- Конвертирует горизонтальное видео в вертикальный формат (letterbox)
+- Без текстовых оверлеев - только чистая конвертация
+- Генерирует превью из кадра на 0.5 секунде
 
 ```json
 {
   "video_url": "https://example.com/landscape.mp4",
-  "execution": "sync",              // Ожидать завершения
+  "execution": "sync",
   "operations": [
     {
       "type": "make_short",
-      "crop_mode": "letterbox",   // Только letterbox, без текста
-      "generate_thumbnail": true,  // Создать превью
-      "thumbnail_timestamp": 0.5   // Кадр на 0.5 сек
+      "crop_mode": "letterbox",
+      "generate_thumbnail": true,
+      "thumbnail_timestamp": 0.5
     }
   ]
 }
 ```
 
 ### Пример 3: Динамические субтитры с поточечным таймингом слов
+
+**Что делает:**
+- Статичный заголовок вверху (отображается всё время) с фоновой плашкой
+- Динамические субтитры внизу с пословным таймингом
+- Каждое слово появляется/исчезает в определённое время (караоке-стиль)
+- Обводка текста (`borderw`: 3px чёрный) + фоновая плашка с границей 8px
+- Стиль наследуется от контейнера: все слова используют одинаковый шрифт, размер, цвета
 
 ```json
 {
@@ -626,7 +645,7 @@ curl http://localhost:5001/task_status/abc123
       "type": "make_short",
       "crop_mode": "letterbox",
       "text_items": [
-        {                                // Статичный заголовок (вверху)
+        {
           "text": "Заголовок",
           "fontfile": "HelveticaNeue.ttc",
           "fontsize": 80,
@@ -635,22 +654,22 @@ curl http://localhost:5001/task_status/abc123
           "y": 100,
           "start": 0,
           "end": 60,
-          "box": 1,                      // Фоновая плашка
+          "box": 1,
           "boxcolor": "black@0.5"
         },
-        {                                // Контейнер динамических субтитров (внизу)
-          "text": "",                    // Пусто - используем subtitles.items
+        {
+          "text": "",
           "fontfile": "PTSans.ttc",
           "fontsize": 60,
           "fontcolor": "yellow",
-          "borderw": 3,                  // Обводка текста
+          "borderw": 3,
           "bordercolor": "black",
-          "box": 1,                      // Фоновая плашка
+          "box": 1,
           "boxcolor": "black@0.7",
-          "boxborderw": 8,               // Ширина границы плашки
+          "boxborderw": 8,
           "x": "(w-text_w)/2",
           "y": "h-200",
-          "subtitles": {                 // Пословный тайминг
+          "subtitles": {
             "items": [
               {"text": "Первое слово", "start": 0, "end": 1.5},
               {"text": "Второе слово", "start": 1.5, "end": 3},
@@ -666,6 +685,11 @@ curl http://localhost:5001/task_status/abc123
 
 ### Пример 4: Нарезка видео
 
+**Что делает:**
+- Нарезает видео с 1:30 до 2:00 (30 секунд итого)
+- Без конвертации формата - сохраняет исходное соотношение сторон
+- Поддерживает оба формата: числа (секунды) или строки ("HH:MM:SS")
+
 ```json
 {
   "video_url": "https://example.com/long-video.mp4",
@@ -673,8 +697,8 @@ curl http://localhost:5001/task_status/abc123
   "operations": [
     {
       "type": "cut_video",
-      "start_time": "00:01:30",    // С 1 мин 30 сек
-      "end_time": "00:02:00"       // До 2 мин (30 сек итого)
+      "start_time": "00:01:30",
+      "end_time": "00:02:00"
     }
   ]
 }
@@ -682,17 +706,23 @@ curl http://localhost:5001/task_status/abc123
 
 ### Пример 5: Pipeline - несколько операций
 
+**Что делает:**
+- **Шаг 1:** Нарезает видео с 10 сек до 1 мин (50 сек итого)
+- **Шаг 2:** Конвертирует нарезанное видео в Shorts с заголовком
+- Операции выполняются последовательно - результат шага 1 передаётся в шаг 2
+- Async режим - возвращает сразу task_id для проверки статуса
+
 ```json
 {
   "video_url": "https://example.com/video.mp4",
-  "execution": "async",           // Обработка в фоне
+  "execution": "async",
   "operations": [
-    {                               // Шаг 1: Нарезка видео
+    {
       "type": "cut_video",
       "start_time": "00:00:10",
       "end_time": "00:01:00"
     },
-    {                               // Шаг 2: Конвертация в Shorts
+    {
       "type": "make_short",
       "letterbox_config": {"width": 1080, "height": 1920},
       "title": {"text": "Эпизод 1", "fontsize": 70}

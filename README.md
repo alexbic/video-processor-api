@@ -629,6 +629,13 @@ Response:
 
 ### Example 1: Shorts with automatic cutting and text overlays
 
+**What it does:**
+- Cuts video from 10.5 to 70 seconds (59.5 sec total)
+- Converts horizontal to vertical (1080x1920) with blurred background
+- Adds title text (stays 60 sec) with semi-transparent black box
+- Adds call-to-action text (shows first 3 sec only)
+- Auto-generates JPEG thumbnail
+
 ```json
 {
   "video_url": "https://example.com/long-video.mp4",
@@ -636,59 +643,71 @@ Response:
   "operations": [
     {
       "type": "make_short",
-      "start_time": 10.5,              // Cut from 10.5 seconds
-      "end_time": 70.0,                // to 70 seconds
-      "crop_mode": "letterbox",       // Convert horizontal to vertical with blur
+      "start_time": 10.5,
+      "end_time": 70.0,
+      "crop_mode": "letterbox",
       "text_items": [
-        {                              // Title text (stays for 60 sec)
+        {
           "text": "My First Shorts",
           "fontfile": "HelveticaNeue.ttc",
           "fontsize": 70,
           "fontcolor": "white",
-          "x": "(w-text_w)/2",        // Centered horizontally
-          "y": 100,                    // 100px from top
+          "x": "(w-text_w)/2",
+          "y": 100,
           "start": 0,
           "end": 60,
-          "box": 1,                    // Background box enabled
-          "boxcolor": "black@0.5"     // Semi-transparent black
+          "box": 1,
+          "boxcolor": "black@0.5"
         },
-        {                              // Call-to-action (first 3 sec only)
+        {
           "text": "Subscribe for more!",
           "fontfile": "PTSans.ttc",
           "fontsize": 48,
           "fontcolor": "yellow",
           "x": "(w-text_w)/2",
-          "y": "h-200",                // 200px from bottom
+          "y": "h-200",
           "start": 0,
           "end": 3
         }
       ],
-      "generate_thumbnail": true       // Auto-generate JPEG thumbnail
+      "generate_thumbnail": true
     }
   ]
 }
 ```
 
-**Note:** `start_time`/`end_time` - numbers (seconds) or strings (`"00:01:30"`). Time in `text_items` is relative to the cropped video.
+**Note:** `start_time`/`end_time` accept numbers (seconds) or strings (`"00:01:30"`). Time in `text_items` is relative to the cropped video.
 
 ### Example 2: Simple Shorts conversion (letterbox only, no text)
+
+**What it does:**
+- Converts horizontal video to vertical format (letterbox mode)
+- No text overlays - clean conversion only
+- Generates thumbnail from frame at 0.5 seconds
 
 ```json
 {
   "video_url": "https://example.com/landscape.mp4",
-  "execution": "sync",              // Wait for completion
+  "execution": "sync",
   "operations": [
     {
       "type": "make_short",
-      "crop_mode": "letterbox",   // Only letterbox, no text
-      "generate_thumbnail": true,  // Create thumbnail
-      "thumbnail_timestamp": 0.5   // Take frame at 0.5 sec
+      "crop_mode": "letterbox",
+      "generate_thumbnail": true,
+      "thumbnail_timestamp": 0.5
     }
   ]
 }
 ```
 
 ### Example 3: Dynamic subtitles with word-level timing
+
+**What it does:**
+- Static title at top (stays entire duration) with background box
+- Dynamic subtitles at bottom with word-level timing
+- Each word appears/disappears at specific time (karaoke-style)
+- Text outline (`borderw`: 3px black) + background box with 8px border
+- Inherits style from container: all words use same font, size, colors
 
 ```json
 {
@@ -699,7 +718,7 @@ Response:
       "type": "make_short",
       "crop_mode": "letterbox",
       "text_items": [
-        {                                // Static title (top)
+        {
           "text": "Title",
           "fontfile": "HelveticaNeue.ttc",
           "fontsize": 80,
@@ -708,22 +727,22 @@ Response:
           "y": 100,
           "start": 0,
           "end": 60,
-          "box": 1,                      // Background box
+          "box": 1,
           "boxcolor": "black@0.5"
         },
-        {                                // Dynamic subtitles container (bottom)
-          "text": "",                    // Empty - using subtitles.items instead
+        {
+          "text": "",
           "fontfile": "PTSans.ttc",
           "fontsize": 60,
           "fontcolor": "yellow",
-          "borderw": 3,                  // Text outline (stroke)
+          "borderw": 3,
           "bordercolor": "black",
-          "box": 1,                      // Background box
+          "box": 1,
           "boxcolor": "black@0.7",
-          "boxborderw": 8,               // Box border width
+          "boxborderw": 8,
           "x": "(w-text_w)/2",
           "y": "h-200",
-          "subtitles": {                 // Word-level timing
+          "subtitles": {
             "items": [
               {"text": "First word", "start": 0, "end": 1.5},
               {"text": "Second word", "start": 1.5, "end": 3},
@@ -739,6 +758,11 @@ Response:
 
 ### Example 4: Video cutting
 
+**What it does:**
+- Cuts video from 1:30 to 2:00 (30 seconds total)
+- No format conversion - preserves original aspect ratio
+- Supports both formats: numbers (seconds) or strings ("HH:MM:SS")
+
 ```json
 {
   "video_url": "https://example.com/long-video.mp4",
@@ -746,8 +770,8 @@ Response:
   "operations": [
     {
       "type": "cut_video",
-      "start_time": "00:01:30",    // From 1 min 30 sec
-      "end_time": "00:02:00"       // To 2 min (30 sec total)
+      "start_time": "00:01:30",
+      "end_time": "00:02:00"
     }
   ]
 }
@@ -755,17 +779,23 @@ Response:
 
 ### Example 5: Pipeline - multiple operations
 
+**What it does:**
+- **Step 1:** Cut video from 10 sec to 1 min (50 sec total)
+- **Step 2:** Convert cut video to Shorts with title
+- Operations execute sequentially - output of step 1 feeds into step 2
+- Async mode - returns immediately with task_id for status checking
+
 ```json
 {
   "video_url": "https://example.com/video.mp4",
-  "execution": "async",           // Process in background
+  "execution": "async",
   "operations": [
-    {                               // Step 1: Cut video
+    {
       "type": "cut_video",
       "start_time": "00:00:10",
       "end_time": "00:01:00"
     },
-    {                               // Step 2: Convert to Shorts
+    {
       "type": "make_short",
       "letterbox_config": {"width": 1080, "height": 1920},
       "title": {"text": "Episode 1", "fontsize": 70}
