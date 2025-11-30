@@ -241,93 +241,23 @@ See [FONTS.md](docs/FONTS.md) for font details and examples.
 
 `POST /process_video`
 
-Use ready-made operations for video processing:
-
-```bash
-curl -X POST http://localhost:5001/process_video \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video_url": "https://example.com/video.mp4",
-    "execution": "sync",
-    "operations": [
-      {
-        "type": "make_short",
-        "start_time": 10.5,
-        "end_time": 70.0,
-        "crop_mode": "letterbox",
-        "text_items": [
-          {
-            "text": "My Shorts Video",
-            "fontfile": "HelveticaNeue.ttc",
-            "fontsize": 70,
-            "fontcolor": "white",
-            "x": "(w-text_w)/2",
-            "y": 100,
-            "start": 0,
-            "end": 60,
-            "box": 1,
-            "boxcolor": "black@0.5",
-            "boxborderw": 10
-          },
-          {
-            "text": "Subscribe!",
-            "fontfile": "PTSans.ttc",
-            "fontsize": 48,
-            "fontcolor": "yellow",
-            "x": "(w-text_w)/2",
-            "y": "h-150",
-            "start": 0,
-            "end": 3
-          }
-        ],
-        "generate_thumbnail": true,
-        "thumbnail_timestamp": 0.5
-      }
-    ],
-    "webhook": {
-      "url": "https://n8n.example.com/webhook/video-completed",
-      "headers": {
-        "X-API-Key": "your-secret-key"
-      }
-    },
-    "client_meta": {
-      "youtube_title": "Amazing Video #Shorts",
-      "tiktok_title": "Check this out!"
-    }
-  }'
+**Request structure:**
+```json
+{
+  "video_url": "https://example.com/video.mp4",
+  "execution": "sync|async",
+  "operations": [{"type": "make_short|cut_video|extract_audio", ...}],
+  "webhook": {"url": "...", "headers": {...}},
+  "client_meta": {...}
+}
 ```
 
 **Available operations:**
 - `cut_video` - cut video by timecodes
-- `make_short` - convert to Shorts format with text overlays; supports `start_time`/`end_time` for automatic cutting; auto-generates thumbnails
+- `make_short` - convert to Shorts format with text overlays (max 2 text items in public version)
 - `extract_audio` - extract audio track with automatic chunking for Whisper API
 
-**Text Items System (Universal):**
-The `text_items` array allows flexible text overlays with individual control:
-- **text** - Text content (required)
-- **fontfile** - Font filename from `/app/fonts/` (optional, defaults to DejaVu Sans)
-- **fontsize** - Font size in pixels (default: 60)
-- **fontcolor** - Color (default: white) - supports hex, named colors, and alpha (@0.5)
-- **x**, **y** - Position (supports expressions like `(w-text_w)/2` for centering)
-- **start**, **end** - Display time in seconds (default: 0-5)
-- **max_lines** - Maximum lines for text wrapping (default: 3)
-- **text_align** - Text alignment: left, center, right (default: center)
-- **box** - Background box (0 or 1, default: 0)
-- **boxcolor** - Box color with alpha support (default: black@0.5)
-- **boxborderw** - Box border width in pixels (default: 10)
-- **borderw** - Text outline width in pixels (default: 0, disabled)
-- **bordercolor** - Text outline color (default: black)
-
-**Public version limit**: Max **2 text items** per operation
-
-**Thumbnail Generation:**
-The `make_short` operation automatically generates a thumbnail (JPEG image) from the rendered video:
-- **Default**: `generate_thumbnail: true` (enabled by default)
-- **Timestamp**: `thumbnail_timestamp: 0.5` (extracts frame at 0.5 seconds from cropped video)
-- **Quality**: High quality JPEG (q:v 2)
-- **Resolution**: Same as video (1080x1920 for Shorts)
-- **Use case**: Perfect for YouTube/TikTok custom thumbnails, showing the text overlays
-- **Disable**: Set `generate_thumbnail: false` to skip thumbnail creation
+See [📖 Examples](#-examples) section below for detailed usage examples.
 
 ---
 
