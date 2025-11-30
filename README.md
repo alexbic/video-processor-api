@@ -739,13 +739,7 @@ Response:
 }
 ```
 
-**Note:** `start_time` and `end_time` can be numbers (seconds) or strings (`"00:01:30"`). When both parameters are specified, the fragment will be cut automatically.
-
-**Text Items System:**
-- Each item in `text_items` is independent with its own timing, positioning, and styling
-- **Public version**: Max 2 text items per operation
-- **Pro version**: Max 10 text items per operation
-- Time (`start`/`end`) is relative to the cropped video (after `start_time`/`end_time` cut)
+**Note:** `start_time`/`end_time` - numbers (seconds) or strings (`"00:01:30"`). Time in `text_items` is relative to the cropped video.
 
 ### Example 2: Simple Shorts conversion (letterbox only, no text)
 
@@ -764,55 +758,51 @@ Response:
 }
 ```
 
-**Note:** Even without text items, the API will generate a thumbnail by default.
-
-### Example 3: Shorts with two text overlays (title + call-to-action)
+### Example 3: Dynamic subtitles with word-level timing
 
 ```json
 {
   "video_url": "https://example.com/video.mp4",
-  "execution": "async",
+  "execution": "sync",
   "operations": [
     {
       "type": "make_short",
       "crop_mode": "letterbox",
       "text_items": [
         {
-          "text": "Amazing Content",
+          "text": "Title",
           "fontfile": "HelveticaNeue.ttc",
           "fontsize": 80,
-          "fontcolor": "yellow",
+          "fontcolor": "white",
           "x": "(w-text_w)/2",
           "y": 100,
           "start": 0,
           "end": 60,
           "box": 1,
-          "boxcolor": "black@0.6",
-          "boxborderw": 15
+          "boxcolor": "black@0.5"
         },
         {
-          "text": "Subscribe for more!",
+          "text": "",
           "fontfile": "PTSans.ttc",
-          "fontsize": 64,
-          "fontcolor": "white",
+          "fontsize": 60,
+          "fontcolor": "yellow",
+          "borderw": 3,
+          "bordercolor": "black",
           "x": "(w-text_w)/2",
           "y": "h-200",
-          "start": 0,
-          "end": 5
+          "subtitles": {
+            "items": [
+              {"text": "First word", "start": 0, "end": 1.5},
+              {"text": "Second word", "start": 1.5, "end": 3},
+              {"text": "Third word", "start": 3, "end": 4.5}
+            ]
+          }
         }
       ]
     }
-  ],
-  "webhook": {
-    "url": "https://n8n.example.com/webhook/completed",
-    "headers": {
-      "X-API-Key": "secret-key"
-    }
-  }
+  ]
 }
 ```
-
-**Note:** This example uses the maximum 2 text items allowed in the public version.
 
 ### Example 4: Video cutting
 
