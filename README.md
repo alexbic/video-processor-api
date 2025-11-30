@@ -315,6 +315,8 @@ The `text_items` array allows flexible text overlays with individual control:
 - **box** - Background box (0 or 1, default: 0)
 - **boxcolor** - Box color with alpha support (default: black@0.5)
 - **boxborderw** - Box border width in pixels (default: 10)
+- **borderw** - Text outline width in pixels (default: 0, disabled)
+- **bordercolor** - Text outline color (default: black)
 
 **Public version limit**: Max **2 text items** per operation
 
