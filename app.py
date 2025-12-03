@@ -3524,6 +3524,11 @@ try:
         logger.info(f"🔄 Starting task recovery in process {os.getpid()}...")
         _recover_interrupted_tasks_once()
         logger.info(f"✅ Recovery completed in process {os.getpid()}")
+    else:
+        # Marker файл существует - recovery уже был выполнен ранее
+        # Разблокируем endpoint для новых worker'ов после рестарта
+        logger.info(f"⏭️ Recovery: already completed (marker exists), unblocking API")
+        RECOVERY_IN_PROGRESS = False
 except Exception as e:
     logger.error(f"❌ Recovery failed: {e}")
     RECOVERY_IN_PROGRESS = False  # Разблокируем endpoint даже при ошибке
